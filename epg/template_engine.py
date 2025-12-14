@@ -1,4 +1,8 @@
-"""Template Variable Resolution Engine for Teamarr"""
+"""Template Variable Resolution Engine for Teamarr
+
+Processes TemplateContext dataclasses to generate template variables.
+Uses attribute access on typed dataclasses throughout.
+"""
 from dataclasses import is_dataclass
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Union
@@ -8,6 +12,31 @@ import re
 
 from utils import to_pascal_case
 from utils.time_format import format_time as fmt_time, get_time_settings
+
+# Import context types from core
+from core import (
+    Event,
+    Team,
+    TeamStats,
+    GameContext,
+    TeamConfig,
+    TemplateContext,
+    HeadToHead,
+    Streaks,
+    PlayerLeaders,
+)
+
+
+def _attr(obj: Any, attr: str, default: Any = '') -> Any:
+    """Safely get attribute from dataclass, returning default if None or missing.
+
+    This is the primary accessor for all dataclass attribute access in template resolution.
+    Handles None objects gracefully and provides consistent default handling.
+    """
+    if obj is None:
+        return default
+    value = getattr(obj, attr, default)
+    return value if value is not None else default
 
 
 def _get(obj: Any, key: str, default: Any = None) -> Any:
@@ -56,10 +85,203 @@ def _to_dict(obj: Any) -> dict:
 
 
 class TemplateEngine:
-    """Resolves template variables in user-defined strings"""
+    """Resolves template variables in user-defined strings.
+
+    Supports both:
+    - New API: resolve_from_context(template, TemplateContext) - accepts dataclasses
+    - Legacy API: resolve(template, dict) - accepts dicts (for backward compatibility)
+    """
 
     def __init__(self):
         pass
+
+    # =========================================================================
+    # Dataclass Bridge Methods
+    # Convert typed dataclasses to dict format for internal processing.
+    # These will be removed once internal code is migrated to attribute access.
+    # =========================================================================
+
+    def _team_config_to_dict(self, config: TeamConfig) -> dict:
+        """Convert TeamConfig dataclass to legacy dict format."""
+        if config is None:
+            return {}
+        return {
+            'espn_team_id': config.team_id,
+            'team_name': config.team_name,
+            'team_abbrev': config.team_abbrev or '',
+            'league': config.league,
+            'league_name': config.league_name or config.league.upper(),
+            'sport': config.sport,
+            'team_logo_url': config.team_logo_url,
+            'channel_id': config.channel_id,
+            'soccer_primary_league': config.soccer_primary_league,
+            'soccer_primary_league_id': config.soccer_primary_league_id,
+        }
+
+    def _team_stats_to_dict(self, stats: TeamStats | None) -> dict:
+        """Convert TeamStats dataclass to legacy dict format."""
+        if stats is None:
+            return {}
+
+        # Calculate win percentage
+        total_games = (stats.wins or 0) + (stats.losses or 0)
+        win_pct = (stats.wins or 0) / total_games if total_games > 0 else 0.0
+
+        return {
+            'record': {
+                'summary': stats.record or '0-0',
+                'wins': stats.wins or 0,
+                'losses': stats.losses or 0,
+                'ties': stats.ties or 0,
+                'winPercent': win_pct,
+            },
+            'home_record': stats.home_record or '0-0',
+            'away_record': stats.away_record or '0-0',
+            'streak_count': stats.streak_count or 0,
+            'rank': stats.rank if stats.rank is not None else 99,
+            'playoff_seed': stats.playoff_seed or 0,
+            'games_back': stats.games_back or 0.0,
+            'ppg': stats.ppg or 0.0,
+            'papg': stats.papg or 0.0,
+            'conference_name': stats.conference,
+            'conference_abbrev': stats.conference_abbrev,
+            'division_name': stats.division,
+        }
+
+    def _h2h_to_dict(self, h2h: HeadToHead | None) -> dict:
+        """Convert HeadToHead dataclass to legacy dict format."""
+        if h2h is None:
+            return {'season_series': {}, 'previous_game': {}}
+        return {
+            'season_series': {
+                'team_wins': h2h.team_wins,
+                'opponent_wins': h2h.opponent_wins,
+            },
+            'previous_game': {
+                'date': h2h.previous_date or '',
+                'result': h2h.previous_result or '',
+                'score': h2h.previous_score or '',
+                'score_abbrev': h2h.previous_score_abbrev or '',
+                'venue': h2h.previous_venue or '',
+                'venue_city': h2h.previous_city or '',
+                'days_since': h2h.days_since,
+            },
+        }
+
+    def _streaks_to_dict(self, streaks: Streaks | None) -> dict:
+        """Convert Streaks dataclass to legacy dict format."""
+        if streaks is None:
+            return {}
+        return {
+            'home_streak': streaks.home_streak,
+            'away_streak': streaks.away_streak,
+            'last_5_record': streaks.last_5_record,
+            'last_10_record': streaks.last_10_record,
+        }
+
+    def _player_leaders_to_dict(self, leaders: PlayerLeaders | None) -> dict:
+        """Convert PlayerLeaders dataclass to legacy dict format."""
+        if leaders is None:
+            return {}
+        return {
+            'basketball_scoring_leader_name': leaders.scoring_leader_name,
+            'basketball_scoring_leader_points': leaders.scoring_leader_points,
+            'football_passing_leader_name': leaders.passing_leader_name,
+            'football_passing_leader_stats': leaders.passing_leader_stats,
+            'football_rushing_leader_name': leaders.rushing_leader_name,
+            'football_rushing_leader_stats': leaders.rushing_leader_stats,
+            'football_receiving_leader_name': leaders.receiving_leader_name,
+            'football_receiving_leader_stats': leaders.receiving_leader_stats,
+        }
+
+    def _game_context_to_dict(self, ctx: GameContext | None) -> dict:
+        """Convert GameContext dataclass to legacy dict format for _build_variable_dict."""
+        if ctx is None:
+            return {}
+        return {
+            'game': ctx.event,  # Will be converted via _event_to_template_dict internally
+            'opponent_stats': self._team_stats_to_dict(ctx.opponent_stats),
+            'h2h': self._h2h_to_dict(ctx.h2h),
+            'streaks': self._streaks_to_dict(ctx.streaks),
+            'head_coach': ctx.head_coach or '',
+            'player_leaders': self._player_leaders_to_dict(ctx.player_leaders),
+        }
+
+    # =========================================================================
+    # New Dataclass API - Use this for new code
+    # =========================================================================
+
+    def resolve_from_context(
+        self, template: str, context: TemplateContext
+    ) -> str:
+        """Resolve template variables using typed TemplateContext.
+
+        This is the preferred API for new code. Accepts properly typed
+        dataclasses and converts internally for backward compatibility.
+
+        Args:
+            template: String with {variable} placeholders
+            context: TemplateContext with all data needed for resolution
+
+        Returns:
+            String with all variables replaced with actual values
+        """
+        # Convert to legacy dict format for internal processing
+        legacy_context = self._template_context_to_dict(context)
+        return self.resolve(template, legacy_context)
+
+    def _template_context_to_dict(self, ctx: TemplateContext) -> dict:
+        """Convert TemplateContext to legacy dict format for _build_variable_dict."""
+        result = {
+            'team_config': self._team_config_to_dict(ctx.team_config),
+            'team_stats': self._team_stats_to_dict(ctx.team_stats),
+            'epg_timezone': ctx.epg_timezone,
+            'time_format_settings': ctx.time_format_settings,
+        }
+
+        # Current game context
+        if ctx.game_context:
+            result['game'] = ctx.game_context.event
+            result['opponent_stats'] = self._team_stats_to_dict(ctx.game_context.opponent_stats)
+            result['h2h'] = self._h2h_to_dict(ctx.game_context.h2h)
+            result['streaks'] = self._streaks_to_dict(ctx.game_context.streaks)
+            result['head_coach'] = ctx.game_context.head_coach or ''
+            result['player_leaders'] = self._player_leaders_to_dict(ctx.game_context.player_leaders)
+        else:
+            result['game'] = None
+            result['opponent_stats'] = {}
+            result['h2h'] = {'season_series': {}, 'previous_game': {}}
+            result['streaks'] = {}
+            result['head_coach'] = ''
+            result['player_leaders'] = {}
+
+        # Next game context
+        if ctx.next_game:
+            result['next_game'] = self._game_context_to_dict(ctx.next_game)
+        else:
+            result['next_game'] = {}
+
+        # Last game context
+        if ctx.last_game:
+            result['last_game'] = self._game_context_to_dict(ctx.last_game)
+        else:
+            result['last_game'] = {}
+
+        return result
+
+    def select_description_from_context(
+        self, description_options: Any, context: TemplateContext
+    ) -> str:
+        """Select description template using typed TemplateContext.
+
+        Preferred API for new code.
+        """
+        legacy_context = self._template_context_to_dict(context)
+        return self.select_description(description_options, legacy_context)
+
+    # =========================================================================
+    # Legacy API - For backward compatibility
+    # =========================================================================
 
     def _event_to_template_dict(self, event: Any) -> dict:
         """Convert Event dataclass to dict format for template variable extraction.

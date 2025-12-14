@@ -23,7 +23,18 @@ from epg.soccer_multi_league import SoccerMultiLeague
 
 # Provider abstraction layer - new architecture
 from services import create_default_service, SportsDataService
-from core import Event as ProviderEvent, Team as ProviderTeam, TeamStats as ProviderStats
+from core import (
+    Event as ProviderEvent,
+    Team as ProviderTeam,
+    TeamStats as ProviderStats,
+    # Context types for template engine
+    TemplateContext,
+    GameContext,
+    TeamConfig,
+    HeadToHead,
+    Streaks,
+    PlayerLeaders,
+)
 
 logger = get_logger(__name__)
 
@@ -216,6 +227,207 @@ class EPGOrchestrator:
                 'color': team.color,
             }
         }
+
+    # =========================================================================
+    # Context Builder Methods (V2 - Dataclass API)
+    # Build typed TemplateContext for template engine
+    # =========================================================================
+
+    def _build_team_config(self, team_dict: Dict[str, Any]) -> TeamConfig:
+        """Build TeamConfig dataclass from team database dict.
+
+        Args:
+            team_dict: Team configuration from database
+
+        Returns:
+            TeamConfig dataclass
+        """
+        return TeamConfig(
+            team_id=str(team_dict.get('espn_team_id', '')),
+            league=team_dict.get('league', ''),
+            sport=team_dict.get('sport', ''),
+            team_name=team_dict.get('team_name', ''),
+            team_abbrev=team_dict.get('team_abbrev'),
+            team_logo_url=team_dict.get('team_logo_url'),
+            league_name=team_dict.get('league_name'),
+            channel_id=team_dict.get('channel_id'),
+            soccer_primary_league=team_dict.get('soccer_primary_league'),
+            soccer_primary_league_id=team_dict.get('soccer_primary_league_id'),
+        )
+
+    def _build_game_context(
+        self,
+        event: ProviderEvent | None,
+        team_config: TeamConfig,
+        team_stats: ProviderStats | None,
+        h2h_dict: Dict[str, Any] = None,
+        streaks_dict: Dict[str, Any] = None,
+        head_coach: str = '',
+        player_leaders_dict: Dict[str, Any] = None,
+    ) -> GameContext:
+        """Build GameContext dataclass for template resolution.
+
+        Fetches opponent stats via service layer.
+
+        Args:
+            event: The game event (or None for no game)
+            team_config: Team configuration
+            team_stats: Our team's stats
+            h2h_dict: Head-to-head data (legacy dict format, will be converted)
+            streaks_dict: Streak data (legacy dict format)
+            head_coach: Head coach name
+            player_leaders_dict: Player leaders (legacy dict format)
+
+        Returns:
+            GameContext dataclass
+        """
+        if event is None:
+            return GameContext()
+
+        # Determine home/away
+        is_home = event.home_team and event.home_team.id == team_config.team_id
+        team = event.home_team if is_home else event.away_team
+        opponent = event.away_team if is_home else event.home_team
+
+        # Fetch opponent stats via service layer
+        opponent_stats = None
+        if opponent and team_config.league:
+            try:
+                opponent_stats = self.service.get_team_stats(opponent.id, team_config.league)
+            except Exception as e:
+                logger.debug(f"Could not fetch opponent stats: {e}")
+
+        # Convert legacy h2h dict to HeadToHead dataclass
+        h2h = None
+        if h2h_dict:
+            season_series = h2h_dict.get('season_series', {})
+            previous = h2h_dict.get('previous_game', {})
+            h2h = HeadToHead(
+                team_wins=season_series.get('team_wins', 0),
+                opponent_wins=season_series.get('opponent_wins', 0),
+                previous_result=previous.get('result'),
+                previous_score=previous.get('score'),
+                previous_score_abbrev=previous.get('score_abbrev'),
+                previous_venue=previous.get('venue'),
+                previous_city=previous.get('venue_city'),
+                previous_date=previous.get('date'),
+                days_since=previous.get('days_since', 0),
+            )
+
+        # Convert legacy streaks dict to Streaks dataclass
+        streaks = None
+        if streaks_dict:
+            streaks = Streaks(
+                home_streak=streaks_dict.get('home_streak', ''),
+                away_streak=streaks_dict.get('away_streak', ''),
+                last_5_record=streaks_dict.get('last_5_record', ''),
+                last_10_record=streaks_dict.get('last_10_record', ''),
+            )
+
+        # Convert legacy player_leaders dict to PlayerLeaders dataclass
+        player_leaders = None
+        if player_leaders_dict:
+            player_leaders = PlayerLeaders(
+                scoring_leader_name=player_leaders_dict.get('basketball_scoring_leader_name', ''),
+                scoring_leader_points=player_leaders_dict.get('basketball_scoring_leader_points', ''),
+                passing_leader_name=player_leaders_dict.get('football_passing_leader_name', ''),
+                passing_leader_stats=player_leaders_dict.get('football_passing_leader_stats', ''),
+                rushing_leader_name=player_leaders_dict.get('football_rushing_leader_name', ''),
+                rushing_leader_stats=player_leaders_dict.get('football_rushing_leader_stats', ''),
+                receiving_leader_name=player_leaders_dict.get('football_receiving_leader_name', ''),
+                receiving_leader_stats=player_leaders_dict.get('football_receiving_leader_stats', ''),
+            )
+
+        return GameContext(
+            event=event,
+            is_home=is_home,
+            team=team,
+            opponent=opponent,
+            team_stats=team_stats,
+            opponent_stats=opponent_stats,
+            h2h=h2h,
+            streaks=streaks,
+            head_coach=head_coach,
+            player_leaders=player_leaders,
+        )
+
+    def _build_template_context(
+        self,
+        team_dict: Dict[str, Any],
+        team_stats: ProviderStats | None,
+        current_event: ProviderEvent | None = None,
+        next_event: ProviderEvent | None = None,
+        last_event: ProviderEvent | None = None,
+        h2h_dict: Dict[str, Any] = None,
+        streaks_dict: Dict[str, Any] = None,
+        head_coach: str = '',
+        player_leaders_dict: Dict[str, Any] = None,
+        epg_timezone: str = 'America/Detroit',
+        time_format_settings: Dict[str, Any] = None,
+    ) -> TemplateContext:
+        """Build complete TemplateContext for template resolution.
+
+        This is the primary method for building typed context for the template engine.
+
+        Args:
+            team_dict: Team configuration from database
+            team_stats: Team's season stats (dataclass from service)
+            current_event: Current game event (or None for filler)
+            next_event: Next scheduled game
+            last_event: Last completed game
+            h2h_dict: Head-to-head data (legacy dict, converted internally)
+            streaks_dict: Streak data (legacy dict, converted internally)
+            head_coach: Head coach name
+            player_leaders_dict: Player leaders (legacy dict)
+            epg_timezone: Timezone for date/time formatting
+            time_format_settings: User's time format preferences
+
+        Returns:
+            TemplateContext dataclass ready for template_engine.resolve_from_context()
+        """
+        team_config = self._build_team_config(team_dict)
+
+        # Build current game context
+        game_context = None
+        if current_event:
+            game_context = self._build_game_context(
+                event=current_event,
+                team_config=team_config,
+                team_stats=team_stats,
+                h2h_dict=h2h_dict,
+                streaks_dict=streaks_dict,
+                head_coach=head_coach,
+                player_leaders_dict=player_leaders_dict,
+            )
+
+        # Build next game context (simpler - no h2h/streaks/coach)
+        next_game = None
+        if next_event:
+            next_game = self._build_game_context(
+                event=next_event,
+                team_config=team_config,
+                team_stats=team_stats,
+            )
+
+        # Build last game context (simpler - no h2h/streaks/coach)
+        last_game = None
+        if last_event:
+            last_game = self._build_game_context(
+                event=last_event,
+                team_config=team_config,
+                team_stats=team_stats,
+            )
+
+        return TemplateContext(
+            team_config=team_config,
+            team_stats=team_stats,
+            game_context=game_context,
+            team=game_context.team if game_context else None,
+            next_game=next_game,
+            last_game=last_game,
+            epg_timezone=epg_timezone,
+            time_format_settings=time_format_settings or {},
+        )
 
     def _filter_events_by_cutoff(
         self,
