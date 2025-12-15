@@ -289,3 +289,11 @@ Pages needed:
 - Dev port: 9198 (9195 is prod V1)
 - Deployment: Single container (bundled static files)
 - No backward compatibility with V1
+
+---
+
+## Future Enhancements
+
+- **Swagger field descriptions**: Add `Field(description="...")` to Pydantic models for better API docs
+- **Tests**: Expand test coverage
+- **Stream matching disambiguation**: V1 has fallback logic for ambiguous matches

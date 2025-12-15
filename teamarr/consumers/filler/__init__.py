@@ -1,8 +1,20 @@
-"""Filler generation package for team-based EPG.
+"""Filler generation package.
 
-Generates pregame, postgame, and idle programmes to fill gaps between events.
+Team filler: Full pregame/postgame/idle with .next/.last suffix support.
+Event filler: Simpler pregame/postgame for single-event channels.
+
+Both share:
+- time_blocks utilities for 6-hour alignment
+- FillerTemplate for template structure
+- TemplateResolver for variable substitution
 """
 
+from .event_filler import (
+    EventFillerConfig,
+    EventFillerGenerator,
+    EventFillerOptions,
+    template_to_event_filler_config,
+)
 from .generator import FillerGenerator
 from .types import (
     ConditionalFillerTemplate,
@@ -14,9 +26,16 @@ from .types import (
 )
 
 __all__ = [
+    # Team filler
     "FillerGenerator",
     "FillerConfig",
     "FillerOptions",
+    # Event filler
+    "EventFillerGenerator",
+    "EventFillerConfig",
+    "EventFillerOptions",
+    "template_to_event_filler_config",
+    # Shared types
     "FillerTemplate",
     "FillerType",
     "ConditionalFillerTemplate",

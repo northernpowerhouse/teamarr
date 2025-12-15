@@ -21,6 +21,21 @@ from teamarr.database.settings import (
     get_lifecycle_settings,
     get_scheduler_settings,
 )
+from teamarr.database.templates import (
+    EventTemplateConfig,
+    Template,
+    create_template,
+    delete_template,
+    get_all_templates,
+    get_template,
+    get_template_by_name,
+    get_templates_for_league,
+    get_templates_for_sport,
+    seed_default_templates,
+    template_to_event_config,
+    template_to_filler_config,
+    update_template,
+)
 
 __all__ = [
     # Connection
@@ -46,4 +61,18 @@ __all__ = [
     "get_epg_settings",
     "get_lifecycle_settings",
     "get_scheduler_settings",
+    # Templates
+    "EventTemplateConfig",
+    "Template",
+    "create_template",
+    "delete_template",
+    "get_all_templates",
+    "get_template",
+    "get_template_by_name",
+    "get_templates_for_league",
+    "get_templates_for_sport",
+    "seed_default_templates",
+    "template_to_event_config",
+    "template_to_filler_config",
+    "update_template",
 ]
