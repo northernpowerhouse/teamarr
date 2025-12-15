@@ -332,7 +332,7 @@ class ChannelReconciler:
                         details={
                             "channel_number": channel.channel_number,
                             "tvg_id": tvg_id,
-                            "streams": [s.id for s in channel.streams],
+                            "streams": list(channel.streams),  # Already int IDs
                         },
                         suggested_action="delete_or_adopt",
                         auto_fixable=self._settings.get(
