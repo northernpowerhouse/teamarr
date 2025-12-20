@@ -182,9 +182,33 @@ def extract_sport_lower(ctx: TemplateContext, game_ctx: GameContext | None) -> s
     name="league_id",
     category=Category.IDENTITY,
     suffix_rules=SuffixRules.BASE_ONLY,
-    description="League identifier (e.g., 'nfl', 'eng.1')",
+    description="League identifier - uses alias if configured (e.g., 'nfl', 'epl', 'ncaam')",
 )
 def extract_league_id(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
+    """Return league_id_alias if configured, otherwise league_code."""
+    from teamarr.database import get_db
+
+    league = ctx.team_config.league
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT league_id_alias FROM leagues WHERE league_code = ?",
+            (league,),
+        )
+        row = cursor.fetchone()
+        if row and row["league_id_alias"]:
+            return row["league_id_alias"]
+    return league
+
+
+@register_variable(
+    name="league_code",
+    category=Category.IDENTITY,
+    suffix_rules=SuffixRules.BASE_ONLY,
+    description="Raw league code (e.g., 'nfl', 'mens-college-basketball', 'eng.1')",
+)
+def extract_league_code(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
+    """Return raw league_code, ignoring any alias."""
     return ctx.team_config.league
 
 
