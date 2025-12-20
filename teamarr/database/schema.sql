@@ -490,9 +490,9 @@ INSERT OR IGNORE INTO leagues (league_code, provider, provider_league_id, provid
     ('pll', 'espn', 'lacrosse/pll', NULL, 'Premier Lacrosse League', 'Lacrosse', 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/pll.png', 1, NULL),
 
     -- Cricket (TSDB)
-    ('ipl', 'tsdb', '4460', 'Indian Premier League', 'Indian Premier League', 'Cricket', NULL, 1, NULL),
-    ('cpl', 'tsdb', '5176', 'Caribbean Premier League', 'Caribbean Premier League', 'Cricket', NULL, 1, NULL),
-    ('bpl', 'tsdb', '5529', 'Bangladesh Premier League', 'Bangladesh Premier League', 'Cricket', NULL, 1, NULL),
+    ('ipl', 'tsdb', '4460', 'Indian Premier League', 'Indian Premier League', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/gaiti11741709844.png', 1, NULL),
+    ('cpl', 'tsdb', '5176', 'Caribbean Premier League', 'Caribbean Premier League', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/5mjjnj1645179844.png', 1, NULL),
+    ('bpl', 'tsdb', '5529', 'Bangladesh Premier League', 'Bangladesh Premier League', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/3smqzk1734192770.png', 1, NULL),
 
     -- Boxing (TSDB) - Non-team sport, import_enabled = 0
     ('boxing', 'tsdb', '4445', 'Boxing', 'Boxing', 'Boxing', NULL, 0, NULL);
