@@ -204,11 +204,14 @@ class LifecycleScheduler:
         """Generate EPG for all teams and groups, write to output file.
 
         Flow:
-        1. Process all active teams (generates XMLTV per team)
-        2. Process all active event groups (generates XMLTV per group)
-        3. Get all stored XMLTV from database (teams + groups)
-        4. Merge into single XMLTV document
-        5. Write to output file path
+        1. Refresh M3U accounts (with 60-min skip cache)
+        2. Process all active teams (generates XMLTV per team)
+        3. Process all active event groups (generates XMLTV per group)
+        4. Get all stored XMLTV from database (teams + groups)
+        5. Merge into single XMLTV document
+        6. Write to output file path
+        7. Trigger Dispatcharr EPG refresh
+        8. Associate EPG data with managed channels
 
         Returns:
             Dict with generation stats
@@ -216,10 +219,11 @@ class LifecycleScheduler:
         from teamarr.consumers import process_all_event_groups, process_all_teams
         from teamarr.consumers.team_processor import get_all_team_xmltv
         from teamarr.database.groups import get_all_group_xmltv
-        from teamarr.database.settings import get_epg_settings
+        from teamarr.database.settings import get_dispatcharr_settings, get_epg_settings
         from teamarr.utilities.xmltv import merge_xmltv_content
 
         result = {
+            "m3u_refresh": {},
             "teams_processed": 0,
             "teams_programmes": 0,
             "groups_processed": 0,
@@ -228,18 +232,25 @@ class LifecycleScheduler:
             "file_written": False,
             "file_path": None,
             "file_size": 0,
+            "epg_refresh": {},
+            "epg_association": {},
         }
 
         # Get settings
         with self._db_factory() as conn:
             settings = get_epg_settings(conn)
+            dispatcharr_settings = get_dispatcharr_settings(conn)
 
         output_path = settings.epg_output_path
         if not output_path:
             logger.debug("EPG output path not configured, skipping file write")
             return result
 
-        # Process all active teams
+        # Step 1: Refresh M3U accounts before processing event groups
+        if self._dispatcharr_client:
+            result["m3u_refresh"] = self._refresh_m3u_accounts()
+
+        # Step 2: Process all active teams
         team_result = process_all_teams(db_factory=self._db_factory)
         result["teams_processed"] = team_result.teams_processed
         result["teams_programmes"] = team_result.total_programmes
@@ -250,7 +261,7 @@ class LifecycleScheduler:
                 f"{team_result.total_programmes} programmes"
             )
 
-        # Process all event groups
+        # Step 3: Process all event groups
         group_result = process_all_event_groups(
             db_factory=self._db_factory,
             dispatcharr_client=self._dispatcharr_client,
@@ -321,6 +332,126 @@ class LifecycleScheduler:
         except Exception as e:
             logger.error(f"Failed to write EPG file: {e}")
             result["error"] = str(e)
+            return result
+
+        # Step 7: Trigger Dispatcharr EPG refresh
+        if self._dispatcharr_client and dispatcharr_settings.epg_id:
+            result["epg_refresh"] = self._trigger_epg_refresh(dispatcharr_settings.epg_id)
+
+        # Step 8: Associate EPG data with managed channels
+        if self._dispatcharr_client and dispatcharr_settings.epg_id:
+            result["epg_association"] = self._associate_epg_with_channels(
+                dispatcharr_settings.epg_id
+            )
+
+        return result
+
+    def _refresh_m3u_accounts(self) -> dict:
+        """Refresh M3U accounts for all event groups.
+
+        Collects unique M3U account IDs from all active event groups
+        and refreshes them in parallel with 60-minute skip cache.
+
+        Returns:
+            Dict with refresh stats
+        """
+        from teamarr.database.groups import get_all_groups
+        from teamarr.dispatcharr import M3UManager
+
+        result = {"refreshed": 0, "skipped": 0, "failed": 0, "account_ids": []}
+
+        if not self._dispatcharr_client:
+            return result
+
+        # Collect unique M3U account IDs from active groups
+        with self._db_factory() as conn:
+            groups = get_all_groups(conn, include_disabled=False)
+
+        account_ids = set()
+        for group in groups:
+            if group.m3u_account_id:
+                account_ids.add(group.m3u_account_id)
+
+        if not account_ids:
+            logger.debug("No M3U accounts to refresh")
+            return result
+
+        result["account_ids"] = list(account_ids)
+
+        # Refresh all accounts in parallel
+        m3u_manager = M3UManager(self._dispatcharr_client)
+        batch_result = m3u_manager.refresh_multiple(
+            list(account_ids),
+            timeout=120,
+            skip_if_recent_minutes=60,
+        )
+
+        result["refreshed"] = batch_result.succeeded_count - batch_result.skipped_count
+        result["skipped"] = batch_result.skipped_count
+        result["failed"] = batch_result.failed_count
+        result["duration"] = batch_result.duration
+
+        if batch_result.succeeded_count > 0:
+            logger.info(
+                f"M3U refresh: {result['refreshed']} refreshed, "
+                f"{result['skipped']} skipped (recently updated)"
+            )
+
+        return result
+
+    def _trigger_epg_refresh(self, epg_id: int) -> dict:
+        """Trigger Dispatcharr EPG refresh and wait for completion.
+
+        Args:
+            epg_id: Dispatcharr EPG source ID
+
+        Returns:
+            Dict with refresh result
+        """
+        from teamarr.dispatcharr import EPGManager
+
+        if not self._dispatcharr_client:
+            return {"skipped": True, "reason": "No Dispatcharr client"}
+
+        epg_manager = EPGManager(self._dispatcharr_client)
+        refresh_result = epg_manager.wait_for_refresh(epg_id, timeout=60)
+
+        if refresh_result.success:
+            logger.info(
+                f"Dispatcharr EPG refresh completed in {refresh_result.duration:.1f}s"
+            )
+        else:
+            logger.warning(f"Dispatcharr EPG refresh failed: {refresh_result.message}")
+
+        return {
+            "success": refresh_result.success,
+            "message": refresh_result.message,
+            "duration": refresh_result.duration,
+        }
+
+    def _associate_epg_with_channels(self, epg_source_id: int) -> dict:
+        """Associate EPG data with managed channels after EPG refresh.
+
+        Args:
+            epg_source_id: Dispatcharr EPG source ID
+
+        Returns:
+            Dict with association stats
+        """
+        from teamarr.consumers import create_lifecycle_service
+
+        if not self._dispatcharr_client:
+            return {"skipped": True, "reason": "No Dispatcharr client"}
+
+        service = create_lifecycle_service(
+            self._db_factory,
+            dispatcharr_client=self._dispatcharr_client,
+        )
+
+        result = service.associate_epg_with_channels(epg_source_id)
+
+        if result.get("associated", 0) > 0:
+            logger.info(f"Associated EPG data with {result['associated']} channels")
 
         return result
 

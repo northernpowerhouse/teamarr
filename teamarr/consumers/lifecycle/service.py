@@ -844,8 +844,8 @@ class ChannelLifecycleService:
             if not channels:
                 return result
 
-            # Build EPG data lookup from Dispatcharr
-            epg_lookup = self._epg_manager.build_epg_lookup(epg_source_id)
+            # Build EPG data lookup from Dispatcharr (via ChannelManager)
+            epg_lookup = self._channel_manager.build_epg_lookup(epg_source_id)
 
             for channel in channels:
                 if not channel.dispatcharr_channel_id or not channel.tvg_id:
