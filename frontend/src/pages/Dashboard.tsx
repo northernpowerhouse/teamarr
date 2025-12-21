@@ -70,6 +70,11 @@ interface EPGHistoryEntry {
   completed_at: string | null
   duration_ms: number | null
   status: string
+  streams?: {
+    matched: number
+    unmatched: number
+    cached: number
+  }
   channels?: {
     created: number
     updated: number
