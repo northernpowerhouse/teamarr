@@ -2,72 +2,114 @@
 
 **Dynamic EPG Generator for Sports Channels**
 
-Teamarr generates rich XMLTV Electronic Program Guide data for your sports channels. It fetches schedules from multiple data providers (ESPN, TheSportsDB) and generates EPG files with intelligent descriptions.
+Teamarr generates rich XMLTV Electronic Program Guide data for your sports channels. It fetches schedules from multiple data providers (ESPN, TheSportsDB) and generates EPG files with intelligent template-based descriptions.
 
-> **Status**: API-only backend - UI in development
+> **Status**: V2 Alpha - Core functionality working, feedback welcome!
 
-## Quick Start
+## Quick Start (Docker)
+
+```yaml
+# docker-compose.yml
+services:
+  teamarr:
+    image: ghcr.io/egyptiangio/teamarr:v2-alpha
+    container_name: teamarr
+    restart: unless-stopped
+    ports:
+      - 9195:9195
+    volumes:
+      - ./data:/app/data
+    environment:
+      - TZ=America/Detroit
+```
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Start server
-python3 app.py
-
-# API docs
-open http://localhost:9195/docs
+docker compose up -d
+open http://localhost:9195
 ```
 
 ## Features
 
-- **Multi-Provider Support** — ESPN (primary) + TheSportsDB (fallback)
-- **Team-Based EPG** — Dedicated channel per team with filler content
-- **Event-Based EPG** — Dynamic channels per event, stream matching
-- **161 Template Variables** — Conditional descriptions based on game context
-- **Dispatcharr Integration** — Automatic channel lifecycle management
-- **Stream Matching** — Fuzzy matching with fingerprint cache
+- **Multi-Provider Support** - ESPN (primary) + TheSportsDB (fallback)
+- **Team-Based EPG** - Dedicated channel per team with pregame/postgame filler
+- **Event-Based EPG** - Dynamic channels per event with stream matching
+- **141 Template Variables** - Rich descriptions with game context
+- **Conditional Templates** - Different descriptions for home/away, day/night, etc.
+- **Dispatcharr Integration** - Automatic channel lifecycle management
+- **Stream Matching** - Fuzzy matching with fingerprint cache
+- **React UI** - Modern web interface for configuration
 
-## Architecture
+## What's New in V2
 
-```
-API Layer (FastAPI)
-        ↓
-Consumer Layer (EPG generators, stream matchers)
-        ↓
-Service Layer (provider routing, caching)
-        ↓
-Provider Layer (ESPN, TheSportsDB)
-```
-
-See [CLAUDE.md](CLAUDE.md) for full architecture documentation.
+- Complete rewrite with clean architecture
+- FastAPI backend (was Flask)
+- React + TypeScript frontend
+- Multi-stage Docker build
+- Improved template engine with 141 variables
+- Better stream matching algorithms
+- Processing statistics and history
 
 ## Supported Leagues
 
-**ESPN**: NFL, NBA, NHL, MLB, MLS, NCAAF, NCAAM, WNBA, UFC, Premier League, La Liga, Bundesliga, Serie A, Champions League, 200+ soccer leagues
+**ESPN**: NFL, NBA, NHL, MLB, MLS, NCAAF, NCAAM, NCAAW, WNBA, UFC, Premier League, La Liga, Bundesliga, Serie A, Ligue 1, Champions League, 200+ soccer leagues
 
-**TheSportsDB**: OHL, WHL, QMJHL, NLL, PLL, IPL, BBL, CPL, Boxing
+**TheSportsDB**: OHL, WHL, QMJHL, NLL, PLL, IPL, BBL, CPL, T20 Blast, Boxing
 
-## API Endpoints
+## Configuration
 
+1. Open http://localhost:9195
+2. Go to **Settings** and configure Dispatcharr connection
+3. Import teams or create event groups
+4. Create templates for EPG formatting
+5. Generate EPG manually or let the scheduler run
+
+## Data Persistence
+
+All data is stored in `/app/data`:
+- `teamarr.db` - SQLite database
+- `logs/` - Application logs
+
+Mount this directory to persist data across container restarts.
+
+## API Documentation
+
+Interactive API docs available at http://localhost:9195/docs
+
+Key endpoints:
 | Endpoint | Description |
 |----------|-------------|
 | `GET /health` | Health check |
-| `GET /api/v1/teams` | List teams |
+| `GET /api/v1/teams` | Team channels |
+| `GET /api/v1/groups` | Event EPG groups |
 | `POST /api/v1/epg/generate` | Generate EPG |
-| `GET /api/v1/cache/stats` | Cache statistics |
-
-Full API documentation at http://localhost:9195/docs
+| `GET /api/v1/stats` | Processing statistics |
 
 ## Development
 
 ```bash
-# Run with auto-reload
-uvicorn teamarr.api.app:app --reload --port 9195
+# Clone and setup
+git clone https://github.com/egyptiangio/teamarr.git
+cd teamarr
+git checkout v2-alpha
 
-# Run tests
-pytest
+# Python backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+python app.py
+
+# Frontend (separate terminal)
+cd frontend
+npm install
+npm run dev
 ```
+
+## Reporting Issues
+
+Use the V2-specific issue templates on GitHub - they auto-label with `v2` for easy filtering.
+
+- [V2 Bug Report](https://github.com/egyptiangio/teamarr/issues/new?template=v2_bug_report.yml)
+- [V2 Feature Request](https://github.com/egyptiangio/teamarr/issues/new?template=v2_feature_request.yml)
 
 ## License
 
