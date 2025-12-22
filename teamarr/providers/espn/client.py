@@ -119,6 +119,51 @@ class ESPNClient:
 
         return self._request(url, params)
 
+    def get_league_info(
+        self,
+        league: str,
+        sport_league: tuple[str, str] | None = None,
+    ) -> dict | None:
+        """Fetch league metadata including logo from scoreboard endpoint.
+
+        Args:
+            league: Canonical league code (e.g., 'eng.fa', 'uefa.champions')
+            sport_league: Optional (sport, league) tuple
+
+        Returns:
+            Dict with name, logo_url, abbreviation or None on error
+        """
+        sport, espn_league = self.get_sport_league(league, sport_league)
+        url = f"{ESPN_BASE_URL}/{sport}/{espn_league}/scoreboard"
+
+        data = self._request(url)
+        if not data:
+            return None
+
+        leagues = data.get("leagues", [])
+        if not leagues:
+            return None
+
+        league_data = leagues[0]
+        logo_url = None
+
+        # Extract logo - prefer default, fallback to first
+        logos = league_data.get("logos", [])
+        for logo in logos:
+            rel = logo.get("rel", [])
+            if "default" in rel:
+                logo_url = logo.get("href")
+                break
+        if not logo_url and logos:
+            logo_url = logos[0].get("href")
+
+        return {
+            "name": league_data.get("name"),
+            "abbreviation": league_data.get("abbreviation"),
+            "logo_url": logo_url,
+            "id": league_data.get("id"),
+        }
+
     def get_team_schedule(
         self,
         league: str,

@@ -294,7 +294,7 @@ class TeamEPGGenerator:
             selected_template = selector.select(
                 options.template.conditional_descriptions,
                 context,
-                context.current,  # GameContext for current event
+                context.game_context,  # GameContext for current event
             )
             if selected_template:
                 description = self._resolver.resolve(selected_template, context)

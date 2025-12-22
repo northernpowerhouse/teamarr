@@ -97,7 +97,8 @@ CREATE TABLE IF NOT EXISTS teams (
     -- Provider Identification (agnostic)
     provider TEXT NOT NULL DEFAULT 'espn',   -- espn, thesportsdb, etc.
     provider_team_id TEXT NOT NULL,          -- Provider's team ID
-    league TEXT NOT NULL,                    -- League code (nfl, nba, eng.1, etc.)
+    primary_league TEXT NOT NULL,            -- Main league for schedule lookups (from API)
+    leagues TEXT NOT NULL DEFAULT '[]',      -- JSON array of ALL leagues (includes primary)
     sport TEXT NOT NULL,                     -- Sport (football, basketball, soccer, etc.)
 
     -- Team Display Info
@@ -116,14 +117,15 @@ CREATE TABLE IF NOT EXISTS teams (
     -- Status
     active BOOLEAN DEFAULT 1,
 
-    UNIQUE(provider, provider_team_id, league),
+    -- One entry per team per sport (multi-league consolidated)
+    UNIQUE(provider, provider_team_id, sport),
     FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_teams_channel_id ON teams(channel_id);
-CREATE INDEX IF NOT EXISTS idx_teams_league ON teams(league);
 CREATE INDEX IF NOT EXISTS idx_teams_active ON teams(active);
 CREATE INDEX IF NOT EXISTS idx_teams_provider ON teams(provider);
+CREATE INDEX IF NOT EXISTS idx_teams_sport ON teams(sport);
 
 CREATE TRIGGER IF NOT EXISTS update_teams_timestamp
 AFTER UPDATE ON teams
@@ -177,7 +179,7 @@ CREATE TABLE IF NOT EXISTS settings (
 
     -- XMLTV
     xmltv_generator_name TEXT DEFAULT 'Teamarr v2',
-    xmltv_generator_url TEXT DEFAULT 'https://github.com/your-repo/teamarr',
+    xmltv_generator_url TEXT DEFAULT 'https://github.com/egyptiangio/teamarr',
 
     -- Display Preferences
     time_format TEXT DEFAULT '12h' CHECK(time_format IN ('12h', '24h')),
@@ -205,7 +207,7 @@ CREATE TABLE IF NOT EXISTS settings (
     tsdb_api_key TEXT,
 
     -- Channel ID Format
-    channel_id_format TEXT DEFAULT '{team_name_pascal}.{league}',
+    channel_id_format TEXT DEFAULT '{team_name_pascal}.{league_id}',
 
     -- Generation Counter (for cache purging)
     epg_generation_counter INTEGER DEFAULT 0,
@@ -244,7 +246,7 @@ CREATE TABLE IF NOT EXISTS settings (
     stream_filter_exclude_patterns JSON DEFAULT '[]',
 
     -- Schema Version
-    schema_version INTEGER DEFAULT 2
+    schema_version INTEGER DEFAULT 3
 );
 
 -- Insert default settings
@@ -510,14 +512,16 @@ INSERT OR IGNORE INTO leagues (league_code, provider, provider_league_id, provid
 
     -- Soccer (ESPN)
     ('usa.1', 'espn', 'soccer/usa.1', NULL, 'MLS', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/19.png', 1, NULL),
+    ('usa.nwsl', 'espn', 'soccer/usa.nwsl', NULL, 'NWSL', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2323.png', 1, NULL),
     ('usa.ncaa.m.1', 'espn', 'soccer/usa.ncaa.m.1', NULL, 'NCAA Men''s Soccer', 'Soccer', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png', 1, 'ncaas'),
     ('usa.ncaa.w.1', 'espn', 'soccer/usa.ncaa.w.1', NULL, 'NCAA Women''s Soccer', 'Soccer', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png', 1, 'ncaaws'),
-    ('eng.1', 'espn', 'soccer/eng.1', NULL, 'English Premier League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', 1, NULL),
+    ('eng.1', 'espn', 'soccer/eng.1', NULL, 'English Premier League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', 1, 'epl'),
     ('esp.1', 'espn', 'soccer/esp.1', NULL, 'La Liga', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png', 1, NULL),
     ('ger.1', 'espn', 'soccer/ger.1', NULL, 'Bundesliga', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/10.png', 1, NULL),
     ('ita.1', 'espn', 'soccer/ita.1', NULL, 'Serie A', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png', 1, NULL),
     ('fra.1', 'espn', 'soccer/fra.1', NULL, 'Ligue 1', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/9.png', 1, NULL),
     ('uefa.champions', 'espn', 'soccer/uefa.champions', NULL, 'UEFA Champions League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png', 1, NULL),
+    ('ksa.1', 'espn', 'soccer/ksa.1', NULL, 'Saudi Pro League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2488.png', 1, NULL),
 
     -- MMA (ESPN) - Non-team sport, import_enabled = 0
     ('ufc', 'espn', 'mma/ufc', NULL, 'UFC', 'MMA', 'https://a.espncdn.com/i/teamlogos/leagues/500/ufc.png', 0, NULL),

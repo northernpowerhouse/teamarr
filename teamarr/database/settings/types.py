@@ -88,9 +88,9 @@ class DisplaySettings:
 
     time_format: str = "12h"
     show_timezone: bool = True
-    channel_id_format: str = "{team_name_pascal}.{league}"
+    channel_id_format: str = "{team_name_pascal}.{league_id}"
     xmltv_generator_name: str = "Teamarr v2"
-    xmltv_generator_url: str = "https://github.com/your-repo/teamarr"
+    xmltv_generator_url: str = "https://github.com/egyptiangio/teamarr"
 
 
 @dataclass
@@ -129,4 +129,4 @@ class AllSettings:
     api: APISettings = field(default_factory=APISettings)
     stream_filter: StreamFilterSettings = field(default_factory=StreamFilterSettings)
     epg_generation_counter: int = 0
-    schema_version: int = 2
+    schema_version: int = 3

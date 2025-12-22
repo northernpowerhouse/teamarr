@@ -246,7 +246,14 @@ def generate_epg(
 
         # Update stats run
         total_programmes = team_result.total_programmes + group_result.total_programmes
+        total_channels = team_result.teams_processed + group_result.channels_created
         stats_run.programmes_total = total_programmes
+        stats_run.programmes_events = team_result.total_events + group_result.total_programmes
+        stats_run.programmes_pregame = team_result.total_pregame
+        stats_run.programmes_postgame = team_result.total_postgame
+        stats_run.programmes_idle = team_result.total_idle
+        stats_run.channels_created = total_channels
+        stats_run.xmltv_size_bytes = file_size
         stats_run.extra_metrics["teams_processed"] = team_result.teams_processed
         stats_run.extra_metrics["groups_processed"] = group_result.groups_processed
         stats_run.extra_metrics["file_written"] = file_written

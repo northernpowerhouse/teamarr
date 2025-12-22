@@ -12,7 +12,6 @@ from datetime import datetime
 from teamarr.core import SportsProvider
 from teamarr.database import get_db
 
-from .constants import KNOWN_LEAGUE_LOGOS, KNOWN_LEAGUE_NAMES, SPORT_PATTERNS
 from .queries import TeamLeagueCache
 
 logger = logging.getLogger(__name__)
@@ -26,6 +25,33 @@ class CacheRefresher:
 
     def __init__(self, db_factory: Callable = get_db) -> None:
         self._db = db_factory
+
+    def _get_league_metadata(self, league_slug: str) -> dict | None:
+        """Get league metadata from the leagues table.
+
+        The leagues table is the single source of truth for league display data.
+
+        Returns:
+            Dict with display_name, logo_url, sport, league_id_alias or None
+        """
+        with self._db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT display_name, logo_url, sport, league_id_alias
+                FROM leagues WHERE league_code = ?
+                """,
+                (league_slug,),
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "display_name": row["display_name"],
+                    "logo_url": row["logo_url"],
+                    "sport": row["sport"],
+                    "league_id_alias": row["league_id_alias"],
+                }
+        return None
 
     def refresh(
         self,
@@ -195,9 +221,24 @@ class CacheRefresher:
             try:
                 league_teams = provider.get_league_teams(league_slug)
 
-                # Use known mappings, fallback to slug for name
-                league_name = KNOWN_LEAGUE_NAMES.get(league_slug)
-                logo_url = KNOWN_LEAGUE_LOGOS.get(league_slug)
+                # Check leagues table first (single source of truth)
+                db_metadata = self._get_league_metadata(league_slug)
+                league_name = db_metadata["display_name"] if db_metadata else None
+                logo_url = db_metadata["logo_url"] if db_metadata else None
+
+                # Fall back to ESPN API if not in leagues table
+                if (not logo_url or not league_name) and provider_name == "espn":
+                    try:
+                        from teamarr.providers.espn.client import ESPNClient
+                        client = ESPNClient()
+                        league_info_api = client.get_league_info(league_slug)
+                        if league_info_api:
+                            if not logo_url:
+                                logo_url = league_info_api.get("logo_url")
+                            if not league_name:
+                                league_name = league_info_api.get("name")
+                    except Exception as e:
+                        logger.debug(f"Could not fetch league info for {league_slug}: {e}")
 
                 league_info = {
                     "league_slug": league_slug,
@@ -226,12 +267,13 @@ class CacheRefresher:
                 return league_info, team_entries
             except Exception as e:
                 logger.warning(f"Failed to fetch {provider_name} teams for {league_slug}: {e}")
+                db_metadata = self._get_league_metadata(league_slug)
                 return {
                     "league_slug": league_slug,
                     "provider": provider_name,
                     "sport": sport,
-                    "league_name": KNOWN_LEAGUE_NAMES.get(league_slug),
-                    "logo_url": KNOWN_LEAGUE_LOGOS.get(league_slug),
+                    "league_name": db_metadata["display_name"] if db_metadata else None,
+                    "logo_url": db_metadata["logo_url"] if db_metadata else None,
                     "team_count": 0,
                 }, []
 
@@ -262,29 +304,32 @@ class CacheRefresher:
     def _infer_sport_from_league(self, league_slug: str) -> str:
         """Infer sport from league slug.
 
-        Uses common patterns and database mappings.
+        Checks leagues table first (single source of truth), then uses heuristics.
         """
-        # Check common patterns
-        if league_slug in SPORT_PATTERNS:
-            return SPORT_PATTERNS[league_slug]
+        # Check database first (single source of truth)
+        db_metadata = self._get_league_metadata(league_slug)
+        if db_metadata and db_metadata.get("sport"):
+            return db_metadata["sport"].lower()
 
         # Soccer leagues use dot notation (e.g., eng.1, ger.1)
         if "." in league_slug:
             return "soccer"
 
-        # Check database for configured leagues
-        with self._db() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT sport FROM leagues
-                WHERE league_code = ? LIMIT 1
-                """,
-                (league_slug,),
-            )
-            row = cursor.fetchone()
-            if row:
-                return row[0].lower()
+        # Heuristic fallbacks for undiscovered leagues
+        if "football" in league_slug:
+            return "football"
+        if "basketball" in league_slug:
+            return "basketball"
+        if "hockey" in league_slug:
+            return "hockey"
+        if "baseball" in league_slug:
+            return "baseball"
+        if "lacrosse" in league_slug:
+            return "lacrosse"
+        if "volleyball" in league_slug:
+            return "volleyball"
+        if "softball" in league_slug:
+            return "softball"
 
         # Default fallback
         return "sports"

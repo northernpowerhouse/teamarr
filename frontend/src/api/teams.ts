@@ -4,7 +4,8 @@ export interface Team {
   id: number
   provider: string
   provider_team_id: string
-  league: string
+  primary_league: string
+  leagues: string[]
   sport: string
   team_name: string
   team_abbrev: string | null
@@ -21,7 +22,8 @@ export interface Team {
 export interface TeamCreate {
   provider?: string
   provider_team_id: string
-  league: string
+  primary_league: string
+  leagues?: string[]
   sport: string
   team_name: string
   team_abbrev?: string | null
@@ -42,6 +44,8 @@ export interface TeamUpdate {
   channel_logo_url?: string | null
   template_id?: number | null
   active?: boolean | null
+  primary_league?: string | null
+  leagues?: string[] | null
 }
 
 export interface TeamSearchResult {

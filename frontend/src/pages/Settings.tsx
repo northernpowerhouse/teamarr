@@ -12,6 +12,8 @@ import {
   Database,
   Plus,
   Trash2,
+  Upload,
+  ArrowRight,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -111,6 +113,10 @@ export function Settings() {
   const keywordsQuery = useExceptionKeywords()
   const createKeyword = useCreateExceptionKeyword()
   const deleteKeyword = useDeleteExceptionKeyword()
+
+  // V1 Migration state
+  const [v1DbPath, setV1DbPath] = useState("/v1-data/teamarr.db")
+  const [isMigrating, setIsMigrating] = useState(false)
 
   // Local form state
   const [dispatcharr, setDispatcharr] = useState<Partial<DispatcharrSettings>>({})
@@ -280,6 +286,34 @@ export function Settings() {
       toast.success("Keyword deleted")
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete keyword")
+    }
+  }
+
+  const handleMigrateV1 = async () => {
+    if (!v1DbPath.trim()) {
+      toast.error("Please enter the path to your V1 database")
+      return
+    }
+    setIsMigrating(true)
+    try {
+      const response = await fetch("/api/v1/templates/migrate-v1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ v1_db_path: v1DbPath }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.detail || "Migration failed")
+      }
+      if (data.migrated_count > 0) {
+        toast.success(data.message)
+      } else {
+        toast.info(data.message)
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Migration failed")
+    } finally {
+      setIsMigrating(false)
     }
   }
 
@@ -1074,7 +1108,56 @@ export function Settings() {
         </CardContent>
       </Card>
 
-      {/* 8. Advanced Settings */}
+      {/* 8. V1 Migration */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="h-5 w-5" />
+                Import from V1
+              </CardTitle>
+              <CardDescription>Migrate templates from a Teamarr V1 database</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+            <p className="text-sm">
+              <strong>How to migrate from V1:</strong>
+            </p>
+            <ol className="text-sm text-muted-foreground list-decimal list-inside space-y-1">
+              <li>Mount your V1 data directory into the container (see docker-compose.yml)</li>
+              <li>Enter the path to your V1 database below</li>
+              <li>Click "Import Templates" to migrate</li>
+            </ol>
+          </div>
+
+          <div className="flex gap-2">
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="v1-db-path">V1 Database Path</Label>
+              <Input
+                id="v1-db-path"
+                value={v1DbPath}
+                onChange={(e) => setV1DbPath(e.target.value)}
+                placeholder="/v1-data/teamarr.db"
+                className="font-mono text-sm"
+              />
+            </div>
+          </div>
+
+          <Button onClick={handleMigrateV1} disabled={isMigrating}>
+            {isMigrating ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <ArrowRight className="h-4 w-4 mr-1" />
+            )}
+            Import Templates
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* 9. Advanced Settings */}
       <Card>
         <CardHeader>
           <CardTitle>Advanced Settings</CardTitle>

@@ -2,7 +2,7 @@
 
 Processes all active teams from the database:
 1. Load team configs from database
-2. Generate EPG using TeamEPGGenerator
+2. Generate EPG using TeamEPGGenerator (parallel with ThreadPoolExecutor)
 3. Store XMLTV in database
 4. Track processing stats
 
@@ -10,16 +10,19 @@ This is the main entry point for team-based EPG generation from the scheduler.
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from sqlite3 import Connection
-from typing import Any
+from typing import Any, Callable
 
 from teamarr.consumers.team_epg import TeamEPGGenerator, TeamEPGOptions
 from teamarr.core import Programme
-from teamarr.database.stats import create_run, save_run
 from teamarr.services import SportsDataService, create_default_service
 from teamarr.utilities.xmltv import programmes_to_xmltv
+
+# Number of parallel workers for team processing
+MAX_WORKERS = 100
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +34,8 @@ class TeamConfig:
     id: int
     provider: str
     provider_team_id: str
-    league: str
+    primary_league: str
+    leagues: list[str]
     sport: str
     team_name: str
     team_abbrev: str | None
@@ -97,6 +101,22 @@ class BatchTeamResult:
     @property
     def total_programmes(self) -> int:
         return sum(r.programmes_generated for r in self.results)
+
+    @property
+    def total_events(self) -> int:
+        return sum(r.programmes_events for r in self.results)
+
+    @property
+    def total_pregame(self) -> int:
+        return sum(r.programmes_pregame for r in self.results)
+
+    @property
+    def total_postgame(self) -> int:
+        return sum(r.programmes_postgame for r in self.results)
+
+    @property
+    def total_idle(self) -> int:
+        return sum(r.programmes_idle for r in self.results)
 
     @property
     def total_errors(self) -> int:
@@ -168,7 +188,10 @@ class TeamProcessor:
             return self._process_team_internal(conn, team)
 
     def process_all_teams(self) -> BatchTeamResult:
-        """Process all active teams.
+        """Process all active teams in parallel.
+
+        Uses ThreadPoolExecutor with up to MAX_WORKERS (100) parallel workers
+        for concurrent ESPN API requests. Each worker gets its own DB connection.
 
         Returns:
             BatchTeamResult with all team results and combined XMLTV
@@ -178,38 +201,65 @@ class TeamProcessor:
         with self._db_factory() as conn:
             teams = self._get_active_teams(conn)
 
-            channels: list[dict] = []
+        if not teams:
+            batch_result.completed_at = datetime.now()
+            return batch_result
 
-            for team in teams:
-                result = self._process_team_internal(conn, team)
-                batch_result.results.append(result)
+        # Process teams in parallel
+        channels: list[dict] = []
+        num_workers = min(MAX_WORKERS, len(teams))
 
-                # Collect channel info for XMLTV
-                if result.programmes_generated > 0:
-                    channels.append(
-                        {
-                            "id": team.channel_id,
-                            "name": team.team_name,
-                            "icon": team.channel_logo_url or team.team_logo_url,
-                        }
+        logger.info(f"Processing {len(teams)} teams with {num_workers} parallel workers")
+
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            # Submit all team processing tasks
+            future_to_team = {
+                executor.submit(self._process_team_parallel, team): team
+                for team in teams
+            }
+
+            # Collect results as they complete
+            for future in as_completed(future_to_team):
+                team = future_to_team[future]
+                try:
+                    result = future.result()
+                    batch_result.results.append(result)
+
+                    # Collect channel info for XMLTV
+                    if result.programmes_generated > 0:
+                        channels.append(
+                            {
+                                "id": team.channel_id,
+                                "name": team.team_name,
+                                "icon": team.channel_logo_url or team.team_logo_url,
+                            }
+                        )
+                except Exception as e:
+                    logger.exception(f"Error processing team {team.team_name}")
+                    error_result = TeamProcessingResult(
+                        team_id=team.id,
+                        team_name=team.team_name,
+                        channel_id=team.channel_id,
                     )
+                    error_result.errors.append(str(e))
+                    error_result.completed_at = datetime.now()
+                    batch_result.results.append(error_result)
 
-            # Get all programmes from results (regenerate from storage)
-            for team in teams:
-                xmltv = self._get_team_xmltv(conn, team.id)
-                if xmltv:
-                    # Store individual team XMLTV
-                    pass
-
-            # Generate combined XMLTV from all teams
-            if channels:
-                # Re-generate all programmes for combined XMLTV
+        # Generate combined XMLTV from all teams (sequential, uses stored XMLTV)
+        if channels:
+            with self._db_factory() as conn:
                 combined_programmes = self._generate_all_programmes(conn, teams)
                 if combined_programmes:
                     batch_result.total_xmltv = programmes_to_xmltv(combined_programmes, channels)
 
         batch_result.completed_at = datetime.now()
+        logger.info(f"Completed processing {len(teams)} teams")
         return batch_result
+
+    def _process_team_parallel(self, team: TeamConfig) -> TeamProcessingResult:
+        """Process a single team with its own DB connection (for parallel execution)."""
+        with self._db_factory() as conn:
+            return self._process_team_internal(conn, team)
 
     def _process_team_internal(
         self,
@@ -232,9 +282,6 @@ class TeamProcessor:
             result.completed_at = datetime.now()
             return result
 
-        # Create stats run for tracking
-        stats_run = create_run(conn, run_type="team_epg", team_id=team.id)
-
         try:
             # Build options
             options = self._build_options(conn, team)
@@ -242,7 +289,7 @@ class TeamProcessor:
             # Generate programmes using TeamEPGGenerator
             programmes = self._epg_generator.generate_auto_discover(
                 team_id=team.provider_team_id,
-                primary_league=team.league,
+                primary_league=team.primary_league,
                 channel_id=team.channel_id,
                 team_name=team.team_name,
                 team_abbrev=team.team_abbrev,
@@ -278,14 +325,6 @@ class TeamProcessor:
                 xmltv_content = programmes_to_xmltv(programmes, [channel_dict])
                 self._store_team_xmltv(conn, team.id, xmltv_content)
 
-            # Update stats
-            stats_run.programmes_total = result.programmes_generated
-            stats_run.programmes_events = result.programmes_events
-            stats_run.programmes_pregame = result.programmes_pregame
-            stats_run.programmes_postgame = result.programmes_postgame
-            stats_run.programmes_idle = result.programmes_idle
-            stats_run.complete(status="completed")
-
             logger.info(
                 f"Processed team '{team.team_name}': {result.programmes_generated} programmes"
             )
@@ -293,10 +332,6 @@ class TeamProcessor:
         except Exception as e:
             logger.exception(f"Error processing team {team.team_name}")
             result.errors.append(str(e))
-            stats_run.complete(status="failed", error=str(e))
-
-        # Save stats run
-        save_run(conn, stats_run)
 
         result.completed_at = datetime.now()
         return result
@@ -343,11 +378,21 @@ class TeamProcessor:
 
     def _row_to_team(self, row) -> TeamConfig:
         """Convert database row to TeamConfig."""
+        import json
+
+        # Parse leagues JSON
+        leagues_str = row["leagues"]
+        try:
+            leagues = json.loads(leagues_str) if leagues_str else []
+        except (json.JSONDecodeError, TypeError):
+            leagues = []
+
         return TeamConfig(
             id=row["id"],
             provider=row["provider"],
             provider_team_id=row["provider_team_id"],
-            league=row["league"],
+            primary_league=row["primary_league"],
+            leagues=leagues,
             sport=row["sport"],
             team_name=row["team_name"],
             team_abbrev=row["team_abbrev"],
@@ -418,7 +463,7 @@ class TeamProcessor:
 
             programmes = self._epg_generator.generate_auto_discover(
                 team_id=team.provider_team_id,
-                primary_league=team.league,
+                primary_league=team.primary_league,
                 channel_id=team.channel_id,
                 team_name=team.team_name,
                 team_abbrev=team.team_abbrev,

@@ -1,7 +1,7 @@
 """Multi-league stream matcher.
 
 Uses Events → Streams approach:
-1. Fetch all events from configured leagues
+1. Fetch all events from configured leagues (parallel with ThreadPoolExecutor)
 2. Generate search patterns from event data (team names, abbreviations)
 3. For each stream, find events whose patterns appear in the stream name
 
@@ -13,6 +13,7 @@ This is more robust than parsing stream names because:
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Callable
@@ -20,6 +21,9 @@ from typing import Any, Callable
 from teamarr.core import Event
 from teamarr.services import SportsDataService
 from teamarr.utilities.fuzzy_match import FuzzyMatcher, get_matcher
+
+# Number of parallel workers for event fetching
+MAX_WORKERS = 100
 
 logger = logging.getLogger(__name__)
 
@@ -157,17 +161,42 @@ class MultiLeagueMatcher:
         )
 
     def _build_event_patterns(self, target_date: date) -> None:
-        """Build search patterns from all events."""
+        """Build search patterns from all events (parallel league fetching)."""
         if self._patterns_date == target_date:
             return
 
         self._event_patterns = []
 
-        for league in self._search_leagues:
-            events = self._service.get_events(league, target_date)
-            for event in events:
-                patterns = self._generate_patterns(event, league)
-                self._event_patterns.append(patterns)
+        if not self._search_leagues:
+            self._patterns_date = target_date
+            return
+
+        num_workers = min(MAX_WORKERS, len(self._search_leagues))
+
+        def fetch_league_events(league: str) -> tuple[str, list[Event]]:
+            """Fetch events for a single league (for parallel execution)."""
+            try:
+                events = self._service.get_events(league, target_date)
+                return (league, events)
+            except Exception as e:
+                logger.warning(f"Failed to fetch events for {league}: {e}")
+                return (league, [])
+
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = {
+                executor.submit(fetch_league_events, league): league
+                for league in self._search_leagues
+            }
+
+            for future in as_completed(futures):
+                try:
+                    league, events = future.result()
+                    for event in events:
+                        patterns = self._generate_patterns(event, league)
+                        self._event_patterns.append(patterns)
+                except Exception as e:
+                    league = futures[future]
+                    logger.warning(f"Failed to fetch events for {league}: {e}")
 
         self._patterns_date = target_date
 

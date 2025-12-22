@@ -187,18 +187,10 @@ def extract_sport_lower(ctx: TemplateContext, game_ctx: GameContext | None) -> s
 def extract_league_id(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
     """Return league_id_alias if configured, otherwise league_code."""
     from teamarr.database import get_db
+    from teamarr.database.leagues import get_league_id
 
-    league = ctx.team_config.league
     with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT league_id_alias FROM leagues WHERE league_code = ?",
-            (league,),
-        )
-        row = cursor.fetchone()
-        if row and row["league_id_alias"]:
-            return row["league_id_alias"]
-    return league
+        return get_league_id(conn, ctx.team_config.league)
 
 
 @register_variable(

@@ -61,9 +61,9 @@ def get_dashboard_stats():
 
         # Teams by league
         leagues_cursor = conn.execute("""
-            SELECT league, COUNT(*) as count
+            SELECT primary_league as league, COUNT(*) as count
             FROM teams
-            GROUP BY league
+            GROUP BY primary_league
             ORDER BY count DESC
         """)
         team_leagues = [

@@ -13,7 +13,6 @@ from collections.abc import Callable
 
 from teamarr.database import get_db
 
-from .constants import KNOWN_LEAGUE_LOGOS, KNOWN_LEAGUE_NAMES, SPORT_PATTERNS
 from .queries import TeamLeagueCache
 from .refresh import CacheRefresher
 from .types import CacheStats, LeagueEntry, TeamEntry
@@ -153,10 +152,6 @@ __all__ = [
     "CacheStats",
     "TeamEntry",
     "LeagueEntry",
-    # Constants
-    "KNOWN_LEAGUE_LOGOS",
-    "KNOWN_LEAGUE_NAMES",
-    "SPORT_PATTERNS",
     # Classes
     "TeamLeagueCache",
     "CacheRefresher",

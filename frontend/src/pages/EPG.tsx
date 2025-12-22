@@ -45,8 +45,8 @@ function formatDuration(ms: number | null): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B"
+function formatBytes(bytes: number | undefined | null): string {
+  if (bytes == null || isNaN(bytes) || bytes === 0) return "0 B"
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`

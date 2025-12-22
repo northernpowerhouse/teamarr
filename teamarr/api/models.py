@@ -14,7 +14,8 @@ class TeamCreate(BaseModel):
 
     provider: str = "espn"
     provider_team_id: str
-    league: str
+    primary_league: str  # Main league for schedule lookups
+    leagues: list[str] = []  # All leagues (includes primary)
     sport: str
     team_name: str
     team_abbrev: str | None = None
@@ -37,6 +38,8 @@ class TeamUpdate(BaseModel):
     channel_logo_url: str | None = None
     template_id: int | None = None
     active: bool | None = None
+    primary_league: str | None = None
+    leagues: list[str] | None = None
 
 
 class TeamResponse(BaseModel):
@@ -47,7 +50,8 @@ class TeamResponse(BaseModel):
     id: int
     provider: str
     provider_team_id: str
-    league: str
+    primary_league: str
+    leagues: list[str]
     sport: str
     team_name: str
     team_abbrev: str | None

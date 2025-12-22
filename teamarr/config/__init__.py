@@ -121,7 +121,7 @@ class Config:
     _DEFAULT_DISPLAY_SETTINGS: dict = {
         "time_format": "12h",
         "show_timezone": True,
-        "channel_id_format": "{team_name_pascal}.{league}",
+        "channel_id_format": "{team_name_pascal}.{league_id}",
         "xmltv_generator_name": "Teamarr v2",
         "xmltv_generator_url": "",
     }

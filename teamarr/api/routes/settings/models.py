@@ -154,7 +154,7 @@ class DisplaySettingsModel(BaseModel):
 
     time_format: str = "12h"
     show_timezone: bool = True
-    channel_id_format: str = "{team_name_pascal}.{league}"
+    channel_id_format: str = "{team_name_pascal}.{league_id}"
     xmltv_generator_name: str = "Teamarr v2"
     xmltv_generator_url: str = ""
     tsdb_api_key: str | None = None  # Optional TheSportsDB premium API key
@@ -176,4 +176,4 @@ class AllSettingsModel(BaseModel):
     durations: DurationSettingsModel
     display: DisplaySettingsModel
     epg_generation_counter: int = 0
-    schema_version: int = 2
+    schema_version: int = 3

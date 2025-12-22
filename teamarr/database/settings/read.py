@@ -20,6 +20,21 @@ from .types import (
     StreamFilterSettings,
 )
 
+# Single source of truth for defaults - the dataclass itself
+_DISPLAY_DEFAULTS = DisplaySettings()
+
+
+def _build_display_settings(row) -> DisplaySettings:
+    """Build DisplaySettings from DB row, using dataclass defaults for NULL values."""
+    d = _DISPLAY_DEFAULTS
+    return DisplaySettings(
+        time_format=row["time_format"] or d.time_format,
+        show_timezone=bool(row["show_timezone"]) if row["show_timezone"] is not None else d.show_timezone,
+        channel_id_format=row["channel_id_format"] or d.channel_id_format,
+        xmltv_generator_name=row["xmltv_generator_name"] or d.xmltv_generator_name,
+        xmltv_generator_url=row["xmltv_generator_url"] or d.xmltv_generator_url,
+    )
+
 
 def get_all_settings(conn: Connection) -> AllSettings:
     """Get all application settings.
@@ -91,13 +106,7 @@ def get_all_settings(conn: Connection) -> AllSettings:
             racing=row["duration_racing"] or 3.0,
             cricket=row["duration_cricket"] or 4.0,
         ),
-        display=DisplaySettings(
-            time_format=row["time_format"] or "12h",
-            show_timezone=bool(row["show_timezone"]),
-            channel_id_format=row["channel_id_format"] or "{team_name_pascal}.{league}",
-            xmltv_generator_name=row["xmltv_generator_name"] or "Teamarr v2",
-            xmltv_generator_url=row["xmltv_generator_url"] or "",
-        ),
+        display=_build_display_settings(row),
         api=APISettings(
             timeout=row["api_timeout"] or 10,
             retry_count=row["api_retry_count"] or 3,
@@ -245,13 +254,7 @@ def get_display_settings(conn: Connection) -> DisplaySettings:
     if not row:
         return DisplaySettings()
 
-    return DisplaySettings(
-        time_format=row["time_format"] or "12h",
-        show_timezone=bool(row["show_timezone"]) if row["show_timezone"] is not None else True,
-        channel_id_format=row["channel_id_format"] or "{team_name_pascal}.{league}",
-        xmltv_generator_name=row["xmltv_generator_name"] or "Teamarr v2",
-        xmltv_generator_url=row["xmltv_generator_url"] or "",
-    )
+    return _build_display_settings(row)
 
 
 def get_stream_filter_settings(conn: Connection) -> StreamFilterSettings:

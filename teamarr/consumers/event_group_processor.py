@@ -3,7 +3,7 @@
 Connects stream matching to channel lifecycle:
 1. Load group config from database
 2. Fetch M3U streams from Dispatcharr
-3. Fetch events from data providers
+3. Fetch events from data providers (parallel with ThreadPoolExecutor)
 4. Match streams to events
 5. Create/update channels via ChannelLifecycleService
 6. Generate XMLTV EPG
@@ -13,10 +13,14 @@ This is the main entry point for event-based EPG generation.
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from sqlite3 import Connection
 from typing import Any
+
+# Number of parallel workers for event fetching
+MAX_WORKERS = 100
 
 from teamarr.consumers.cached_matcher import CachedBatchResult, CachedMatcher
 from teamarr.consumers.channel_lifecycle import (
@@ -958,15 +962,32 @@ class EventGroupProcessor:
             return [row[0] for row in cursor.fetchall()]
 
     def _fetch_events(self, leagues: list[str], target_date: date) -> list[Event]:
-        """Fetch events from data providers for leagues."""
-        all_events: list[Event] = []
+        """Fetch events from data providers for leagues in parallel."""
+        if not leagues:
+            return []
 
-        for league in leagues:
+        all_events: list[Event] = []
+        num_workers = min(MAX_WORKERS, len(leagues))
+
+        def fetch_league_events(league: str) -> tuple[str, list[Event]]:
+            """Fetch events for a single league (for parallel execution)."""
             try:
                 events = self._service.get_events(league, target_date)
-                all_events.extend(events)
+                return (league, events)
             except Exception as e:
                 logger.warning(f"Failed to fetch events for {league}: {e}")
+                return (league, [])
+
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = {executor.submit(fetch_league_events, league): league for league in leagues}
+
+            for future in as_completed(futures):
+                try:
+                    league, events = future.result()
+                    all_events.extend(events)
+                except Exception as e:
+                    league = futures[future]
+                    logger.warning(f"Failed to fetch events for {league}: {e}")
 
         return all_events
 

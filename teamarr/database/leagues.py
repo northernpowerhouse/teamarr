@@ -13,6 +13,29 @@ import sqlite3
 from teamarr.core import LeagueMapping
 
 
+def get_league_id(conn: sqlite3.Connection, league_code: str) -> str:
+    """Get the display league ID for a league.
+
+    Returns league_id_alias if configured, otherwise returns league_code.
+    This is the SINGLE SOURCE OF TRUTH for resolving league IDs.
+
+    Args:
+        conn: Database connection
+        league_code: Raw league code (e.g., 'eng.1', 'college-football')
+
+    Returns:
+        Alias (e.g., 'epl', 'ncaaf') if configured, otherwise league_code
+    """
+    cursor = conn.execute(
+        "SELECT league_id_alias FROM leagues WHERE league_code = ?",
+        (league_code,),
+    )
+    row = cursor.fetchone()
+    if row and row["league_id_alias"]:
+        return row["league_id_alias"]
+    return league_code
+
+
 def get_league_mapping(
     conn: sqlite3.Connection, league_code: str, provider: str
 ) -> LeagueMapping | None:

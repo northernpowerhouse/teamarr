@@ -1,8 +1,11 @@
 """Templates API endpoints."""
 
 import json
+import sqlite3
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel
 
 from teamarr.api.models import (
     TemplateCreate,
@@ -203,3 +206,197 @@ def delete_template(template_id: int):
         cursor = conn.execute("DELETE FROM templates WHERE id = ?", (template_id,))
         if cursor.rowcount == 0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
+
+
+# V1 Migration
+
+
+class V1MigrateRequest(BaseModel):
+    """Request to migrate templates from V1 database."""
+
+    v1_db_path: str
+
+
+class V1MigrateResponse(BaseModel):
+    """Response from V1 migration."""
+
+    success: bool
+    migrated_count: int
+    templates: list[str]
+    message: str
+
+
+def _parse_v1_json(value, default=None):
+    """Parse JSON string from V1, returning default on failure."""
+    if value is None:
+        return default if default is not None else {}
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return default if default is not None else {}
+
+
+def _convert_v1_to_v2(v1_row: dict) -> dict:
+    """Convert V1 template row to V2 format."""
+    # Parse V1 JSON fields
+    v1_flags = _parse_v1_json(v1_row.get("flags"), {"new": True, "live": False, "date": False})
+    v1_categories = _parse_v1_json(v1_row.get("categories"), ["Sports"])
+    v1_description_options = _parse_v1_json(v1_row.get("description_options"), [])
+
+    # Build V2 pregame_fallback from V1 individual fields
+    pregame_fallback = {
+        "title": v1_row.get("pregame_title") or "Pregame Coverage",
+        "subtitle": v1_row.get("pregame_subtitle"),
+        "description": v1_row.get("pregame_description"),
+        "art_url": v1_row.get("pregame_art_url"),
+    }
+
+    # Build V2 postgame_fallback from V1 individual fields
+    postgame_fallback = {
+        "title": v1_row.get("postgame_title") or "Postgame Recap",
+        "subtitle": v1_row.get("postgame_subtitle"),
+        "description": v1_row.get("postgame_description"),
+        "art_url": v1_row.get("postgame_art_url"),
+    }
+
+    # Build V2 postgame_conditional from V1 fields
+    postgame_conditional = {
+        "enabled": bool(v1_row.get("postgame_conditional_enabled")),
+        "description_final": v1_row.get("postgame_description_final"),
+        "description_not_final": v1_row.get("postgame_description_not_final"),
+    }
+
+    # Build V2 idle_content from V1 individual fields
+    idle_content = {
+        "title": v1_row.get("idle_title") or "{team_name} Programming",
+        "subtitle": v1_row.get("idle_subtitle"),
+        "description": v1_row.get("idle_description"),
+        "art_url": v1_row.get("idle_art_url"),
+    }
+
+    # Build V2 idle_conditional from V1 fields
+    idle_conditional = {
+        "enabled": bool(v1_row.get("idle_conditional_enabled")),
+        "description_final": v1_row.get("idle_description_final"),
+        "description_not_final": v1_row.get("idle_description_not_final"),
+    }
+
+    # Build V2 idle_offseason from V1 fields
+    idle_offseason = {
+        "title_enabled": bool(v1_row.get("idle_title_offseason_enabled")),
+        "title": v1_row.get("idle_title_offseason"),
+        "subtitle_enabled": bool(v1_row.get("idle_subtitle_offseason_enabled")),
+        "subtitle": v1_row.get("idle_subtitle_offseason"),
+        "description_enabled": bool(v1_row.get("idle_offseason_enabled")),
+        "description": v1_row.get("idle_description_offseason"),
+    }
+
+    # Map V1 to V2 fields
+    return {
+        "name": v1_row.get("name"),
+        "template_type": v1_row.get("template_type") or "team",
+        "sport": v1_row.get("sport"),
+        "league": v1_row.get("league"),
+        "title_format": v1_row.get("title_format"),
+        "subtitle_template": v1_row.get("subtitle_template"),
+        "description_template": None,  # V2 uses conditional_descriptions instead
+        "program_art_url": v1_row.get("program_art_url"),
+        "game_duration_mode": v1_row.get("game_duration_mode") or "sport",
+        "game_duration_override": v1_row.get("game_duration_override"),
+        "xmltv_flags": json.dumps(v1_flags),
+        "xmltv_categories": json.dumps(v1_categories),
+        "categories_apply_to": v1_row.get("categories_apply_to") or "all",
+        "pregame_enabled": bool(v1_row.get("pregame_enabled")),
+        "pregame_periods": json.dumps([]),  # V2 uses periods array, V1 didn't
+        "pregame_fallback": json.dumps(pregame_fallback),
+        "postgame_enabled": bool(v1_row.get("postgame_enabled")),
+        "postgame_periods": json.dumps([]),  # V2 uses periods array, V1 didn't
+        "postgame_fallback": json.dumps(postgame_fallback),
+        "postgame_conditional": json.dumps(postgame_conditional),
+        "idle_enabled": bool(v1_row.get("idle_enabled")),
+        "idle_content": json.dumps(idle_content),
+        "idle_conditional": json.dumps(idle_conditional),
+        "idle_offseason": json.dumps(idle_offseason),
+        "conditional_descriptions": json.dumps(v1_description_options),
+        "event_channel_name": v1_row.get("channel_name"),
+        "event_channel_logo_url": v1_row.get("channel_logo_url"),
+    }
+
+
+@router.post("/templates/migrate-v1", response_model=V1MigrateResponse)
+def migrate_v1_templates(request: V1MigrateRequest):
+    """Migrate templates from V1 database.
+
+    Converts V1 template format to V2's restructured format.
+    Skips migration if V2 already has templates with the same name.
+    """
+    v1_path = Path(request.v1_db_path)
+
+    if not v1_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"V1 database not found at {v1_path}",
+        )
+
+    # Read V1 templates
+    try:
+        v1_conn = sqlite3.connect(v1_path)
+        v1_conn.row_factory = sqlite3.Row
+        cursor = v1_conn.execute("SELECT * FROM templates")
+        v1_templates = [dict(row) for row in cursor.fetchall()]
+        v1_conn.close()
+    except sqlite3.Error as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error reading V1 database: {e}",
+        ) from None
+
+    if not v1_templates:
+        return V1MigrateResponse(
+            success=True,
+            migrated_count=0,
+            templates=[],
+            message="No templates found in V1 database",
+        )
+
+    # Get existing V2 template names to avoid duplicates
+    with get_db() as conn:
+        cursor = conn.execute("SELECT name FROM templates")
+        existing_names = {row["name"] for row in cursor.fetchall()}
+
+    # Convert and insert templates
+    migrated = []
+    skipped = []
+
+    with get_db() as conn:
+        for v1_row in v1_templates:
+            v2_template = _convert_v1_to_v2(v1_row)
+            name = v2_template["name"]
+
+            if name in existing_names:
+                skipped.append(name)
+                continue
+
+            columns = list(v2_template.keys())
+            placeholders = ", ".join("?" * len(columns))
+            column_str = ", ".join(columns)
+            values = [v2_template[col] for col in columns]
+
+            conn.execute(
+                f"INSERT INTO templates ({column_str}) VALUES ({placeholders})",
+                values,
+            )
+            migrated.append(name)
+
+    message_parts = []
+    if migrated:
+        message_parts.append(f"Migrated {len(migrated)} template(s)")
+    if skipped:
+        message_parts.append(f"Skipped {len(skipped)} existing: {', '.join(skipped)}")
+
+    return V1MigrateResponse(
+        success=True,
+        migrated_count=len(migrated),
+        templates=migrated,
+        message=". ".join(message_parts) if message_parts else "No templates to migrate",
+    )

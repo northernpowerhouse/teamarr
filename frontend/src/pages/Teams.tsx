@@ -7,8 +7,6 @@ import {
   Pencil,
   Loader2,
   Search,
-  LayoutGrid,
-  List,
   Filter,
   X,
 } from "lucide-react"
@@ -71,25 +69,6 @@ async function fetchLeagues(): Promise<{ slug: string; logo_url: string | null }
   return data.leagues || []
 }
 
-// Fetch team's leagues (for multi-league display)
-interface TeamLeagueInfo {
-  slug: string
-  name: string
-  sport: string | null
-  logo_url: string | null
-}
-
-async function fetchTeamLeagues(
-  provider: string,
-  providerTeamId: string
-): Promise<TeamLeagueInfo[]> {
-  const response = await fetch(`/api/v1/cache/team-leagues/${provider}/${providerTeamId}`)
-  if (!response.ok) return []
-  const data = await response.json()
-  return data.leagues || []
-}
-
-type ViewMode = "table" | "cards"
 type ActiveFilter = "all" | "active" | "inactive"
 
 interface TeamUpdate {
@@ -232,8 +211,7 @@ export function Teams() {
   const updateMutation = useUpdateTeam()
   const deleteMutation = useDeleteTeam()
 
-  // View and filter state
-  const [viewMode, setViewMode] = useState<ViewMode>("table")
+  // Filter state
   const [searchFilter, setSearchFilter] = useState("")
   const [leagueFilter, setLeagueFilter] = useState<string>("")
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("all")
@@ -241,6 +219,7 @@ export function Teams() {
 
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null)
   const [bulkTemplateId, setBulkTemplateId] = useState<number | null>(null)
   const [showBulkTemplate, setShowBulkTemplate] = useState(false)
   const [showBulkDelete, setShowBulkDelete] = useState(false)
@@ -250,33 +229,17 @@ export function Teams() {
   const [editingTeam, setEditingTeam] = useState<Team | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<Team | null>(null)
 
-  // Multi-league state for soccer teams
-  const [teamLeaguesCache, setTeamLeaguesCache] = useState<Record<string, TeamLeagueInfo[]>>({})
-  const [loadingTeamLeagues, setLoadingTeamLeagues] = useState<Set<string>>(new Set())
-
-  const loadTeamLeagues = async (provider: string, providerTeamId: string) => {
-    const cacheKey = `${provider}:${providerTeamId}`
-    if (teamLeaguesCache[cacheKey] || loadingTeamLeagues.has(cacheKey)) return
-
-    setLoadingTeamLeagues((prev) => new Set(prev).add(cacheKey))
-    try {
-      const leagues = await fetchTeamLeagues(provider, providerTeamId)
-      setTeamLeaguesCache((prev) => ({ ...prev, [cacheKey]: leagues }))
-    } finally {
-      setLoadingTeamLeagues((prev) => {
-        const next = new Set(prev)
-        next.delete(cacheKey)
-        return next
-      })
-    }
-  }
-
-  // Get unique leagues from teams
+  // Get unique leagues from teams (using primary_league)
   const leagues = useMemo(() => {
     if (!teams) return []
-    const uniqueLeagues = [...new Set(teams.map((t) => t.league))]
+    const uniqueLeagues = [...new Set(teams.map((t) => t.primary_league))]
     return uniqueLeagues.sort()
   }, [teams])
+
+  // Filter templates to only show team templates
+  const teamTemplates = useMemo(() => {
+    return templates?.filter((t) => t.template_type === "team") ?? []
+  }, [templates])
 
   // Calculate team stats for tiles
   const teamStats = useMemo(() => {
@@ -285,12 +248,13 @@ export function Teams() {
     const byLeague: Record<string, { total: number; enabled: number }> = {}
 
     for (const team of teams) {
-      if (!byLeague[team.league]) {
-        byLeague[team.league] = { total: 0, enabled: 0 }
+      // Count by primary league
+      if (!byLeague[team.primary_league]) {
+        byLeague[team.primary_league] = { total: 0, enabled: 0 }
       }
-      byLeague[team.league].total++
+      byLeague[team.primary_league].total++
       if (team.active) {
-        byLeague[team.league].enabled++
+        byLeague[team.primary_league].enabled++
       }
     }
 
@@ -312,12 +276,13 @@ export function Teams() {
           team.team_name.toLowerCase().includes(q) ||
           team.team_abbrev?.toLowerCase().includes(q) ||
           team.channel_id.toLowerCase().includes(q) ||
-          team.league.toLowerCase().includes(q)
+          team.primary_league.toLowerCase().includes(q) ||
+          team.leagues.some((l) => l.toLowerCase().includes(q))
         if (!matches) return false
       }
 
-      // League filter
-      if (leagueFilter && team.league !== leagueFilter) return false
+      // League filter - match if any of the team's leagues match
+      if (leagueFilter && !team.leagues.includes(leagueFilter)) return false
 
       // Active filter
       if (activeFilter === "active" && !team.active) return false
@@ -330,6 +295,7 @@ export function Teams() {
   // Clear selection when filters change
   useEffect(() => {
     setSelectedIds(new Set())
+    setLastClickedIndex(null)
   }, [searchFilter, leagueFilter, activeFilter])
 
   const openEdit = (team: Team) => {
@@ -370,16 +336,32 @@ export function Teams() {
     }
   }
 
-  const toggleSelect = (id: number) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
+  const toggleSelect = (id: number, index: number, shiftKey: boolean) => {
+    if (shiftKey && lastClickedIndex !== null) {
+      // Shift-click: select range
+      const start = Math.min(lastClickedIndex, index)
+      const end = Math.max(lastClickedIndex, index)
+
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        for (let i = start; i <= end; i++) {
+          next.add(filteredTeams[i].id)
+        }
+        return next
+      })
+    } else {
+      // Regular click: toggle single item
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        if (next.has(id)) {
+          next.delete(id)
+        } else {
+          next.add(id)
+        }
+        return next
+      })
+    }
+    setLastClickedIndex(index)
   }
 
   const handleBulkToggleActive = async (active: boolean) => {
@@ -572,28 +554,6 @@ export function Teams() {
                 Clear
               </Button>
             )}
-
-            <div className="flex-1" />
-
-            {/* View toggle */}
-            <div className="flex border rounded-md">
-              <Button
-                variant={viewMode === "table" ? "secondary" : "ghost"}
-                size="sm"
-                className="rounded-r-none"
-                onClick={() => setViewMode("table")}
-              >
-                <List className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={viewMode === "cards" ? "secondary" : "ghost"}
-                size="sm"
-                className="rounded-l-none"
-                onClick={() => setViewMode("cards")}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-            </div>
           </div>
 
           {/* Expanded filters */}
@@ -631,35 +591,63 @@ export function Teams() {
         </CardContent>
       </Card>
 
-      {/* Bulk Actions Bar */}
-      {selectedIds.size > 0 && (
-        <Card className="bg-primary/5 border-primary/20">
-          <CardContent className="py-3">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium">
-                {selectedIds.size} team{selectedIds.size !== 1 && "s"} selected
-              </span>
-              <div className="flex-1" />
-              <Button variant="outline" size="sm" onClick={() => handleBulkToggleActive(true)}>
-                Enable
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => handleBulkToggleActive(false)}>
-                Disable
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setShowBulkTemplate(true)}>
-                Assign Template
-              </Button>
-              <Button variant="destructive" size="sm" onClick={() => setShowBulkDelete(true)}>
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete
-              </Button>
+      {/* Bulk Actions Bar - always visible */}
+      <Card className={cn(
+        "transition-colors",
+        selectedIds.size > 0 ? "bg-primary/5 border-primary/20" : "bg-muted/30"
+      )}>
+        <CardContent className="py-3">
+          <div className="flex items-center gap-3">
+            <span className={cn(
+              "text-sm font-medium",
+              selectedIds.size === 0 && "text-muted-foreground"
+            )}>
+              {selectedIds.size > 0
+                ? `${selectedIds.size} team${selectedIds.size !== 1 ? "s" : ""} selected`
+                : "No teams selected"}
+            </span>
+            <div className="flex-1" />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBulkToggleActive(true)}
+              disabled={selectedIds.size === 0}
+            >
+              Enable
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBulkToggleActive(false)}
+              disabled={selectedIds.size === 0}
+            >
+              Disable
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowBulkTemplate(true)}
+              disabled={selectedIds.size === 0}
+            >
+              Assign Template
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setShowBulkDelete(true)}
+              disabled={selectedIds.size === 0}
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Delete
+            </Button>
+            {selectedIds.size > 0 && (
               <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
                 <X className="h-4 w-4" />
               </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Teams List */}
       <Card>
@@ -680,7 +668,7 @@ export function Teams() {
                 ? "No teams configured. Add a team to generate team-based EPG."
                 : "No teams match the current filters."}
             </div>
-          ) : viewMode === "table" ? (
+          ) : (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -702,7 +690,7 @@ export function Teams() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredTeams.map((team) => (
+                {filteredTeams.map((team, index) => (
                   <TableRow
                     key={team.id}
                     className={cn(selectedIds.has(team.id) && "bg-muted/50")}
@@ -710,7 +698,7 @@ export function Teams() {
                     <TableCell>
                       <Checkbox
                         checked={selectedIds.has(team.id)}
-                        onCheckedChange={() => toggleSelect(team.id)}
+                        onClick={(e) => toggleSelect(team.id, index, e.shiftKey)}
                       />
                     </TableCell>
                     <TableCell>
@@ -732,29 +720,26 @@ export function Teams() {
                     </TableCell>
                     <TableCell>
                       {(() => {
-                        const cacheKey = `${team.provider}:${team.provider_team_id}`
-                        const teamLeagues = teamLeaguesCache[cacheKey]
-                        const hasMultiLeague = team.sport === "soccer" && teamLeagues && teamLeagues.length > 1
+                        const hasMultiLeague = team.leagues.length > 1
 
                         const leagueDisplay = (
                           <div
                             className={cn("relative inline-block", hasMultiLeague && "cursor-help")}
-                            onMouseEnter={() => team.sport === "soccer" && loadTeamLeagues(team.provider, team.provider_team_id)}
                           >
-                            {leagueLogos[team.league] ? (
+                            {leagueLogos[team.primary_league] ? (
                               <img
-                                src={leagueLogos[team.league]}
-                                alt={team.league.toUpperCase()}
-                                title={team.league.toUpperCase()}
+                                src={leagueLogos[team.primary_league]}
+                                alt={team.primary_league.toUpperCase()}
+                                title={team.primary_league.toUpperCase()}
                                 className="h-7 w-auto object-contain"
                               />
                             ) : (
-                              <Badge variant="secondary">{team.league}</Badge>
+                              <Badge variant="secondary">{team.primary_league}</Badge>
                             )}
                             {/* Multi-league badge */}
                             {hasMultiLeague && (
                               <span className="absolute -bottom-1 -right-1 bg-primary text-primary-foreground text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center border border-background">
-                                +{teamLeagues.length - 1}
+                                +{team.leagues.length - 1}
                               </span>
                             )}
                           </div>
@@ -768,17 +753,17 @@ export function Teams() {
                               align="start"
                               content={
                                 <div className="space-y-1.5">
-                                  {teamLeagues.map((league) => (
-                                    <div key={league.slug} className="flex items-center gap-2 text-sm">
-                                      {league.logo_url && (
+                                  {team.leagues.map((leagueSlug) => (
+                                    <div key={leagueSlug} className="flex items-center gap-2 text-sm">
+                                      {leagueLogos[leagueSlug] && (
                                         <img
-                                          src={league.logo_url}
+                                          src={leagueLogos[leagueSlug]}
                                           alt=""
                                           className="h-5 w-5 object-contain"
                                         />
                                       )}
-                                      <span className={league.slug === team.league ? "font-medium text-foreground" : "text-muted-foreground"}>
-                                        {league.name || league.slug}
+                                      <span className={leagueSlug === team.primary_league ? "font-medium text-foreground" : "text-muted-foreground"}>
+                                        {leagueSlug.toUpperCase()}
                                       </span>
                                     </div>
                                   ))}
@@ -841,81 +826,6 @@ export function Teams() {
                 ))}
               </TableBody>
             </Table>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {filteredTeams.map((team) => (
-                <div
-                  key={team.id}
-                  className={cn(
-                    "border rounded-lg p-3 cursor-pointer hover:border-primary/50 transition-colors",
-                    selectedIds.has(team.id) && "border-primary bg-primary/5"
-                  )}
-                  onClick={() => toggleSelect(team.id)}
-                >
-                  <div className="flex items-start gap-3">
-                    <Checkbox
-                      checked={selectedIds.has(team.id)}
-                      onCheckedChange={() => toggleSelect(team.id)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    {team.team_logo_url ? (
-                      <img
-                        src={team.team_logo_url}
-                        alt=""
-                        className="h-10 w-10 object-contain bg-white rounded p-0.5"
-                      />
-                    ) : (
-                      <div className="h-10 w-10 bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">
-                        {team.team_abbrev || "?"}
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{team.team_name}</div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge variant="secondary" className="text-xs">
-                          {team.league}
-                        </Badge>
-                        <Badge
-                          variant={team.active ? "default" : "outline"}
-                          className={cn("text-xs", team.active && "bg-green-500/20 text-green-600")}
-                        >
-                          {team.active ? "Active" : "Inactive"}
-                        </Badge>
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-1 truncate font-mono">
-                        {team.channel_id}
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          openEdit(team)
-                        }}
-                        title="Edit"
-                      >
-                        <Pencil className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setDeleteConfirm(team)
-                        }}
-                        title="Delete"
-                      >
-                        <Trash2 className="h-3 w-3 text-destructive" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
           )}
         </CardContent>
       </Card>
@@ -924,7 +834,7 @@ export function Teams() {
       {editingTeam && (
         <EditTeamDialog
           team={editingTeam}
-          templates={templates ?? []}
+          templates={teamTemplates}
           open={showDialog}
           onOpenChange={(open) => {
             if (!open) {
@@ -980,7 +890,7 @@ export function Teams() {
               }
             >
               <option value="">Default Template</option>
-              {templates?.map((template) => (
+              {teamTemplates.map((template) => (
                 <option key={template.id} value={template.id.toString()}>
                   {template.name}
                 </option>

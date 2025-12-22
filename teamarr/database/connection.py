@@ -88,16 +88,159 @@ def _seed_tsdb_cache_if_needed(conn: sqlite3.Connection) -> None:
 def _run_migrations(conn: sqlite3.Connection) -> None:
     """Run database migrations for existing databases.
 
-    Adds new columns that may not exist in older database versions.
-    Safe to call multiple times - checks for column existence first.
+    Uses schema_version in settings table to track applied migrations.
+    Safe to call multiple times - checks version before running.
+
+    Schema versions:
+    - 2: Initial V2 schema
+    - 3: Teams consolidated (league -> primary_league + leagues array)
     """
-    # Migration: Add description_template to templates table
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Get current schema version
+    try:
+        row = conn.execute("SELECT schema_version FROM settings WHERE id = 1").fetchone()
+        current_version = row["schema_version"] if row else 2
+    except Exception:
+        current_version = 2
+
+    # Migration: Add description_template to templates table (pre-versioning)
     _add_column_if_not_exists(
         conn, "templates", "description_template", "TEXT DEFAULT '{matchup} | {venue_full}'"
     )
 
-    # Migration: Add tsdb_api_key to settings table
+    # Migration: Add tsdb_api_key to settings table (pre-versioning)
     _add_column_if_not_exists(conn, "settings", "tsdb_api_key", "TEXT")
+
+    # Version 3: teams.league (TEXT) -> teams.primary_league + teams.leagues (JSON array)
+    if current_version < 3:
+        if _migrate_teams_to_leagues_array(conn):
+            conn.execute("UPDATE settings SET schema_version = 3 WHERE id = 1")
+            logger.info("Schema upgraded to version 3")
+            current_version = 3
+
+
+def _migrate_teams_to_leagues_array(conn: sqlite3.Connection) -> bool:
+    """Migrate teams table from single league to leagues JSON array.
+
+    Consolidates teams by (provider, provider_team_id, sport) with all
+    their leagues merged into a JSON array.
+
+    Returns:
+        True if migration was performed, False if already migrated
+    """
+    import json
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Check if table has old 'league' column
+    cursor = conn.execute("PRAGMA table_info(teams)")
+    columns = {row["name"] for row in cursor.fetchall()}
+
+    if "league" not in columns or "leagues" in columns:
+        # Already migrated or fresh database
+        return False
+
+    logger.info("Migrating teams table: league -> leagues array")
+
+    # Get all existing teams grouped by (provider, provider_team_id, sport)
+    cursor = conn.execute("""
+        SELECT provider, provider_team_id, sport,
+               GROUP_CONCAT(league) as leagues_concat,
+               team_name, team_abbrev, team_logo_url, team_color,
+               channel_id, channel_logo_url, template_id, active,
+               MIN(created_at) as created_at,
+               MAX(updated_at) as updated_at
+        FROM teams
+        GROUP BY provider, provider_team_id, sport
+    """)
+    rows = cursor.fetchall()
+
+    # Create new table with leagues array
+    conn.execute("""
+        CREATE TABLE teams_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            provider TEXT NOT NULL DEFAULT 'espn',
+            provider_team_id TEXT NOT NULL,
+            primary_league TEXT NOT NULL,
+            leagues TEXT NOT NULL DEFAULT '[]',
+            sport TEXT NOT NULL,
+            team_name TEXT NOT NULL,
+            team_abbrev TEXT,
+            team_logo_url TEXT,
+            team_color TEXT,
+            channel_id TEXT NOT NULL UNIQUE,
+            channel_logo_url TEXT,
+            template_id INTEGER,
+            active BOOLEAN DEFAULT 1,
+            UNIQUE(provider, provider_team_id, sport),
+            FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE SET NULL
+        )
+    """)
+
+    # Insert consolidated rows
+    for row in rows:
+        # Convert comma-separated leagues to JSON array
+        leagues_list = list(set(row["leagues_concat"].split(","))) if row["leagues_concat"] else []
+        leagues_sorted = sorted(leagues_list)
+        leagues_json = json.dumps(leagues_sorted)
+        # Use first league as primary (will be updated by API if needed)
+        primary_league = leagues_sorted[0] if leagues_sorted else ""
+
+        conn.execute(
+            """
+            INSERT INTO teams_new (
+                provider, provider_team_id, primary_league, leagues, sport,
+                team_name, team_abbrev, team_logo_url, team_color,
+                channel_id, channel_logo_url, template_id, active,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                row["provider"],
+                row["provider_team_id"],
+                primary_league,
+                leagues_json,
+                row["sport"],
+                row["team_name"],
+                row["team_abbrev"],
+                row["team_logo_url"],
+                row["team_color"],
+                row["channel_id"],
+                row["channel_logo_url"],
+                row["template_id"],
+                row["active"],
+                row["created_at"],
+                row["updated_at"],
+            ),
+        )
+
+    # Drop old table and rename new one
+    conn.execute("DROP TABLE teams")
+    conn.execute("ALTER TABLE teams_new RENAME TO teams")
+
+    # Recreate indexes
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_teams_channel_id ON teams(channel_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_teams_active ON teams(active)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_teams_provider ON teams(provider)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_teams_sport ON teams(sport)")
+
+    # Recreate trigger
+    conn.execute("""
+        CREATE TRIGGER IF NOT EXISTS update_teams_timestamp
+        AFTER UPDATE ON teams
+        BEGIN
+            UPDATE teams SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+        END
+    """)
+
+    logger.info(f"Migrated {len(rows)} teams with leagues arrays")
+    return True
 
 
 def _add_column_if_not_exists(
