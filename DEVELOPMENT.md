@@ -59,6 +59,49 @@ python -c "from teamarr.core import Team, Event; print('OK')"
 
 ---
 
+## Running the Dev Servers
+
+### Backend (API)
+
+```bash
+cd /path/to/teamarrv2
+source .venv/bin/activate
+
+# Run on port 9198 (dev), avoiding conflict with V1 production on 9195
+PORT=9198 python3 app.py
+```
+
+API available at: http://localhost:9198
+Swagger docs at: http://localhost:9198/docs
+
+### Frontend (Vite)
+
+```bash
+cd frontend
+npm install      # First time only
+npm run dev      # Runs on port 5173
+```
+
+Frontend available at: http://localhost:5173
+
+The Vite dev server proxies API calls to `localhost:9198`.
+
+### Restarting After Code Changes
+
+- **Frontend**: Vite hot-reloads automatically
+- **Backend**: Must restart the Python process for changes to take effect
+
+```bash
+# Find and kill the backend
+lsof -i :9198
+kill <PID>
+
+# Restart
+PORT=9198 python3 app.py
+```
+
+---
+
 ## Daily Workflow
 
 ### Activating the Environment
