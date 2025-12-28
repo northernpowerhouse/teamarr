@@ -216,7 +216,7 @@ class TSDBClient:
         timeout: float = 10.0,
         retry_count: int = 3,
         retry_delay: float = 1.0,
-        requests_per_minute: int = 25,  # Leave headroom below 30 limit
+        requests_per_minute: int = 30,  # TSDB free tier limit
     ):
         self._league_mapping_source = league_mapping_source
         self._explicit_key = api_key
