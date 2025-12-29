@@ -484,11 +484,11 @@ class FillerGenerator:
             return config.postgame_template
 
         else:  # IDLE
-            # Check for offseason template
+            # Check for offseason template (no games in schedule_days_ahead lookahead)
             if is_offseason and config.idle_offseason.enabled:
                 return FillerTemplate(
                     title=config.idle_offseason.title or config.idle_template.title,
-                    subtitle=config.idle_offseason.subtitle,
+                    subtitle=config.idle_offseason.subtitle or config.idle_template.subtitle,
                     description=config.idle_offseason.description,
                     art_url=config.idle_template.art_url,
                 )

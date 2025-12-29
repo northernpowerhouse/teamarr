@@ -4,6 +4,7 @@ Uses rapidfuzz for fast, maintenance-free fuzzy matching.
 Provides pattern generation and matching utilities for the codebase.
 """
 
+import re
 from dataclasses import dataclass
 
 from rapidfuzz import fuzz
@@ -316,6 +317,11 @@ class FuzzyMatcher:
 
         return result
 
+    # Minimum pattern length for substring matching
+    # Prevents "chi" matching "chicago" when looking for Chicago Blackhawks
+    # Patterns shorter than this use word boundary matching instead
+    MIN_SUBSTRING_LENGTH = 5
+
     def matches_any(
         self,
         patterns: list[str],
@@ -324,9 +330,10 @@ class FuzzyMatcher:
         """Check if any pattern matches within text.
 
         Uses multiple strategies:
-        1. Exact substring match (fastest)
-        2. Token set ratio (handles word order, extra words)
-        3. Partial ratio (handles substrings)
+        1. Exact substring match (fastest) - only for patterns >= 5 chars
+        2. Word boundary match (for short patterns like abbreviations)
+        3. Token set ratio (handles word order, extra words)
+        4. Partial ratio (handles substrings)
 
         Abbreviations are expanded before matching (e.g., "FN" -> "Fight Night").
 
@@ -340,24 +347,38 @@ class FuzzyMatcher:
         # Expand abbreviations before matching
         text_lower = self._expand_abbreviations(text)
 
-        # Strategy 1: Exact substring match (fastest)
+        # Strategy 1: Exact substring match (fastest) - only for longer patterns
+        # Short patterns like "chi", "tor" would match cities incorrectly
         for pattern in patterns:
-            if pattern in text_lower:
+            if len(pattern) >= self.MIN_SUBSTRING_LENGTH and pattern in text_lower:
                 return FuzzyMatchResult(matched=True, score=100.0, pattern_used=pattern)
 
-        # Strategy 2: Token set ratio (handles word order, extra words)
-        # Good for "Atlanta Falcons" matching "Falcons @ Atlanta"
+        # Strategy 2: Word boundary match for short patterns
+        # "chi" should only match as a standalone word, not within "chicago"
         for pattern in patterns:
-            score = fuzz.token_set_ratio(pattern, text_lower)
-            if score >= self.partial_threshold:
-                return FuzzyMatchResult(matched=True, score=score, pattern_used=pattern)
+            if len(pattern) < self.MIN_SUBSTRING_LENGTH:
+                # Use word boundaries to prevent partial city matches
+                word_pattern = r"\b" + re.escape(pattern) + r"\b"
+                if re.search(word_pattern, text_lower):
+                    return FuzzyMatchResult(matched=True, score=100.0, pattern_used=pattern)
 
-        # Strategy 3: Partial ratio (handles substrings)
-        # Good for "Florida Atlantic" matching "Florida Atlantic Owls"
+        # Strategy 3: Token set ratio (handles word order, extra words)
+        # Good for "Atlanta Falcons" matching "Falcons @ Atlanta"
+        # Only apply to patterns long enough to avoid false positives
         for pattern in patterns:
-            score = fuzz.partial_ratio(pattern, text_lower)
-            if score >= self.partial_threshold:
-                return FuzzyMatchResult(matched=True, score=score, pattern_used=pattern)
+            if len(pattern) >= self.MIN_SUBSTRING_LENGTH:
+                score = fuzz.token_set_ratio(pattern, text_lower)
+                if score >= self.partial_threshold:
+                    return FuzzyMatchResult(matched=True, score=score, pattern_used=pattern)
+
+        # Strategy 4: Partial ratio (handles substrings)
+        # Good for "Florida Atlantic" matching "Florida Atlantic Owls"
+        # Only apply to patterns long enough to avoid false positives
+        for pattern in patterns:
+            if len(pattern) >= self.MIN_SUBSTRING_LENGTH:
+                score = fuzz.partial_ratio(pattern, text_lower)
+                if score >= self.partial_threshold:
+                    return FuzzyMatchResult(matched=True, score=score, pattern_used=pattern)
 
         return FuzzyMatchResult(matched=False, score=0.0)
 

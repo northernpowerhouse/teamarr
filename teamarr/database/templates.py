@@ -462,11 +462,13 @@ def template_to_filler_config(template: Template) -> FillerConfig:
     )
 
     # Idle offseason
+    # Schema uses per-field enabled flags (title_enabled, subtitle_enabled, description_enabled)
+    # Use description_enabled as master toggle (like V1's idle_offseason_enabled)
     idle_off = template.idle_offseason or {}
     idle_offseason = OffseasonFillerTemplate(
-        enabled=idle_off.get("enabled", False),
-        title=idle_off.get("title"),
-        subtitle=idle_off.get("subtitle"),
+        enabled=idle_off.get("description_enabled", False),
+        title=idle_off.get("title") if idle_off.get("title_enabled") else None,
+        subtitle=idle_off.get("subtitle") if idle_off.get("subtitle_enabled") else None,
         description=idle_off.get("description"),
     )
 

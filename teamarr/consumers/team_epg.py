@@ -267,11 +267,13 @@ class TeamEPGGenerator:
                 included_events.append(event)  # Track for filler generation
 
         # Generate filler content if enabled
-        # IMPORTANT: Pass only included_events (events that have programmes)
-        # to avoid generating filler for games that were skipped
+        # Pass full schedule (sorted_events) so filler generator can see games
+        # beyond output window for offseason detection. Uses team_schedule_days_ahead
+        # (default 30) for lookahead - if any game exists, shows "Next game: ..."
+        # instead of offseason content. TSDB capped at 14 days by provider.
         if options.filler_enabled:
             filler_programmes = self._generate_fillers(
-                events=included_events,
+                events=sorted_events,
                 team_id=team_id,
                 league=league,
                 channel_id=channel_id,

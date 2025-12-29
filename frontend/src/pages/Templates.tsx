@@ -26,7 +26,7 @@ import {
   useCreateTemplate,
   useDeleteTemplate,
 } from "@/hooks/useTemplates"
-import type { Template } from "@/api/templates"
+import { getTemplate, type Template } from "@/api/templates"
 
 export function Templates() {
   const navigate = useNavigate()
@@ -68,21 +68,39 @@ export function Templates() {
       }
 
       let created = 0
+      let skipped = 0
       for (const template of imported) {
+        // Validate required fields
+        if (!template.name || !template.template_type) {
+          skipped++
+          continue
+        }
+
         try {
           await createMutation.mutateAsync({
             name: template.name,
-            template_type: template.template_type || "event",
+            template_type: template.template_type,
             sport: template.sport,
             league: template.league,
             title_format: template.title_format,
             subtitle_template: template.subtitle_template,
+            description_template: template.description_template,
             program_art_url: template.program_art_url,
             game_duration_mode: template.game_duration_mode || "sport",
             game_duration_override: template.game_duration_override,
+            xmltv_flags: template.xmltv_flags,
+            xmltv_categories: template.xmltv_categories,
+            categories_apply_to: template.categories_apply_to,
             pregame_enabled: template.pregame_enabled ?? true,
+            pregame_fallback: template.pregame_fallback,
             postgame_enabled: template.postgame_enabled ?? true,
+            postgame_fallback: template.postgame_fallback,
+            postgame_conditional: template.postgame_conditional,
             idle_enabled: template.idle_enabled ?? false,
+            idle_content: template.idle_content,
+            idle_conditional: template.idle_conditional,
+            idle_offseason: template.idle_offseason,
+            conditional_descriptions: template.conditional_descriptions,
             event_channel_name: template.event_channel_name,
             event_channel_logo_url: template.event_channel_logo_url,
           })
@@ -92,7 +110,10 @@ export function Templates() {
         }
       }
 
-      toast.success(`Imported ${created} templates`)
+      const message = skipped > 0
+        ? `Imported ${created} templates (${skipped} skipped - missing name or template_type)`
+        : `Imported ${created} templates`
+      toast.success(message)
       refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to import templates")
@@ -107,21 +128,35 @@ export function Templates() {
 
   const handleDuplicate = async (template: Template) => {
     try {
+      // Fetch full template with all JSON fields (list endpoint only returns basic fields)
+      const fullTemplate = await getTemplate(template.id)
+
       await createMutation.mutateAsync({
-        name: `${template.name} (copy)`,
-        template_type: template.template_type,
-        sport: template.sport,
-        league: template.league,
-        title_format: template.title_format,
-        subtitle_template: template.subtitle_template,
-        program_art_url: template.program_art_url,
-        game_duration_mode: template.game_duration_mode || "sport",
-        game_duration_override: template.game_duration_override,
-        pregame_enabled: template.pregame_enabled ?? true,
-        postgame_enabled: template.postgame_enabled ?? true,
-        idle_enabled: template.idle_enabled ?? false,
-        event_channel_name: template.event_channel_name,
-        event_channel_logo_url: template.event_channel_logo_url,
+        name: `${fullTemplate.name} (copy)`,
+        template_type: fullTemplate.template_type,
+        sport: fullTemplate.sport,
+        league: fullTemplate.league,
+        title_format: fullTemplate.title_format,
+        subtitle_template: fullTemplate.subtitle_template,
+        description_template: fullTemplate.description_template,
+        program_art_url: fullTemplate.program_art_url,
+        game_duration_mode: fullTemplate.game_duration_mode || "sport",
+        game_duration_override: fullTemplate.game_duration_override,
+        xmltv_flags: fullTemplate.xmltv_flags,
+        xmltv_categories: fullTemplate.xmltv_categories,
+        categories_apply_to: fullTemplate.categories_apply_to,
+        pregame_enabled: fullTemplate.pregame_enabled ?? true,
+        pregame_fallback: fullTemplate.pregame_fallback,
+        postgame_enabled: fullTemplate.postgame_enabled ?? true,
+        postgame_fallback: fullTemplate.postgame_fallback,
+        postgame_conditional: fullTemplate.postgame_conditional,
+        idle_enabled: fullTemplate.idle_enabled ?? false,
+        idle_content: fullTemplate.idle_content,
+        idle_conditional: fullTemplate.idle_conditional,
+        idle_offseason: fullTemplate.idle_offseason,
+        conditional_descriptions: fullTemplate.conditional_descriptions,
+        event_channel_name: fullTemplate.event_channel_name,
+        event_channel_logo_url: fullTemplate.event_channel_logo_url,
       })
       toast.success(`Duplicated template "${template.name}"`)
     } catch (err) {
@@ -129,19 +164,26 @@ export function Templates() {
     }
   }
 
-  const handleExportSingle = (template: Template) => {
-    // Export single template without ID (for portability)
-    const { id, created_at, updated_at, ...exportData } = template
-    const blob = new Blob([JSON.stringify([exportData], null, 2)], { type: "application/json" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `template-${template.name.toLowerCase().replace(/\s+/g, "-")}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    toast.success(`Exported template "${template.name}"`)
+  const handleExportSingle = async (template: Template) => {
+    try {
+      // Fetch full template with all JSON fields (list endpoint only returns basic fields)
+      const fullTemplate = await getTemplate(template.id)
+
+      // Export without ID/timestamps (for portability)
+      const { id, created_at, updated_at, team_count, group_count, ...exportData } = fullTemplate
+      const blob = new Blob([JSON.stringify([exportData], null, 2)], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `template-${template.name.toLowerCase().replace(/\s+/g, "-")}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.success(`Exported template "${template.name}"`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to export template")
+    }
   }
 
   if (error) {

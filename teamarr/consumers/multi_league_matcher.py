@@ -366,7 +366,17 @@ class MultiLeagueMatcher:
         return found_team_ids
 
     def _find_matching_event(self, stream_lower: str) -> tuple[Event | None, str | None]:
-        """Find event that matches the stream name using fuzzy matching."""
+        """Find event that matches the stream name.
+
+        Matching passes (in priority order):
+        1. Alias-based: Both teams found via user-defined aliases
+        2. Both teams: Both home and away team patterns match
+        3. Single-event leagues: UFC keyword matching (only one event per day)
+
+        NOTE: Event name-only matching is intentionally disabled.
+        It caused false positives (e.g., "Chicago" in event name matching
+        unrelated "Chicago Blackhawks" stream).
+        """
         # Expand abbreviations for matching (e.g., "UFC FN" → "UFC Fight Night")
         stream_expanded = self._fuzzy._expand_abbreviations(stream_lower)
 
@@ -399,7 +409,7 @@ class MultiLeagueMatcher:
                     if home_match.matched:
                         return ep.event, ep.league
 
-        # Second pass: try to find both teams using fuzzy matching
+        # Second pass: both teams must match via fuzzy matching
         for ep in self._event_patterns:
             home_match = self._fuzzy.matches_any(ep.home_patterns, stream_expanded)
             away_match = self._fuzzy.matches_any(ep.away_patterns, stream_expanded)
@@ -407,13 +417,7 @@ class MultiLeagueMatcher:
             if home_match.matched and away_match.matched:
                 return ep.event, ep.league
 
-        # Third pass: try event name matching
-        for ep in self._event_patterns:
-            event_match = self._fuzzy.matches_any(ep.event_patterns, stream_expanded)
-            if event_match.matched:
-                return ep.event, ep.league
-
-        # Fourth pass: single-event leagues (e.g., UFC)
+        # Third pass: single-event leagues (e.g., UFC)
         # These leagues only have ONE event per day, so keyword matching is sufficient
         match = self._match_single_event_league(stream_expanded)
         if match:
