@@ -15,7 +15,7 @@ This is the main entry point for event-based EPG generation.
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from sqlite3 import Connection
 from typing import Any, Callable
 
@@ -27,7 +27,13 @@ from teamarr.consumers.channel_lifecycle import (
 from teamarr.consumers.child_processor import ChildStreamProcessor
 from teamarr.consumers.enforcement import CrossGroupEnforcer, KeywordEnforcer
 from teamarr.consumers.event_epg import EventEPGGenerator, EventEPGOptions
-from teamarr.core import Event
+from teamarr.consumers.filler.event_filler import (
+    EventFillerConfig,
+    EventFillerGenerator,
+    EventFillerOptions,
+    template_to_event_filler_config,
+)
+from teamarr.core import Event, Programme
 from teamarr.database.groups import (
     EventEPGGroup,
     get_all_group_xmltv,
@@ -1255,10 +1261,19 @@ class EventGroupProcessor:
 
         # Load template options if configured
         options = EventEPGOptions()
+        filler_config: EventFillerConfig | None = None
+        template_db = None
+
         if group.template_id:
             template_config = self._load_event_template(conn, group.template_id)
             if template_config:
                 options.template = template_config
+
+            # Load raw template for filler config
+            from teamarr.database.templates import get_template
+            template_db = get_template(conn, group.template_id)
+            if template_db and (template_db.pregame_enabled or template_db.postgame_enabled):
+                filler_config = template_to_event_filler_config(template_db)
 
         # Load sport durations from settings
         options.sport_durations = self._load_sport_durations(conn)
@@ -1270,6 +1285,19 @@ class EventGroupProcessor:
 
         if not programmes:
             return "", 0
+
+        # Generate filler if enabled in template
+        if filler_config:
+            filler_programmes = self._generate_filler_for_streams(
+                matched_streams, filler_config, options.sport_durations
+            )
+            if filler_programmes:
+                programmes.extend(filler_programmes)
+                # Sort all programmes by channel_id then start time
+                programmes.sort(key=lambda p: (p.channel_id, p.start))
+                logger.debug(
+                    f"Added {len(filler_programmes)} filler programmes for group '{group.name}'"
+                )
 
         # Convert to XMLTV
         channel_dicts = [{"id": ch.channel_id, "name": ch.name, "icon": ch.icon} for ch in channels]
@@ -1298,6 +1326,69 @@ class EventGroupProcessor:
             "mma": settings.get("duration_mma", 4.0),
             "boxing": settings.get("duration_boxing", 4.0),
         }
+
+    def _generate_filler_for_streams(
+        self,
+        matched_streams: list[dict],
+        filler_config: EventFillerConfig,
+        sport_durations: dict[str, float],
+    ) -> list[Programme]:
+        """Generate filler programmes for matched event streams.
+
+        Args:
+            matched_streams: List of matched stream/event dicts
+            filler_config: Filler configuration from template
+            sport_durations: Sport duration settings
+
+        Returns:
+            List of filler Programme entries
+        """
+        from teamarr.config import get_timezone
+
+        filler_generator = EventFillerGenerator()
+        all_filler: list[Programme] = []
+
+        # Get configured timezone
+        tz = get_timezone()
+
+        # Build filler options
+        now = datetime.now(tz)
+        options = EventFillerOptions(
+            epg_start=now,
+            epg_end=now + timedelta(days=1),  # 24 hour window
+            epg_timezone=str(tz),
+            sport_durations=sport_durations,
+            default_duration=3.0,
+            postgame_buffer_hours=24.0,
+        )
+
+        for stream_match in matched_streams:
+            event = stream_match.get("event")
+            stream = stream_match.get("stream")
+
+            if not event:
+                continue
+
+            # Build channel ID matching what EventEPGGenerator produces
+            # Uses stream ID for managed channels
+            stream_id = stream.get("id") if stream else None
+            if stream_id:
+                channel_id = f"teamarr-event-{stream_id}"
+            else:
+                channel_id = f"teamarr-event-{event.id}"
+
+            try:
+                filler_programmes = filler_generator.generate(
+                    event=event,
+                    channel_id=channel_id,
+                    config=filler_config,
+                    options=options,
+                )
+                all_filler.extend(filler_programmes)
+            except Exception as e:
+                logger.warning(f"Failed to generate filler for event {event.id}: {e}")
+
+        return all_filler
 
     def _store_group_xmltv(
         self,
