@@ -13,6 +13,31 @@ import sqlite3
 from teamarr.core import LeagueMapping
 
 
+def get_league(conn: sqlite3.Connection, league_code: str) -> dict | None:
+    """Get league info including event_type.
+
+    Args:
+        conn: Database connection
+        league_code: Canonical league code
+
+    Returns:
+        Dict with league info or None if not found
+    """
+    cursor = conn.execute(
+        """
+        SELECT league_code, provider, display_name, sport, event_type
+        FROM leagues
+        WHERE league_code = ? AND enabled = 1
+        LIMIT 1
+        """,
+        (league_code.lower(),),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None
+    return dict(row)
+
+
 def get_league_id(conn: sqlite3.Connection, league_code: str) -> str:
     """Get the URL-safe league ID for a league.
 

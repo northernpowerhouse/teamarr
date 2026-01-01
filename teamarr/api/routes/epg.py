@@ -6,8 +6,6 @@ import queue
 import threading
 from datetime import date, datetime
 
-logger = logging.getLogger(__name__)
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response, StreamingResponse
 
@@ -24,18 +22,23 @@ from teamarr.api.models import (
     EPGGenerateRequest,
     EPGGenerateResponse,
     EventEPGRequest,
+    EventSearchResult,
+    MatchCorrectionRequest,
+    MatchCorrectionResponse,
     MatchStats,
     StreamBatchMatchRequest,
     StreamBatchMatchResponse,
     StreamMatchResultModel,
 )
-from teamarr.consumers import CachedMatcher  # Complex component with DB integration
+from teamarr.consumers.matching import StreamMatcher
 from teamarr.database import get_db
 from teamarr.services import (
     EventEPGOptions,
     SportsDataService,
     create_epg_service,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -141,15 +144,17 @@ def generate_epg_stream():
 
     # Check if already in progress
     if is_in_progress():
+        err = {"status": "error", "message": "Generation already in progress"}
         return StreamingResponse(
-            iter([f"data: {json.dumps({'status': 'error', 'message': 'Generation already in progress'})}\n\n"]),
+            iter([f"data: {json.dumps(err)}\n\n"]),
             media_type="text/event-stream",
         )
 
     # Mark as started
     if not start_generation():
+        err = {"status": "error", "message": "Failed to start generation"}
         return StreamingResponse(
-            iter([f"data: {json.dumps({'status': 'error', 'message': 'Failed to start generation'})}\n\n"]),
+            iter([f"data: {json.dumps(err)}\n\n"]),
             media_type="text/event-stream",
         )
 
@@ -171,7 +176,10 @@ def generate_epg_stream():
                     dispatcharr_client = get_dispatcharr_client(get_db)
 
                 # Progress callback that updates status and queues for SSE
-                def progress_callback(phase: str, percent: int, message: str, current: int, total: int, item_name: str):
+                def progress_callback(
+                    phase: str, percent: int, message: str,
+                    current: int, total: int, item_name: str,
+                ):
                     update_status(
                         status="progress",
                         phase=phase,
@@ -376,12 +384,12 @@ def match_streams(
     """
     target = _parse_date(request.target_date)
 
-    # Create cached matcher for this group
-    matcher = CachedMatcher(
+    # Create stream matcher for this group
+    matcher = StreamMatcher(
         service=service,
-        get_connection=get_db,
-        search_leagues=request.search_leagues,
+        db_factory=get_db,
         group_id=request.group_id,
+        search_leagues=request.search_leagues,
         include_leagues=request.include_leagues,
     )
 
@@ -408,16 +416,20 @@ def match_streams(
             start_time=r.event.start_time.isoformat() if r.event else None,
             included=r.included,
             exclusion_reason=r.exclusion_reason,
-            from_cache=getattr(r, "from_cache", False),
+            from_cache=r.from_cache,
         )
         results.append(result_model)
+
+    # Calculate match rate
+    non_exception = batch_result.total
+    match_rate = batch_result.matched_count / non_exception if non_exception > 0 else 0.0
 
     return StreamBatchMatchResponse(
         total=batch_result.total,
         matched=batch_result.matched_count,
         included=batch_result.included_count,
         unmatched=batch_result.unmatched_count,
-        match_rate=batch_result.match_rate,
+        match_rate=match_rate,
         cache_hits=batch_result.cache_hits,
         cache_misses=batch_result.cache_misses,
         cache_hit_rate=batch_result.cache_hit_rate,
@@ -737,3 +749,213 @@ def get_match_stats(
         stats = get_match_stats_summary(conn, run_id=run_id)
 
     return stats
+
+
+# =============================================================================
+# Match Correction Endpoints (Phase 7)
+# =============================================================================
+
+
+@router.post("/epg/streams/correct", response_model=MatchCorrectionResponse)
+def correct_stream_match(
+    request: MatchCorrectionRequest,
+    service: SportsDataService = Depends(get_sports_service),
+):
+    """Correct an incorrect or failed stream match.
+
+    This creates a user-corrected entry in the cache that takes priority
+    over algorithmic matching. User corrections are never auto-purged.
+
+    Use correct_event_id=None to mark a stream as "no event" (explicit skip).
+    """
+    from teamarr.consumers.stream_match_cache import (
+        StreamMatchCache,
+        compute_fingerprint,
+        event_to_cache_data,
+    )
+
+    cache = StreamMatchCache(get_db)
+
+    # Get current cache entry if exists
+    current = cache.get(
+        group_id=request.group_id,
+        stream_id=request.stream_id,
+        stream_name=request.stream_name,
+    )
+    previous_event_id = current.event_id if current else None
+
+    # If correcting to a specific event, fetch the event data
+    cached_data = {}
+    if request.correct_event_id and request.correct_league:
+        # Try to find the event to cache its data
+        events = service.get_events(request.correct_league, date.today())
+        event = next((e for e in events if e.id == request.correct_event_id), None)
+        if event:
+            cached_data = event_to_cache_data(event)
+
+    # Apply the correction
+    success = cache.set_user_correction(
+        group_id=request.group_id,
+        stream_id=request.stream_id,
+        stream_name=request.stream_name,
+        event_id=request.correct_event_id,
+        league=request.correct_league,
+        cached_data=cached_data,
+    )
+
+    fingerprint = compute_fingerprint(
+        request.group_id, request.stream_id, request.stream_name
+    )
+
+    return MatchCorrectionResponse(
+        success=success,
+        fingerprint=fingerprint,
+        message="Correction applied" if success else "Failed to apply correction",
+        previous_event_id=previous_event_id,
+        new_event_id=request.correct_event_id,
+    )
+
+
+@router.delete("/epg/streams/correct/{group_id}/{stream_id}")
+def remove_stream_correction(
+    group_id: int,
+    stream_id: int,
+    stream_name: str = Query(..., description="Stream name for fingerprint"),
+):
+    """Remove a user correction, allowing the stream to be re-matched.
+
+    This deletes the user-corrected cache entry. On next EPG generation,
+    the stream will be matched algorithmically again.
+    """
+    from teamarr.consumers.stream_match_cache import StreamMatchCache, compute_fingerprint
+
+    cache = StreamMatchCache(get_db)
+
+    # Check if it's actually a user correction
+    entry = cache.get(group_id, stream_id, stream_name)
+    if not entry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No cache entry found for this stream",
+        )
+
+    if not entry.user_corrected:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This entry is not a user correction",
+        )
+
+    # Remove the correction
+    success = cache.remove_user_correction(group_id, stream_id, stream_name)
+
+    fingerprint = compute_fingerprint(group_id, stream_id, stream_name)
+
+    return {
+        "success": success,
+        "fingerprint": fingerprint,
+        "message": "Correction removed" if success else "Failed to remove correction",
+    }
+
+
+@router.get("/epg/events/search")
+def search_events(
+    league: str | None = Query(None, description="Filter by league code"),
+    team: str | None = Query(None, description="Search by team name"),
+    target_date: str | None = Query(None, description="Target date (YYYY-MM-DD)"),
+    limit: int = Query(50, ge=1, le=200, description="Max results"),
+    service: SportsDataService = Depends(get_sports_service),
+):
+    """Search events for manual match correction UI.
+
+    Returns events matching the search criteria. Use this to find the
+    correct event when manually correcting a failed or incorrect match.
+    """
+    from teamarr.database.leagues import get_all_leagues
+
+    target = _parse_date(target_date) if target_date else date.today()
+    results: list[EventSearchResult] = []
+
+    # Get league info for display names
+    with get_db() as conn:
+        all_leagues = {lg["league_code"]: lg for lg in get_all_leagues(conn)}
+
+    # If league specified, search only that league
+    if league:
+        leagues_to_search = [league]
+    else:
+        # Search top leagues (limit to prevent too many API calls)
+        leagues_to_search = ["nfl", "nba", "nhl", "mlb", "eng.1", "mls"]
+
+    for lg in leagues_to_search:
+        try:
+            events = service.get_events(lg, target)
+        except Exception:
+            continue
+
+        for event in events:
+            # Filter by team name if specified
+            if team:
+                team_lower = team.lower()
+                home_name = event.home_team.name.lower() if event.home_team else ""
+                away_name = event.away_team.name.lower() if event.away_team else ""
+                if team_lower not in home_name and team_lower not in away_name:
+                    continue
+
+            lg_info = all_leagues.get(lg, {})
+            results.append(
+                EventSearchResult(
+                    event_id=event.id,
+                    event_name=event.name,
+                    league=lg,
+                    league_name=lg_info.get("display_name"),
+                    start_time=event.start_time.isoformat(),
+                    home_team=event.home_team.name if event.home_team else None,
+                    away_team=event.away_team.name if event.away_team else None,
+                    status=event.status.value if event.status else None,
+                )
+            )
+
+            if len(results) >= limit:
+                break
+
+        if len(results) >= limit:
+            break
+
+    return {
+        "count": len(results),
+        "target_date": target.isoformat(),
+        "events": [r.model_dump() for r in results],
+    }
+
+
+@router.get("/epg/streams/corrections")
+def list_user_corrections(
+    group_id: int | None = Query(None, description="Filter by group ID"),
+    limit: int = Query(100, ge=1, le=500, description="Max results"),
+):
+    """List all user-corrected stream matches.
+
+    Returns streams where users have manually overridden the match.
+    """
+    with get_db() as conn:
+        query = """
+            SELECT fingerprint, group_id, stream_id, stream_name,
+                   event_id, league, match_method, corrected_at
+            FROM stream_match_cache
+            WHERE user_corrected = 1
+        """
+        params: list = []
+
+        if group_id is not None:
+            query += " AND group_id = ?"
+            params.append(group_id)
+
+        query += " ORDER BY corrected_at DESC LIMIT ?"
+        params.append(limit)
+
+        rows = conn.execute(query, params).fetchall()
+
+    return {
+        "count": len(rows),
+        "corrections": [dict(row) for row in rows],
+    }

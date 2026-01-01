@@ -25,6 +25,7 @@ class GroupCreate(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=100)
     leagues: list[str] = Field(..., min_length=1)
+    parent_group_id: int | None = None
     template_id: int | None = None
     channel_start_number: int | None = Field(None, ge=1)
     channel_group_id: int | None = None
@@ -59,6 +60,7 @@ class GroupUpdate(BaseModel):
 
     name: str | None = Field(None, min_length=1, max_length=100)
     leagues: list[str] | None = None
+    parent_group_id: int | None = None
     template_id: int | None = None
     channel_start_number: int | None = None
     channel_group_id: int | None = None
@@ -88,6 +90,7 @@ class GroupUpdate(BaseModel):
     enabled: bool | None = None
 
     # Clear flags for nullable fields
+    clear_parent_group_id: bool = False
     clear_template: bool = False
     clear_channel_start_number: bool = False
     clear_channel_group_id: bool = False
@@ -108,6 +111,7 @@ class GroupResponse(BaseModel):
     id: int
     name: str
     leagues: list[str]
+    parent_group_id: int | None = None
     template_id: int | None = None
     channel_start_number: int | None = None
     channel_group_id: int | None = None
@@ -277,6 +281,7 @@ def list_groups(
                 id=g.id,
                 name=g.name,
                 leagues=g.leagues,
+                parent_group_id=g.parent_group_id,
                 template_id=g.template_id,
                 channel_start_number=g.channel_start_number,
                 channel_group_id=g.channel_group_id,
@@ -345,6 +350,7 @@ def create_group(request: GroupCreate):
             conn,
             name=request.name,
             leagues=request.leagues,
+            parent_group_id=request.parent_group_id,
             template_id=request.template_id,
             channel_start_number=request.channel_start_number,
             channel_group_id=request.channel_group_id,
@@ -378,6 +384,7 @@ def create_group(request: GroupCreate):
         id=group.id,
         name=group.name,
         leagues=group.leagues,
+        parent_group_id=group.parent_group_id,
         template_id=group.template_id,
         channel_start_number=group.channel_start_number,
         channel_group_id=group.channel_group_id,
@@ -433,6 +440,7 @@ def get_group_by_id(group_id: int):
         id=group.id,
         name=group.name,
         leagues=group.leagues,
+        parent_group_id=group.parent_group_id,
         template_id=group.template_id,
         channel_start_number=group.channel_start_number,
         channel_group_id=group.channel_group_id,
@@ -511,6 +519,7 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
             group_id,
             name=request.name,
             leagues=request.leagues,
+            parent_group_id=request.parent_group_id,
             template_id=request.template_id,
             channel_start_number=request.channel_start_number,
             channel_group_id=request.channel_group_id,
@@ -536,6 +545,7 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
             channel_sort_order=request.channel_sort_order,
             overlap_handling=request.overlap_handling,
             enabled=request.enabled,
+            clear_parent_group_id=request.clear_parent_group_id,
             clear_template=request.clear_template,
             clear_channel_start_number=request.clear_channel_start_number,
             clear_channel_group_id=request.clear_channel_group_id,
@@ -557,6 +567,7 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
         id=group.id,
         name=group.name,
         leagues=group.leagues,
+        parent_group_id=group.parent_group_id,
         template_id=group.template_id,
         channel_start_number=group.channel_start_number,
         channel_group_id=group.channel_group_id,
@@ -1063,4 +1074,61 @@ def get_combined_xmltv() -> Response:
         content=combined,
         media_type="application/xml",
         headers={"Content-Disposition": "inline; filename=teamarr-events.xml"},
+    )
+
+
+# ========================================================================
+# Group Reordering (for AUTO channel assignment)
+# ========================================================================
+
+
+class GroupOrderItem(BaseModel):
+    """Single group reorder item."""
+
+    group_id: int
+    sort_order: int
+
+
+class ReorderGroupsRequest(BaseModel):
+    """Request to reorder multiple groups."""
+
+    groups: list[GroupOrderItem]
+
+
+class ReorderGroupsResponse(BaseModel):
+    """Response from reordering groups."""
+
+    success: bool
+    updated_count: int
+    message: str
+
+
+@router.post("/reorder", response_model=ReorderGroupsResponse)
+def reorder_groups(request: ReorderGroupsRequest):
+    """Reorder groups by updating their sort_order values.
+
+    Used for drag-and-drop reordering of AUTO channel assignment groups.
+    Affects the order in which channel number ranges are allocated.
+    """
+    if not request.groups:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No groups to reorder",
+        )
+
+    with get_db() as conn:
+        updated = 0
+        for item in request.groups:
+            conn.execute(
+                "UPDATE event_epg_groups SET sort_order = ? WHERE id = ?",
+                (item.sort_order, item.group_id),
+            )
+            updated += 1
+
+        conn.commit()
+
+    return ReorderGroupsResponse(
+        success=True,
+        updated_count=updated,
+        message=f"Updated sort order for {updated} groups",
     )

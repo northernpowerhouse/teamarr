@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 # =============================================================================
 # Teams
@@ -377,3 +377,42 @@ class StreamBatchMatchResponse(BaseModel):
     cache_misses: int
     cache_hit_rate: float
     results: list[StreamMatchResultModel]
+
+
+# =============================================================================
+# Match Correction Models (Phase 7)
+# =============================================================================
+
+
+class MatchCorrectionRequest(BaseModel):
+    """Request to correct a stream match."""
+
+    group_id: int = Field(..., description="Event group ID where stream is located")
+    stream_id: int = Field(..., description="Stream ID being corrected")
+    stream_name: str = Field(..., description="Stream name for verification")
+    correct_event_id: str | None = Field(None, description="Correct event ID (None = no event)")
+    correct_league: str | None = Field(None, description="Correct league code")
+    notes: str | None = Field(None, description="Optional notes about the correction")
+
+
+class MatchCorrectionResponse(BaseModel):
+    """Response after applying a match correction."""
+
+    success: bool
+    fingerprint: str
+    message: str
+    previous_event_id: str | None = None
+    new_event_id: str | None = None
+
+
+class EventSearchResult(BaseModel):
+    """Event search result for correction UI."""
+
+    event_id: str
+    event_name: str
+    league: str
+    league_name: str | None = None
+    start_time: str
+    home_team: str | None = None
+    away_team: str | None = None
+    status: str | None = None

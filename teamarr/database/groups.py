@@ -274,6 +274,16 @@ def create_group(
     Returns:
         New group ID
     """
+    # Auto-calculate sort_order for AUTO mode groups
+    if channel_assignment_mode == "auto" and sort_order == 0:
+        max_order = conn.execute(
+            """SELECT COALESCE(MAX(sort_order), -1) + 1
+               FROM event_epg_groups
+               WHERE channel_assignment_mode = 'auto'
+                 AND parent_group_id IS NULL"""
+        ).fetchone()[0]
+        sort_order = max_order
+
     cursor = conn.execute(
         """INSERT INTO event_epg_groups (
             name, leagues, template_id, channel_start_number,

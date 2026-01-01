@@ -504,6 +504,9 @@ class MatchedStream:
     home_team: str | None
     away_team: str | None
     from_cache: bool = False
+    # Enhanced matching info (Phase 7)
+    match_method: str | None = None  # cache, user_corrected, alias, pattern, fuzzy, keyword
+    confidence: float | None = None  # Match confidence 0.0-1.0
 
 
 @dataclass
@@ -515,9 +518,13 @@ class FailedMatch:
     group_name: str
     stream_id: int | None
     stream_name: str
-    reason: str  # 'unmatched', 'excluded_league', 'filtered_include', 'filtered_exclude', 'exception'
+    reason: str  # unmatched, excluded_league, filtered_include, filtered_exclude
     exclusion_reason: str | None = None
     detail: str | None = None
+    # Enhanced matching info (Phase 7) - what we extracted before failing
+    parsed_team1: str | None = None  # Team name extracted from stream
+    parsed_team2: str | None = None  # Opponent name extracted from stream
+    detected_league: str | None = None  # League hint detected (if any)
 
 
 def save_matched_streams(conn: Connection, streams: list[MatchedStream]) -> int:
@@ -533,8 +540,8 @@ def save_matched_streams(conn: Connection, streams: list[MatchedStream]) -> int:
         INSERT INTO epg_matched_streams (
             run_id, group_id, group_name, stream_id, stream_name,
             event_id, event_name, event_date, detected_league,
-            home_team, away_team, from_cache
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            home_team, away_team, from_cache, match_method, confidence
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -550,6 +557,8 @@ def save_matched_streams(conn: Connection, streams: list[MatchedStream]) -> int:
                 s.home_team,
                 s.away_team,
                 1 if s.from_cache else 0,
+                s.match_method,
+                s.confidence,
             )
             for s in streams
         ],
@@ -570,8 +579,8 @@ def save_failed_matches(conn: Connection, failures: list[FailedMatch]) -> int:
         """
         INSERT INTO epg_failed_matches (
             run_id, group_id, group_name, stream_id, stream_name,
-            reason, exclusion_reason, detail
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            reason, exclusion_reason, detail, parsed_team1, parsed_team2, detected_league
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -583,6 +592,9 @@ def save_failed_matches(conn: Connection, failures: list[FailedMatch]) -> int:
                 f.reason,
                 f.exclusion_reason,
                 f.detail,
+                f.parsed_team1,
+                f.parsed_team2,
+                f.detected_league,
             )
             for f in failures
         ],
