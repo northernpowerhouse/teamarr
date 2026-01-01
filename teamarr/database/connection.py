@@ -338,11 +338,17 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("Schema upgraded to version 5")
         current_version = 5
 
-    # Version 6: Add league_alias column for {league} template variable
+    # Version 6: Add league_alias column + fix managed_channels UNIQUE constraint
     if current_version < 6:
         _add_column_if_not_exists(conn, "leagues", "league_alias", "TEXT")
+
+        # Remove table-level UNIQUE constraint from managed_channels
+        # This allows soft-deleted rows to coexist with new rows for same event
+        # The partial unique index (idx_mc_unique_event) handles uniqueness for active rows
+        _recreate_managed_channels_without_unique_constraint(conn)
+
         conn.execute("UPDATE settings SET schema_version = 6 WHERE id = 1")
-        logger.info("Schema upgraded to version 6 (added league_alias column)")
+        logger.info("Schema upgraded to version 6 (league_alias, managed_channels fix)")
         current_version = 6
 
 
@@ -482,6 +488,110 @@ def _add_column_if_not_exists(
     columns = {row["name"] for row in cursor.fetchall()}
     if column not in columns:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_def}")
+
+
+def _recreate_managed_channels_without_unique_constraint(
+    conn: sqlite3.Connection,
+) -> None:
+    """Recreate managed_channels table without table-level UNIQUE constraint.
+
+    The table had UNIQUE(event_epg_group_id, event_id, event_provider) which
+    prevented creating new channels when soft-deleted ones existed.
+
+    The partial unique index (idx_mc_unique_event) handles uniqueness for
+    active (non-deleted) rows only.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Check if table exists
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='managed_channels'"
+    )
+    if not cursor.fetchone():
+        return
+
+    # Check if the problematic constraint exists
+    cursor = conn.execute("PRAGMA index_list(managed_channels)")
+    indices = {row[1] for row in cursor.fetchall()}
+    if "sqlite_autoindex_managed_channels_2" not in indices:
+        # Constraint already removed
+        return
+
+    logger.info("Recreating managed_channels table to remove UNIQUE constraint...")
+
+    conn.executescript("""
+        PRAGMA foreign_keys = OFF;
+
+        CREATE TABLE managed_channels_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            event_epg_group_id INTEGER NOT NULL,
+            event_id TEXT NOT NULL,
+            event_provider TEXT NOT NULL DEFAULT 'espn',
+            tvg_id TEXT,
+            channel_name TEXT NOT NULL,
+            channel_number INTEGER,
+            logo_url TEXT,
+            dispatcharr_channel_id INTEGER,
+            dispatcharr_uuid TEXT,
+            dispatcharr_logo_id INTEGER,
+            channel_group_id INTEGER,
+            stream_profile_id INTEGER,
+            channel_profile_ids TEXT,
+            primary_stream_id INTEGER,
+            exception_keyword TEXT,
+            home_team TEXT,
+            home_team_abbrev TEXT,
+            home_team_logo TEXT,
+            away_team TEXT,
+            away_team_abbrev TEXT,
+            away_team_logo TEXT,
+            event_date TIMESTAMP,
+            event_name TEXT,
+            league TEXT,
+            sport TEXT,
+            venue TEXT,
+            broadcast TEXT,
+            scheduled_delete_at TIMESTAMP,
+            deleted_at TIMESTAMP,
+            delete_reason TEXT,
+            sync_status TEXT DEFAULT 'pending',
+            sync_message TEXT,
+            last_verified_at TIMESTAMP,
+            expires_at TIMESTAMP,
+            external_channel_id INTEGER,
+            FOREIGN KEY (event_epg_group_id) REFERENCES event_epg_groups(id) ON DELETE CASCADE
+        );
+
+        INSERT INTO managed_channels_new SELECT * FROM managed_channels;
+        DROP TABLE managed_channels;
+        ALTER TABLE managed_channels_new RENAME TO managed_channels;
+
+        CREATE INDEX IF NOT EXISTS idx_managed_channels_group ON managed_channels(event_epg_group_id);
+        CREATE INDEX IF NOT EXISTS idx_managed_channels_event ON managed_channels(event_id, event_provider);
+        CREATE INDEX IF NOT EXISTS idx_managed_channels_expires ON managed_channels(expires_at);
+        CREATE INDEX IF NOT EXISTS idx_managed_channels_delete ON managed_channels(scheduled_delete_at) WHERE deleted_at IS NULL;
+        CREATE INDEX IF NOT EXISTS idx_managed_channels_dispatcharr ON managed_channels(dispatcharr_channel_id);
+        CREATE INDEX IF NOT EXISTS idx_managed_channels_tvg ON managed_channels(tvg_id);
+        CREATE INDEX IF NOT EXISTS idx_managed_channels_sync ON managed_channels(sync_status);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_unique_event
+            ON managed_channels(event_epg_group_id, event_id, event_provider, COALESCE(exception_keyword, ''))
+            WHERE deleted_at IS NULL;
+
+        CREATE TRIGGER IF NOT EXISTS update_managed_channels_timestamp
+        AFTER UPDATE ON managed_channels
+        BEGIN
+            UPDATE managed_channels SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+        END;
+
+        PRAGMA foreign_keys = ON;
+    """)
+
+    logger.info("managed_channels table recreated without UNIQUE constraint")
 
 
 def reset_db(db_path: Path | str | None = None) -> None:

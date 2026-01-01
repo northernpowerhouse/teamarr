@@ -419,8 +419,9 @@ CREATE TABLE IF NOT EXISTS managed_channels (
     expires_at TIMESTAMP,
     external_channel_id INTEGER,             -- Alias for dispatcharr_channel_id
 
-    FOREIGN KEY (event_epg_group_id) REFERENCES event_epg_groups(id) ON DELETE CASCADE,
-    UNIQUE(event_epg_group_id, event_id, event_provider)
+    FOREIGN KEY (event_epg_group_id) REFERENCES event_epg_groups(id) ON DELETE CASCADE
+    -- Note: No table-level UNIQUE on (event_id, event_provider) - use partial index instead
+    -- This allows soft-deleted rows to exist alongside active ones
 );
 
 CREATE INDEX IF NOT EXISTS idx_managed_channels_group ON managed_channels(event_epg_group_id);
@@ -473,6 +474,13 @@ CREATE TABLE IF NOT EXISTS leagues (
     league_alias TEXT,                       -- Short display alias for {league} (e.g., 'EPL', 'UCL')
     league_id TEXT,                          -- URL-safe identifier for {league_id} (e.g., 'epl', 'ncaabb')
 
+    -- Matching Classification
+    -- team_vs_team: Standard team sports (NFL, NBA, NHL, Soccer, etc.)
+    -- event_card: Combat sports with cards (UFC, Boxing)
+    -- event: Individual/tournament sports (Golf, Tennis, Racing) - future use
+    event_type TEXT DEFAULT 'team_vs_team'
+        CHECK(event_type IN ('team_vs_team', 'event', 'event_card')),
+
     -- Cache Metadata (updated by cache refresh)
     cached_team_count INTEGER DEFAULT 0,
     last_cache_refresh TIMESTAMP
@@ -500,86 +508,89 @@ CREATE INDEX IF NOT EXISTS idx_leagues_import ON leagues(import_enabled);
 --   - Leave NULL when display_name is already short (NFL, NBA, MLS)
 -- =============================================================================
 
-INSERT OR REPLACE INTO leagues (league_code, provider, provider_league_id, provider_league_name, display_name, sport, logo_url, import_enabled, league_alias, league_id) VALUES
+INSERT OR REPLACE INTO leagues (league_code, provider, provider_league_id, provider_league_name, display_name, sport, logo_url, import_enabled, league_alias, league_id, event_type) VALUES
     -- Football (ESPN)
     -- display_name already short, no alias needed
-    ('nfl', 'espn', 'football/nfl', NULL, 'NFL', 'Football', 'https://a.espncdn.com/i/teamlogos/leagues/500/nfl.png', 1, NULL, 'nfl'),
-    ('college-football', 'espn', 'football/college-football', NULL, 'NCAA Football', 'Football', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/football.png', 1, 'NCAAF', 'ncaaf'),
+    ('nfl', 'espn', 'football/nfl', NULL, 'NFL', 'Football', 'https://a.espncdn.com/i/teamlogos/leagues/500/nfl.png', 1, NULL, 'nfl', 'team_vs_team'),
+    ('college-football', 'espn', 'football/college-football', NULL, 'NCAA Football', 'Football', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/football.png', 1, 'NCAAF', 'ncaaf', 'team_vs_team'),
 
     -- Basketball (ESPN)
-    ('nba', 'espn', 'basketball/nba', NULL, 'NBA', 'Basketball', 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png', 1, NULL, 'nba'),
-    ('nba-development', 'espn', 'basketball/nba-development', NULL, 'NBA G League', 'Basketball', 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba_gleague.png', 1, 'G League', 'nbag'),
-    ('wnba', 'espn', 'basketball/wnba', NULL, 'WNBA', 'Basketball', 'https://a.espncdn.com/i/teamlogos/leagues/500/wnba.png', 1, NULL, 'wnba'),
-    ('mens-college-basketball', 'espn', 'basketball/mens-college-basketball', NULL, 'NCAA Men''s Basketball', 'Basketball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png', 1, 'NCAAM', 'ncaam'),
-    ('womens-college-basketball', 'espn', 'basketball/womens-college-basketball', NULL, 'NCAA Women''s Basketball', 'Basketball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png', 1, 'NCAAW', 'ncaaw'),
+    ('nba', 'espn', 'basketball/nba', NULL, 'NBA', 'Basketball', 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png', 1, NULL, 'nba', 'team_vs_team'),
+    ('nba-development', 'espn', 'basketball/nba-development', NULL, 'NBA G League', 'Basketball', 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba_gleague.png', 1, 'G League', 'nbag', 'team_vs_team'),
+    ('wnba', 'espn', 'basketball/wnba', NULL, 'WNBA', 'Basketball', 'https://a.espncdn.com/i/teamlogos/leagues/500/wnba.png', 1, NULL, 'wnba', 'team_vs_team'),
+    ('mens-college-basketball', 'espn', 'basketball/mens-college-basketball', NULL, 'NCAA Men''s Basketball', 'Basketball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png', 1, 'NCAAM', 'ncaam', 'team_vs_team'),
+    ('womens-college-basketball', 'espn', 'basketball/womens-college-basketball', NULL, 'NCAA Women''s Basketball', 'Basketball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png', 1, 'NCAAW', 'ncaaw', 'team_vs_team'),
 
     -- Hockey (ESPN)
-    ('nhl', 'espn', 'hockey/nhl', NULL, 'NHL', 'Hockey', 'https://a.espncdn.com/i/teamlogos/leagues/500/nhl.png', 1, NULL, 'nhl'),
-    ('mens-college-hockey', 'espn', 'hockey/mens-college-hockey', NULL, 'NCAA Men''s Ice Hockey', 'Hockey', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/icehockey.png', 1, 'NCAA Hockey', 'ncaah'),
-    ('womens-college-hockey', 'espn', 'hockey/womens-college-hockey', NULL, 'NCAA Women''s Ice Hockey', 'Hockey', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/icehockey.png', 1, 'NCAA W Hockey', 'ncaawh'),
+    ('nhl', 'espn', 'hockey/nhl', NULL, 'NHL', 'Hockey', 'https://a.espncdn.com/i/teamlogos/leagues/500/nhl.png', 1, NULL, 'nhl', 'team_vs_team'),
+    ('mens-college-hockey', 'espn', 'hockey/mens-college-hockey', NULL, 'NCAA Men''s Ice Hockey', 'Hockey', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/icehockey.png', 1, 'NCAA Hockey', 'ncaah', 'team_vs_team'),
+    ('womens-college-hockey', 'espn', 'hockey/womens-college-hockey', NULL, 'NCAA Women''s Ice Hockey', 'Hockey', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/icehockey.png', 1, 'NCAA W Hockey', 'ncaawh', 'team_vs_team'),
 
     -- Hockey - Canadian Junior (TSDB)
-    ('ohl', 'tsdb', '5159', 'Canadian OHL', 'Ontario Hockey League', 'Hockey', 'https://r2.thesportsdb.com/images/media/league/badge/y4z5ks1644535179.png', 1, 'OHL', 'ohl'),
-    ('whl', 'tsdb', '5160', 'Canadian WHL', 'Western Hockey League', 'Hockey', 'https://r2.thesportsdb.com/images/media/league/badge/94w3kx1644535361.png', 1, 'WHL', 'whl'),
-    ('qmjhl', 'tsdb', '5161', 'Canadian QMJHL', 'Quebec Major Junior Hockey League', 'Hockey', 'https://r2.thesportsdb.com/images/media/league/badge/3nofen1644535248.png', 1, 'QMJHL', 'qmjhl'),
+    ('ohl', 'tsdb', '5159', 'Canadian OHL', 'Ontario Hockey League', 'Hockey', 'https://r2.thesportsdb.com/images/media/league/badge/y4z5ks1644535179.png', 1, 'OHL', 'ohl', 'team_vs_team'),
+    ('whl', 'tsdb', '5160', 'Canadian WHL', 'Western Hockey League', 'Hockey', 'https://r2.thesportsdb.com/images/media/league/badge/94w3kx1644535361.png', 1, 'WHL', 'whl', 'team_vs_team'),
+    ('qmjhl', 'tsdb', '5161', 'Canadian QMJHL', 'Quebec Major Junior Hockey League', 'Hockey', 'https://r2.thesportsdb.com/images/media/league/badge/3nofen1644535248.png', 1, 'QMJHL', 'qmjhl', 'team_vs_team'),
 
     -- Hockey - AHL (TSDB)
-    ('ahl', 'tsdb', '4738', 'American AHL', 'American Hockey League', 'Hockey', 'https://r2.thesportsdb.com/images/media/league/badge/bm25ej1582197507.png', 1, 'AHL', 'ahl'),
+    ('ahl', 'tsdb', '4738', 'American AHL', 'American Hockey League', 'Hockey', 'https://r2.thesportsdb.com/images/media/league/badge/bm25ej1582197507.png', 1, 'AHL', 'ahl', 'team_vs_team'),
 
     -- Baseball (ESPN)
-    ('mlb', 'espn', 'baseball/mlb', NULL, 'MLB', 'Baseball', 'https://a.espncdn.com/i/teamlogos/leagues/500/mlb.png', 1, NULL, 'mlb'),
-    ('college-baseball', 'espn', 'baseball/college-baseball', NULL, 'NCAA Baseball', 'Baseball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/baseball.png', 1, NULL, 'ncaabb'),
-    ('college-softball', 'espn', 'baseball/college-softball', NULL, 'NCAA Softball', 'Softball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/softball.png', 1, NULL, 'ncaasbw'),
+    ('mlb', 'espn', 'baseball/mlb', NULL, 'MLB', 'Baseball', 'https://a.espncdn.com/i/teamlogos/leagues/500/mlb.png', 1, NULL, 'mlb', 'team_vs_team'),
+    ('college-baseball', 'espn', 'baseball/college-baseball', NULL, 'NCAA Baseball', 'Baseball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/baseball.png', 1, NULL, 'ncaabb', 'team_vs_team'),
+    ('college-softball', 'espn', 'baseball/college-softball', NULL, 'NCAA Softball', 'Softball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/softball.png', 1, NULL, 'ncaasbw', 'team_vs_team'),
 
     -- Soccer (ESPN)
-    ('usa.1', 'espn', 'soccer/usa.1', NULL, 'MLS', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/19.png', 1, NULL, 'mls'),
-    ('usa.nwsl', 'espn', 'soccer/usa.nwsl', NULL, 'NWSL', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2323.png', 1, NULL, 'nwsl'),
-    ('usa.ncaa.m.1', 'espn', 'soccer/usa.ncaa.m.1', NULL, 'NCAA Men''s Soccer', 'Soccer', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png', 1, 'NCAA Soccer', 'ncaas'),
-    ('usa.ncaa.w.1', 'espn', 'soccer/usa.ncaa.w.1', NULL, 'NCAA Women''s Soccer', 'Soccer', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png', 1, 'NCAA W Soccer', 'ncaaws'),
-    ('eng.1', 'espn', 'soccer/eng.1', NULL, 'English Premier League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', 1, 'EPL', 'epl'),
-    ('eng.2', 'espn', 'soccer/eng.2', NULL, 'EFL Championship', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/24.png', 1, NULL, 'championship'),
-    ('eng.3', 'espn', 'soccer/eng.3', NULL, 'EFL League One', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/25.png', 1, NULL, 'league-one'),
-    ('esp.1', 'espn', 'soccer/esp.1', NULL, 'La Liga', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png', 1, NULL, 'laliga'),
-    ('ger.1', 'espn', 'soccer/ger.1', NULL, 'Bundesliga', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/10.png', 1, NULL, 'bundesliga'),
-    ('ita.1', 'espn', 'soccer/ita.1', NULL, 'Serie A', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png', 1, NULL, 'seriea'),
-    ('fra.1', 'espn', 'soccer/fra.1', NULL, 'Ligue 1', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/9.png', 1, NULL, 'ligue1'),
-    ('uefa.champions', 'espn', 'soccer/uefa.champions', NULL, 'UEFA Champions League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png', 1, 'UCL', 'ucl'),
-    ('ksa.1', 'espn', 'soccer/ksa.1', NULL, 'Saudi Pro League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2488.png', 1, 'SPL', 'spl'),
+    ('usa.1', 'espn', 'soccer/usa.1', NULL, 'MLS', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/19.png', 1, NULL, 'mls', 'team_vs_team'),
+    ('usa.nwsl', 'espn', 'soccer/usa.nwsl', NULL, 'NWSL', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2323.png', 1, NULL, 'nwsl', 'team_vs_team'),
+    ('usa.ncaa.m.1', 'espn', 'soccer/usa.ncaa.m.1', NULL, 'NCAA Men''s Soccer', 'Soccer', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png', 1, 'NCAA Soccer', 'ncaas', 'team_vs_team'),
+    ('usa.ncaa.w.1', 'espn', 'soccer/usa.ncaa.w.1', NULL, 'NCAA Women''s Soccer', 'Soccer', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png', 1, 'NCAA W Soccer', 'ncaaws', 'team_vs_team'),
+    ('eng.1', 'espn', 'soccer/eng.1', NULL, 'English Premier League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', 1, 'EPL', 'epl', 'team_vs_team'),
+    ('eng.2', 'espn', 'soccer/eng.2', NULL, 'EFL Championship', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/24.png', 1, NULL, 'championship', 'team_vs_team'),
+    ('eng.3', 'espn', 'soccer/eng.3', NULL, 'EFL League One', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/25.png', 1, NULL, 'league-one', 'team_vs_team'),
+    ('esp.1', 'espn', 'soccer/esp.1', NULL, 'La Liga', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png', 1, NULL, 'laliga', 'team_vs_team'),
+    ('ger.1', 'espn', 'soccer/ger.1', NULL, 'Bundesliga', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/10.png', 1, NULL, 'bundesliga', 'team_vs_team'),
+    ('ita.1', 'espn', 'soccer/ita.1', NULL, 'Serie A', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png', 1, NULL, 'seriea', 'team_vs_team'),
+    ('fra.1', 'espn', 'soccer/fra.1', NULL, 'Ligue 1', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/9.png', 1, NULL, 'ligue1', 'team_vs_team'),
+    ('uefa.champions', 'espn', 'soccer/uefa.champions', NULL, 'UEFA Champions League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png', 1, 'UCL', 'ucl', 'team_vs_team'),
+    ('ksa.1', 'espn', 'soccer/ksa.1', NULL, 'Saudi Pro League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2488.png', 1, 'SPL', 'spl', 'team_vs_team'),
 
-    -- MMA (ESPN) - Non-team sport, import_enabled = 0
-    ('ufc', 'espn', 'mma/ufc', NULL, 'UFC', 'MMA', 'https://a.espncdn.com/i/teamlogos/leagues/500/ufc.png', 0, NULL, 'ufc'),
+    -- MMA (ESPN) - Combat sport with event cards
+    ('ufc', 'espn', 'mma/ufc', NULL, 'UFC', 'MMA', 'https://a.espncdn.com/i/teamlogos/leagues/500/ufc.png', 0, NULL, 'ufc', 'event_card'),
 
     -- Volleyball (ESPN)
-    ('mens-college-volleyball', 'espn', 'volleyball/mens-college-volleyball', NULL, 'NCAA Men''s Volleyball', 'Volleyball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png', 1, 'NCAA Volleyball', 'ncaavb'),
-    ('womens-college-volleyball', 'espn', 'volleyball/womens-college-volleyball', NULL, 'NCAA Women''s Volleyball', 'Volleyball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png', 1, 'NCAA W Volleyball', 'ncaawvb'),
+    ('mens-college-volleyball', 'espn', 'volleyball/mens-college-volleyball', NULL, 'NCAA Men''s Volleyball', 'Volleyball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png', 1, 'NCAA Volleyball', 'ncaavb', 'team_vs_team'),
+    ('womens-college-volleyball', 'espn', 'volleyball/womens-college-volleyball', NULL, 'NCAA Women''s Volleyball', 'Volleyball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png', 1, 'NCAA W Volleyball', 'ncaawvb', 'team_vs_team'),
 
     -- Lacrosse - NCAA (ESPN)
-    ('mens-college-lacrosse', 'espn', 'lacrosse/mens-college-lacrosse', NULL, 'NCAA Men''s Lacrosse', 'Lacrosse', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/lacrosse.png', 1, 'NCAA Lacrosse', 'ncaalax'),
-    ('womens-college-lacrosse', 'espn', 'lacrosse/womens-college-lacrosse', NULL, 'NCAA Women''s Lacrosse', 'Lacrosse', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/lacrosse.png', 1, 'NCAA W Lacrosse', 'ncaawlax'),
+    ('mens-college-lacrosse', 'espn', 'lacrosse/mens-college-lacrosse', NULL, 'NCAA Men''s Lacrosse', 'Lacrosse', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/lacrosse.png', 1, 'NCAA Lacrosse', 'ncaalax', 'team_vs_team'),
+    ('womens-college-lacrosse', 'espn', 'lacrosse/womens-college-lacrosse', NULL, 'NCAA Women''s Lacrosse', 'Lacrosse', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/lacrosse.png', 1, 'NCAA W Lacrosse', 'ncaawlax', 'team_vs_team'),
 
     -- Lacrosse (ESPN)
-    ('nll', 'espn', 'lacrosse/nll', NULL, 'National Lacrosse League', 'Lacrosse', 'https://a.espncdn.com/guid/5f77fe12-e54f-41a1-904e-77135452f348/logos/default.png', 1, 'NLL', 'nll'),
-    ('pll', 'espn', 'lacrosse/pll', NULL, 'Premier Lacrosse League', 'Lacrosse', 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/pll.png', 1, 'PLL', 'pll'),
+    ('nll', 'espn', 'lacrosse/nll', NULL, 'National Lacrosse League', 'Lacrosse', 'https://a.espncdn.com/guid/5f77fe12-e54f-41a1-904e-77135452f348/logos/default.png', 1, 'NLL', 'nll', 'team_vs_team'),
+    ('pll', 'espn', 'lacrosse/pll', NULL, 'Premier Lacrosse League', 'Lacrosse', 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/pll.png', 1, 'PLL', 'pll', 'team_vs_team'),
 
     -- Cricket (TSDB)
-    ('ipl', 'tsdb', '4460', 'Indian Premier League', 'Indian Premier League', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/gaiti11741709844.png', 1, 'IPL', 'ipl'),
-    ('cpl', 'tsdb', '5176', 'Caribbean Premier League', 'Caribbean Premier League', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/5mjjnj1645179844.png', 1, 'CPL', 'cpl'),
-    ('bpl', 'tsdb', '5529', 'Bangladesh Premier League', 'Bangladesh Premier League', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/3smqzk1734192770.png', 1, 'BPL', 'bpl'),
+    ('ipl', 'tsdb', '4460', 'Indian Premier League', 'Indian Premier League', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/gaiti11741709844.png', 1, 'IPL', 'ipl', 'team_vs_team'),
+    ('cpl', 'tsdb', '5176', 'Caribbean Premier League', 'Caribbean Premier League', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/5mjjnj1645179844.png', 1, 'CPL', 'cpl', 'team_vs_team'),
+    ('bpl', 'tsdb', '5529', 'Bangladesh Premier League', 'Bangladesh Premier League', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/3smqzk1734192770.png', 1, 'BPL', 'bpl', 'team_vs_team'),
 
     -- Rugby League (TSDB)
-    ('nrl', 'tsdb', '4416', 'Australian National Rugby League', 'National Rugby League', 'Rugby', 'https://r2.thesportsdb.com/images/media/league/badge/gsztcj1552071996.png', 1, 'NRL', 'nrl'),
+    ('nrl', 'tsdb', '4416', 'Australian National Rugby League', 'National Rugby League', 'Rugby', 'https://r2.thesportsdb.com/images/media/league/badge/gsztcj1552071996.png', 1, 'NRL', 'nrl', 'team_vs_team'),
 
-    -- Boxing (TSDB) - Non-team sport, import_enabled = 0
-    ('boxing', 'tsdb', '4445', 'Boxing', 'Boxing', 'Boxing', NULL, 0, NULL, 'boxing');
+    -- Boxing (TSDB) - Combat sport with event cards
+    ('boxing', 'tsdb', '4445', 'Boxing', 'Boxing', 'Boxing', NULL, 0, NULL, 'boxing', 'event_card');
 
 
 -- =============================================================================
 -- STREAM_MATCH_CACHE TABLE
 -- Caches stream-to-event matches to avoid expensive matching on every run.
--- Only caches successful matches.
+-- Supports both successful matches and user corrections.
 --
 -- Fingerprint = hash of group_id + stream_id + stream_name
 -- When stream name changes, hash changes, so no stale match used.
+--
+-- User corrections (user_corrected=1) are "pinned" and never auto-invalidated.
+-- Failed matches can be cached with event_id='__FAILED__' for short TTL.
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS stream_match_cache (
@@ -591,13 +602,29 @@ CREATE TABLE IF NOT EXISTS stream_match_cache (
     stream_id INTEGER NOT NULL,
     stream_name TEXT NOT NULL,
 
-    -- Match result
+    -- Match result (event_id='__FAILED__' for cached failed matches)
     event_id TEXT NOT NULL,
     league TEXT NOT NULL,
 
     -- Cached static event data (JSON blob)
     -- Contains event dict for template vars (static fields only)
-    cached_event_data TEXT NOT NULL,
+    -- NULL for failed match cache entries
+    cached_event_data TEXT,
+
+    -- Match method tracking
+    -- cache: hit existing cache entry
+    -- user_corrected: manually corrected by user (pinned)
+    -- alias: matched via user-defined alias
+    -- pattern: matched via team name pattern
+    -- fuzzy: matched via fuzzy string matching
+    -- keyword: matched via keyword (UFC, boxing event cards)
+    -- no_match: failed to match (short TTL)
+    match_method TEXT DEFAULT 'fuzzy'
+        CHECK(match_method IN ('cache', 'user_corrected', 'alias', 'pattern', 'fuzzy', 'keyword', 'no_match')),
+
+    -- User correction tracking
+    user_corrected BOOLEAN DEFAULT 0,
+    corrected_at TIMESTAMP,
 
     -- Housekeeping
     last_seen_generation INTEGER NOT NULL DEFAULT 0,
@@ -607,6 +634,54 @@ CREATE TABLE IF NOT EXISTS stream_match_cache (
 
 CREATE INDEX IF NOT EXISTS idx_smc_generation ON stream_match_cache(last_seen_generation);
 CREATE INDEX IF NOT EXISTS idx_smc_event_id ON stream_match_cache(event_id);
+CREATE INDEX IF NOT EXISTS idx_smc_user_corrected ON stream_match_cache(user_corrected) WHERE user_corrected = 1;
+CREATE INDEX IF NOT EXISTS idx_smc_method ON stream_match_cache(match_method);
+
+
+-- =============================================================================
+-- MATCH_CORRECTIONS TABLE
+-- Audit log of user corrections to stream-event matches.
+-- When a user corrects an incorrect match or assigns a failed match to an event,
+-- the correction is recorded here and the stream_match_cache is updated.
+--
+-- Correction types:
+--   remapped: Changed from incorrect event to correct event
+--   no_event: Stream has no corresponding event (permanently exclude)
+--   excluded: Stream should be excluded from matching (e.g., talk show)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS match_corrections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Stream identification
+    fingerprint TEXT NOT NULL,              -- Links to stream_match_cache
+    group_id INTEGER NOT NULL,
+    stream_name TEXT NOT NULL,
+
+    -- What was corrected
+    incorrect_event_id TEXT NOT NULL,       -- Original (wrong) event_id or '__FAILED__'
+    incorrect_league TEXT,                  -- Original league (if matched)
+
+    -- Correction details
+    correct_event_id TEXT,                  -- New event_id (NULL for no_event/excluded)
+    correct_league TEXT,                    -- New league
+
+    -- Correction type
+    correction_type TEXT NOT NULL
+        CHECK(correction_type IN ('remapped', 'no_event', 'excluded')),
+
+    -- Audit
+    corrected_by TEXT DEFAULT 'user',       -- 'user', 'api', 'import'
+    notes TEXT,                             -- Optional explanation
+
+    -- Unique constraint: one correction per fingerprint per original match
+    UNIQUE(fingerprint, incorrect_event_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mc_fingerprint ON match_corrections(fingerprint);
+CREATE INDEX IF NOT EXISTS idx_mc_group ON match_corrections(group_id);
+CREATE INDEX IF NOT EXISTS idx_mc_type ON match_corrections(correction_type);
 
 
 -- =============================================================================
@@ -1042,12 +1117,17 @@ CREATE TABLE IF NOT EXISTS epg_matched_streams (
     away_team TEXT,
     from_cache BOOLEAN DEFAULT 0,
 
+    -- Enhanced matching info (Phase 7)
+    match_method TEXT,  -- 'cache', 'user_corrected', 'alias', 'pattern', 'fuzzy', 'keyword', 'direct'
+    confidence REAL,    -- Match confidence score 0.0-1.0
+
     FOREIGN KEY (run_id) REFERENCES processing_runs(id) ON DELETE CASCADE,
     FOREIGN KEY (group_id) REFERENCES event_epg_groups(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_matched_streams_run ON epg_matched_streams(run_id);
 CREATE INDEX IF NOT EXISTS idx_matched_streams_group ON epg_matched_streams(group_id);
+CREATE INDEX IF NOT EXISTS idx_matched_streams_method ON epg_matched_streams(match_method);
 
 
 -- =============================================================================
@@ -1075,10 +1155,15 @@ CREATE TABLE IF NOT EXISTS epg_failed_matches (
     exclusion_reason TEXT,  -- For excluded_league: specific reason
     detail TEXT,            -- Additional context
 
+    -- Enhanced matching info (Phase 7) - what we extracted before failing
+    parsed_team1 TEXT,      -- Team name extracted from stream (before match)
+    parsed_team2 TEXT,      -- Opponent name extracted from stream
+    detected_league TEXT,   -- League hint detected (if any)
+
     FOREIGN KEY (run_id) REFERENCES processing_runs(id) ON DELETE CASCADE,
     FOREIGN KEY (group_id) REFERENCES event_epg_groups(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_failed_matches_run ON epg_failed_matches(run_id);
 CREATE INDEX IF NOT EXISTS idx_failed_matches_group ON epg_failed_matches(group_id);
-CREATE INDEX IF NOT EXISTS idx_failed_matches_reason ON epg_failed_matches(reason)
+CREATE INDEX IF NOT EXISTS idx_failed_matches_reason ON epg_failed_matches(reason);
