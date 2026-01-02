@@ -109,6 +109,7 @@ class EventTemplateConfig:
     subtitle_format: str = "{venue_city}"
     category: str = "Sports"
     program_art_url: str | None = None
+    event_channel_logo_url: str | None = None
 
     # XMLTV metadata
     xmltv_flags: dict = field(default_factory=lambda: {"new": True, "live": False, "date": False})
@@ -512,6 +513,7 @@ def template_to_programme_config(template: Template) -> TemplateConfig:
         description_format=template.description_template or "{matchup} | {venue_full}",
         subtitle_format=template.subtitle_template or "{venue_full}",
         category=category,
+        program_art_url=template.program_art_url,
         conditional_descriptions=template.conditional_descriptions or [],
     )
 
@@ -541,6 +543,7 @@ def template_to_event_config(template: Template) -> EventTemplateConfig:
         subtitle_format=template.subtitle_template or "{venue_city}",
         category=categories[0] if categories else "Sports",
         program_art_url=template.program_art_url,
+        event_channel_logo_url=template.event_channel_logo_url,
         xmltv_flags=template.xmltv_flags or {"new": True, "live": False, "date": False},
         xmltv_categories=categories,
         conditional_descriptions=template.conditional_descriptions or [],

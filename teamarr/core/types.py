@@ -139,4 +139,5 @@ class TemplateConfig:
     description_format: str
     subtitle_format: str
     category: str
+    program_art_url: str | None = None
     conditional_descriptions: list[dict] = field(default_factory=list)
