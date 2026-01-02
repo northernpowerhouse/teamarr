@@ -9,7 +9,6 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  ExternalLink,
   Link,
   Copy,
   Check,
@@ -17,7 +16,6 @@ import {
   ChevronDown,
   ChevronUp,
   Search,
-  FileText,
   Plus,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -430,240 +428,187 @@ export function EPG() {
         </div>
       </div>
 
-      {/* Action Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Generate EPG */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Play className="h-5 w-5" />
-              Generate EPG
-            </CardTitle>
-            <CardDescription>Create fresh EPG with current schedules</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Button
-              onClick={handleGenerate}
-              disabled={isGenerating}
-              className="w-full"
-            >
-              {isGenerating && (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              )}
-              {isGenerating ? "Generating..." : "Generate Now"}
-            </Button>
-            {stats?.last_run && (
-              <p className="text-xs text-muted-foreground text-center">
-                Last: {formatRelativeTime(stats.last_run)}
-              </p>
+      {/* Action Bar */}
+      <div className="flex flex-wrap items-center gap-3 bg-secondary border border-border rounded px-3 py-2">
+        <Button
+          size="sm"
+          onClick={handleGenerate}
+          disabled={isGenerating}
+        >
+          {isGenerating ? (
+            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+          ) : (
+            <Play className="h-4 w-4 mr-1" />
+          )}
+          {isGenerating ? "Generating..." : "Generate"}
+        </Button>
+        {stats?.last_run && (
+          <span className="text-xs text-muted-foreground">
+            Last: {formatRelativeTime(stats.last_run)}
+          </span>
+        )}
+        <div className="h-4 w-px bg-border" />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleDownload}
+          disabled={isDownloading}
+        >
+          {isDownloading ? (
+            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+          ) : (
+            <Download className="h-4 w-4 mr-1" />
+          )}
+          Download
+        </Button>
+        <div className="h-4 w-px bg-border" />
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <Link className="h-4 w-4 text-muted-foreground shrink-0" />
+          <Input
+            value={epgUrl}
+            readOnly
+            className="text-xs font-mono h-8 flex-1 min-w-0"
+            onClick={(e) => e.currentTarget.select()}
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            onClick={handleCopyUrl}
+          >
+            {copied ? (
+              <Check className="h-4 w-4 text-green-500" />
+            ) : (
+              <Copy className="h-4 w-4" />
             )}
-          </CardContent>
-        </Card>
-
-        {/* Download XMLTV */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Download className="h-5 w-5" />
-              Download EPG
-            </CardTitle>
-            <CardDescription>Download XMLTV file to your computer</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Button
-              variant="outline"
-              onClick={handleDownload}
-              disabled={isDownloading}
-              className="w-full"
-            >
-              {isDownloading ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <ExternalLink className="h-4 w-4 mr-2" />
-              )}
-              Open XMLTV
-            </Button>
-            <p className="text-xs text-muted-foreground text-center">
-              Format: XMLTV (.xml)
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* EPG URL */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Link className="h-5 w-5" />
-              EPG URL
-            </CardTitle>
-            <CardDescription>Direct URL for IPTV applications</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="flex gap-2">
-              <Input
-                value={epgUrl}
-                readOnly
-                className="text-xs font-mono"
-                onClick={(e) => e.currentTarget.select()}
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={handleCopyUrl}
-              >
-                {copied ? (
-                  <Check className="h-4 w-4 text-green-500" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground text-center">
-              Use this URL in your IPTV app
-            </p>
-          </CardContent>
-        </Card>
+          </Button>
+        </div>
       </div>
 
-      {/* EPG Analysis */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            EPG Analysis
-          </CardTitle>
-          <CardDescription>Current EPG content breakdown and issues</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {analysisLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : analysis ? (
-            <div className="space-y-4">
-              {/* Stats Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div className="text-center p-3 bg-muted/50 rounded-lg">
-                  <div className="text-2xl font-bold">{analysis.channels.total}</div>
-                  <div className="text-xs text-muted-foreground">Channels</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {analysis.channels.team_based} team / {analysis.channels.event_based} event
-                  </div>
-                </div>
-                <div className="text-center p-3 bg-muted/50 rounded-lg">
-                  <div className="text-2xl font-bold">{analysis.programmes.events}</div>
-                  <div className="text-xs text-muted-foreground">Events</div>
-                </div>
-                <div className="text-center p-3 bg-muted/50 rounded-lg">
-                  <div className="text-2xl font-bold text-blue-600">{analysis.programmes.pregame}</div>
-                  <div className="text-xs text-muted-foreground">Pregame</div>
-                </div>
-                <div className="text-center p-3 bg-muted/50 rounded-lg">
-                  <div className="text-2xl font-bold text-purple-600">{analysis.programmes.postgame}</div>
-                  <div className="text-xs text-muted-foreground">Postgame</div>
-                </div>
-                <div className="text-center p-3 bg-muted/50 rounded-lg">
-                  <div className="text-2xl font-bold text-orange-600">{analysis.programmes.idle}</div>
-                  <div className="text-xs text-muted-foreground">Idle</div>
-                </div>
-              </div>
-
-              {/* Date Range and Total */}
-              <div className="flex items-center justify-between text-sm text-muted-foreground border-t pt-3">
-                <span>Date Range: <strong>{formatDateRange(analysis.date_range.start, analysis.date_range.end)}</strong></span>
-                <span>Total Programmes: <strong>{analysis.programmes.total}</strong></span>
-              </div>
-
-              {/* Issues Section */}
-              {hasIssues ? (
-                <div className="border border-yellow-500/30 bg-yellow-500/10 rounded-lg p-4 space-y-3">
-                  <div className="flex items-center gap-2 text-yellow-600 font-medium">
-                    <AlertTriangle className="h-4 w-4" />
-                    Detected Issues
-                  </div>
-
-                  {analysis.unreplaced_variables.length > 0 && (
-                    <div>
-                      <div className="text-sm font-medium mb-1">
-                        Unreplaced Variables ({analysis.unreplaced_variables.length})
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {analysis.unreplaced_variables.map((v) => (
-                          <code
-                            key={v}
-                            className="text-xs bg-yellow-500/20 px-1.5 py-0.5 rounded cursor-pointer hover:bg-yellow-500/40"
-                            onClick={() => {
-                              setSearchTerm(v)
-                              setShowXmlPreview(true)
-                            }}
-                          >
-                            {v}
-                          </code>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {analysis.coverage_gaps.length > 0 && (
-                    <div>
-                      <div className="text-sm font-medium mb-1">
-                        Coverage Gaps ({analysis.coverage_gaps.length})
-                      </div>
-                      <div className="space-y-1 max-h-32 overflow-y-auto">
-                        {analysis.coverage_gaps.slice(0, 10).map((gap, idx) => (
-                          <div
-                            key={idx}
-                            className="text-xs bg-yellow-500/20 px-2 py-1 rounded cursor-pointer hover:bg-yellow-500/40"
-                            onClick={() => {
-                              setSearchTerm("")
-                              setHighlightedGap({
-                                afterStop: gap.after_stop,
-                                beforeStart: gap.before_start,
-                                afterProgram: gap.after_program,
-                                beforeProgram: gap.before_program,
-                              })
-                              setShowXmlPreview(true)
-                              setTimeout(() => {
-                                if (previewRef.current) {
-                                  const mark = previewRef.current.querySelector(".bg-red-400\\/30, .bg-blue-400\\/30")
-                                  if (mark) {
-                                    mark.scrollIntoView({ behavior: "smooth", block: "center" })
-                                  }
-                                }
-                              }, 100)
-                            }}
-                          >
-                            <strong>{gap.channel}</strong>: {gap.gap_minutes}min gap between "{gap.after_program}" and "{gap.before_program}"
-                          </div>
-                        ))}
-                        {analysis.coverage_gaps.length > 10 && (
-                          <div className="text-xs text-muted-foreground">
-                            ... and {analysis.coverage_gaps.length - 10} more
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="border border-green-500/30 bg-green-500/10 rounded-lg p-4">
-                  <div className="flex items-center gap-2 text-green-600 font-medium">
-                    <CheckCircle className="h-4 w-4" />
-                    No Issues Detected
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    All template variables resolved and no coverage gaps found.
-                  </p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No EPG data available. Generate EPG first.
+      {/* EPG Analysis - Stats Tiles */}
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+        <div className="bg-secondary rounded px-3 py-2">
+          <div className="text-lg font-semibold">{analysis?.channels.total ?? 0}</div>
+          <div className="text-xs text-muted-foreground">Channels</div>
+          {analysis && (
+            <div className="text-xs text-muted-foreground">
+              {analysis.channels.team_based}T / {analysis.channels.event_based}E
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+        <div className="bg-secondary rounded px-3 py-2">
+          <div className="text-lg font-semibold">{analysis?.programmes.events ?? 0}</div>
+          <div className="text-xs text-muted-foreground">Events</div>
+        </div>
+        <div className="bg-secondary rounded px-3 py-2">
+          <div className="text-lg font-semibold text-blue-600">{analysis?.programmes.pregame ?? 0}</div>
+          <div className="text-xs text-muted-foreground">Pregame</div>
+        </div>
+        <div className="bg-secondary rounded px-3 py-2">
+          <div className="text-lg font-semibold text-purple-600">{analysis?.programmes.postgame ?? 0}</div>
+          <div className="text-xs text-muted-foreground">Postgame</div>
+        </div>
+        <div className="bg-secondary rounded px-3 py-2">
+          <div className="text-lg font-semibold text-orange-600">{analysis?.programmes.idle ?? 0}</div>
+          <div className="text-xs text-muted-foreground">Idle</div>
+        </div>
+        <div className="bg-secondary rounded px-3 py-2">
+          <div className="text-lg font-semibold">{analysis?.programmes.total ?? 0}</div>
+          <div className="text-xs text-muted-foreground">Total</div>
+          {analysis && (
+            <div className="text-xs text-muted-foreground">
+              {formatDateRange(analysis.date_range.start, analysis.date_range.end)}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* EPG Issues */}
+      {analysisLoading ? (
+        <div className="flex items-center justify-center py-4">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : analysis && hasIssues ? (
+        <div className="border border-yellow-500/30 bg-yellow-500/10 rounded-lg p-3 space-y-2">
+          <div className="flex items-center gap-2 text-yellow-600 font-medium text-sm">
+            <AlertTriangle className="h-4 w-4" />
+            Detected Issues
+          </div>
+
+          {analysis.unreplaced_variables.length > 0 && (
+            <div>
+              <div className="text-xs font-medium mb-1">
+                Unreplaced Variables ({analysis.unreplaced_variables.length})
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {analysis.unreplaced_variables.map((v) => (
+                  <code
+                    key={v}
+                    className="text-xs bg-yellow-500/20 px-1.5 py-0.5 rounded cursor-pointer hover:bg-yellow-500/40"
+                    onClick={() => {
+                      setSearchTerm(v)
+                      setShowXmlPreview(true)
+                    }}
+                  >
+                    {v}
+                  </code>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {analysis.coverage_gaps.length > 0 && (
+            <div>
+              <div className="text-xs font-medium mb-1">
+                Coverage Gaps ({analysis.coverage_gaps.length})
+              </div>
+              <div className="space-y-1 max-h-32 overflow-y-auto">
+                {analysis.coverage_gaps.slice(0, 10).map((gap, idx) => (
+                  <div
+                    key={idx}
+                    className="text-xs bg-yellow-500/20 px-2 py-1 rounded cursor-pointer hover:bg-yellow-500/40"
+                    onClick={() => {
+                      setSearchTerm("")
+                      setHighlightedGap({
+                        afterStop: gap.after_stop,
+                        beforeStart: gap.before_start,
+                        afterProgram: gap.after_program,
+                        beforeProgram: gap.before_program,
+                      })
+                      setShowXmlPreview(true)
+                      setTimeout(() => {
+                        if (previewRef.current) {
+                          const mark = previewRef.current.querySelector(".bg-red-400\\/30, .bg-blue-400\\/30")
+                          if (mark) {
+                            mark.scrollIntoView({ behavior: "smooth", block: "center" })
+                          }
+                        }
+                      }, 100)
+                    }}
+                  >
+                    <strong>{gap.channel}</strong>: {gap.gap_minutes}min gap between "{gap.after_program}" and "{gap.before_program}"
+                  </div>
+                ))}
+                {analysis.coverage_gaps.length > 10 && (
+                  <div className="text-xs text-muted-foreground">
+                    ... and {analysis.coverage_gaps.length - 10} more
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : analysis ? (
+        <div className="border border-green-500/30 bg-green-500/10 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-green-600 font-medium text-sm">
+            <CheckCircle className="h-4 w-4" />
+            No Issues Detected
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            All template variables resolved and no coverage gaps found.
+          </p>
+        </div>
+      ) : null}
 
       {/* XML Preview Toggle */}
       <Card>

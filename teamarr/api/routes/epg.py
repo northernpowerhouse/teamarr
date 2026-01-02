@@ -620,7 +620,7 @@ def get_epg_analysis():
     xmltv = _get_combined_xmltv()
     result = _analyze_xmltv(xmltv)
 
-    # Override programme counts with stats from latest processing run
+    # Override programme counts with stats from latest full_epg processing run
     # (XML comments may not survive serialization, so use DB stats instead)
     with get_db() as conn:
         row = conn.execute(
@@ -628,7 +628,7 @@ def get_epg_analysis():
             SELECT programmes_total, programmes_events, programmes_pregame,
                    programmes_postgame, programmes_idle
             FROM processing_runs
-            WHERE status = 'completed'
+            WHERE status = 'completed' AND run_type = 'full_epg'
             ORDER BY id DESC
             LIMIT 1
             """
