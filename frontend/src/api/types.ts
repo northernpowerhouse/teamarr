@@ -27,6 +27,10 @@ export interface EventGroup {
   stream_exclude_regex_enabled: boolean
   custom_regex_teams: string | null
   custom_regex_teams_enabled: boolean
+  custom_regex_date: string | null
+  custom_regex_date_enabled: boolean
+  custom_regex_time: string | null
+  custom_regex_time_enabled: boolean
   skip_builtin_filter: boolean
   // Processing stats
   last_refresh: string | null
@@ -36,6 +40,7 @@ export interface EventGroup {
   filtered_include_regex: number
   filtered_exclude_regex: number
   filtered_no_match: number
+  filtered_not_event: number
   // Multi-sport enhancements (Phase 3)
   channel_sort_order: string
   overlap_handling: string
@@ -71,6 +76,10 @@ export interface EventGroupCreate {
   stream_exclude_regex_enabled?: boolean
   custom_regex_teams?: string | null
   custom_regex_teams_enabled?: boolean
+  custom_regex_date?: string | null
+  custom_regex_date_enabled?: boolean
+  custom_regex_time?: string | null
+  custom_regex_time_enabled?: boolean
   skip_builtin_filter?: boolean
   // Multi-sport enhancements (Phase 3)
   channel_sort_order?: string
@@ -92,6 +101,8 @@ export interface EventGroupUpdate extends Partial<EventGroupCreate> {
   clear_stream_include_regex?: boolean
   clear_stream_exclude_regex?: boolean
   clear_custom_regex_teams?: boolean
+  clear_custom_regex_date?: boolean
+  clear_custom_regex_time?: boolean
 }
 
 export interface EventGroupListResponse {

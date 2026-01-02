@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { toast } from "sonner"
-import { ArrowLeft, Loader2, Save, ChevronRight, X, Plus, Check } from "lucide-react"
+import { ArrowLeft, Loader2, Save, ChevronRight, ChevronDown, X, Plus, Check } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -20,9 +20,6 @@ import {
 } from "@/hooks/useGroups"
 import { useTemplates } from "@/hooks/useTemplates"
 import type { EventGroupCreate, EventGroupUpdate } from "@/api/types"
-
-// Step type
-type Step = "mode" | "leagues" | "settings"
 
 // Group mode
 type GroupMode = "single" | "multi" | null
@@ -111,8 +108,6 @@ export function EventGroupForm() {
   const m3uAccountId = searchParams.get("m3u_account_id")
   const m3uAccountName = searchParams.get("m3u_account_name")
 
-  // Step state
-  const [currentStep, setCurrentStep] = useState<Step>(isEdit ? "settings" : "mode")
   const [groupMode, setGroupMode] = useState<GroupMode>(null)
 
   // Form state
@@ -185,6 +180,12 @@ export function EventGroupForm() {
   const [newProfileName, setNewProfileName] = useState("")
   const [creatingProfile, setCreatingProfile] = useState(false)
 
+  // Filter state for channel groups
+  const [channelGroupFilter, setChannelGroupFilter] = useState("")
+
+  // Collapsible section states
+  const [regexExpanded, setRegexExpanded] = useState(false)
+
   // Mutations
   const createMutation = useCreateGroup()
   const updateMutation = useUpdateGroup()
@@ -217,6 +218,10 @@ export function EventGroupForm() {
         stream_exclude_regex_enabled: group.stream_exclude_regex_enabled,
         custom_regex_teams: group.custom_regex_teams,
         custom_regex_teams_enabled: group.custom_regex_teams_enabled,
+        custom_regex_date: group.custom_regex_date,
+        custom_regex_date_enabled: group.custom_regex_date_enabled,
+        custom_regex_time: group.custom_regex_time,
+        custom_regex_time_enabled: group.custom_regex_time_enabled,
         skip_builtin_filter: group.skip_builtin_filter,
         // Multi-sport enhancements (Phase 3)
         channel_sort_order: group.channel_sort_order || "time",
@@ -256,6 +261,14 @@ export function EventGroupForm() {
     return grouped
   }, [cachedLeagues])
 
+  // Filtered channel groups based on search
+  const filteredChannelGroups = useMemo(() => {
+    if (!channelGroups) return []
+    if (!channelGroupFilter) return channelGroups
+    const filter = channelGroupFilter.toLowerCase()
+    return channelGroups.filter(g => g.name.toLowerCase().includes(filter))
+  }, [channelGroups, channelGroupFilter])
+
   // Eligible parent groups (single-league only, not multi-sport)
   const eligibleParents = useMemo(() => {
     if (!groupsData?.groups) return []
@@ -272,46 +285,40 @@ export function EventGroupForm() {
 
   const handleModeSelect = (mode: GroupMode) => {
     setGroupMode(mode)
-    setCurrentStep("leagues")
   }
 
-  const handleLeaguesContinue = () => {
-    if (groupMode === "single" && !selectedLeague) {
-      toast.error("Please select a league")
-      return
-    }
-    if (groupMode === "multi" && selectedLeagues.size === 0) {
-      toast.error("Please select at least one league")
-      return
-    }
-
-    // Update formData with selected leagues
-    if (groupMode === "single" && selectedLeague) {
-      setFormData(prev => ({ ...prev, leagues: [selectedLeague] }))
-    } else if (groupMode === "multi") {
-      setFormData(prev => ({ ...prev, leagues: Array.from(selectedLeagues) }))
-    }
-
-    setCurrentStep("settings")
-  }
+  // handleLeaguesContinue removed - V1-style single-page flow uses inline league selection
 
   const handleSubmit = async () => {
     if (!formData.name.trim()) {
       toast.error("Group name is required")
       return
     }
-    if (formData.leagues.length === 0) {
+
+    // Update leagues from selection state if not already set (single-page flow)
+    let leagues = formData.leagues
+    if (leagues.length === 0) {
+      if (groupMode === "single" && selectedLeague) {
+        leagues = [selectedLeague]
+      } else if (groupMode === "multi" && selectedLeagues.size > 0) {
+        leagues = Array.from(selectedLeagues)
+      }
+    }
+
+    if (leagues.length === 0) {
       toast.error("At least one league is required")
       return
     }
 
     try {
+      const submitData = { ...formData, leagues }
+
       if (isEdit) {
-        const updateData: EventGroupUpdate = { ...formData }
+        const updateData: EventGroupUpdate = { ...submitData }
         await updateMutation.mutateAsync({ groupId: Number(groupId), data: updateData })
         toast.success(`Updated group "${formData.name}"`)
       } else {
-        await createMutation.mutateAsync(formData)
+        await createMutation.mutateAsync(submitData)
         toast.success(`Created group "${formData.name}"`)
       }
       navigate("/event-groups")
@@ -384,105 +391,48 @@ export function EventGroupForm() {
         </div>
       </div>
 
-      {/* Step Indicator */}
-      <div className="flex items-center gap-2 text-sm">
-        <button
-          onClick={() => !isEdit && setCurrentStep("mode")}
-          className={cn(
-            "px-3 py-1.5 rounded-full transition-colors",
-            currentStep === "mode"
-              ? "bg-primary text-primary-foreground"
-              : groupMode ? "bg-green-500/20 text-green-600" : "bg-muted text-muted-foreground"
-          )}
-          disabled={!!isEdit}
-        >
-          1. Mode
-        </button>
-        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        <button
-          onClick={() => groupMode && setCurrentStep("leagues")}
-          className={cn(
-            "px-3 py-1.5 rounded-full transition-colors",
-            currentStep === "leagues"
-              ? "bg-primary text-primary-foreground"
-              : (formData.leagues.length > 0 || selectedLeagues.size > 0 || selectedLeague)
-                ? "bg-green-500/20 text-green-600"
-                : "bg-muted text-muted-foreground"
-          )}
-          disabled={!groupMode}
-        >
-          2. Leagues
-        </button>
-        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        <span
-          className={cn(
-            "px-3 py-1.5 rounded-full",
-            currentStep === "settings"
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground"
-          )}
-        >
-          3. Settings
-        </span>
-      </div>
-
-      {/* Step 1: Mode Selection */}
-      {currentStep === "mode" && (
-        <div className="grid grid-cols-2 gap-6">
-          <Card
-            className={cn(
-              "cursor-pointer transition-all hover:border-primary/50",
-              groupMode === "single" && "border-primary ring-2 ring-primary/20"
-            )}
-            onClick={() => handleModeSelect("single")}
-          >
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <span className="text-2xl">🎯</span>
-                Single League
-              </CardTitle>
-              <CardDescription>
-                Match streams to events in ONE specific league
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• Best for dedicated league streams (NFL, NBA, etc.)</li>
-                <li>• Can be a child of another group</li>
-                <li>• Simpler configuration</li>
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card
-            className={cn(
-              "cursor-pointer transition-all hover:border-primary/50",
-              groupMode === "multi" && "border-primary ring-2 ring-primary/20"
-            )}
-            onClick={() => handleModeSelect("multi")}
-          >
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <span className="text-2xl">🌐</span>
-                Multi-Sport
-              </CardTitle>
-              <CardDescription>
-                Match streams across MULTIPLE leagues and sports
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• Best for aggregator streams (ESPN+, etc.)</li>
-                <li>• Matches across all selected leagues</li>
-                <li>• Advanced league detection</li>
-              </ul>
-            </CardContent>
-          </Card>
-        </div>
+      {/* Add Mode: Group Type Selector (V1 style) */}
+      {!isEdit && !groupMode && (
+        <Card className="bg-muted/30">
+          <CardHeader>
+            <CardTitle>Group Type</CardTitle>
+            <CardDescription>Select the type of event group to create</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                type="button"
+                onClick={() => handleModeSelect("single")}
+                className={cn(
+                  "flex flex-col items-start p-4 rounded-lg border-2 text-left transition-all",
+                  "border-border hover:border-primary/50"
+                )}
+              >
+                <span className="font-semibold">Single League</span>
+                <span className="text-xs text-muted-foreground mt-1">
+                  Match streams to events in one specific league (e.g., NFL, NBA, EPL)
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleModeSelect("multi")}
+                className={cn(
+                  "flex flex-col items-start p-4 rounded-lg border-2 text-left transition-all",
+                  "border-border hover:border-primary/50"
+                )}
+              >
+                <span className="font-semibold">Multi-Sport / Multi-League</span>
+                <span className="text-xs text-muted-foreground mt-1">
+                  Match streams across multiple sports and leagues (e.g., ESPN+)
+                </span>
+              </button>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
-      {/* Step 2: League Selection */}
-      {currentStep === "leagues" && groupMode === "single" && (
+      {/* League Selection - Single League Mode (add mode only) */}
+      {groupMode === "single" && !isEdit && (
         <Card>
           <CardHeader>
             <CardTitle>Select League</CardTitle>
@@ -566,19 +516,12 @@ export function EventGroupForm() {
               </div>
             )}
 
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" onClick={() => setCurrentStep("mode")}>
-                Back
-              </Button>
-              <Button onClick={handleLeaguesContinue} disabled={!selectedLeague}>
-                Continue
-              </Button>
-            </div>
           </CardContent>
         </Card>
       )}
 
-      {currentStep === "leagues" && groupMode === "multi" && (
+      {/* League Selection - Multi-Sport Mode (add mode only) */}
+      {groupMode === "multi" && !isEdit && (
         <Card>
           <CardHeader>
             <CardTitle>Select Leagues</CardTitle>
@@ -702,20 +645,12 @@ export function EventGroupForm() {
               </div>
             )}
 
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" onClick={() => setCurrentStep("mode")}>
-                Back
-              </Button>
-              <Button onClick={handleLeaguesContinue} disabled={selectedLeagues.size === 0}>
-                Continue ({selectedLeagues.size} leagues)
-              </Button>
-            </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Step 3: Settings */}
-      {currentStep === "settings" && (
+      {/* Settings Section - shown when leagues selected or in edit mode */}
+      {(isEdit || formData.leagues.length > 0 || selectedLeague || selectedLeagues.size > 0) && (
         <div className="space-y-6">
           {/* Child Group Notice */}
           {isChildGroup && (
@@ -734,6 +669,14 @@ export function EventGroupForm() {
               </CardContent>
             </Card>
           )}
+
+          {/* Locked Group Type Indicator */}
+          <div className="flex items-center gap-2 px-1 py-2">
+            <span className="text-muted-foreground">🔒</span>
+            <Badge variant="secondary" className="font-normal">
+              {formData.leagues.length > 1 ? "Multi-Sport / Multi-League" : "Single League"}
+            </Badge>
+          </div>
 
           {/* Basic Info */}
           <Card>
@@ -764,7 +707,7 @@ export function EventGroupForm() {
                         })
                       }
                     >
-                      <option value="">No Template</option>
+                      <option value="">Unassigned</option>
                       {eventTemplates.map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.name}
@@ -778,31 +721,25 @@ export function EventGroupForm() {
                 )}
               </div>
 
-              {/* Show selected leagues */}
-              <div className="space-y-2">
-                <Label>Matching Leagues</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {formData.leagues.map(slug => {
-                    const league = cachedLeagues?.find(l => l.slug === slug)
-                    return (
-                      <Badge key={slug} variant="secondary">
-                        {league?.logo_url && (
-                          <img src={league.logo_url} alt="" className="h-3 w-3 object-contain mr-1" />
-                        )}
-                        {league?.name || slug}
-                      </Badge>
-                    )
-                  })}
+              {/* Show selected leagues - only in edit mode since leagues are inline for add */}
+              {isEdit && (
+                <div className="space-y-2">
+                  <Label>Matching Leagues</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {formData.leagues.map(slug => {
+                      const league = cachedLeagues?.find(l => l.slug === slug)
+                      return (
+                        <Badge key={slug} variant="secondary">
+                          {league?.logo_url && (
+                            <img src={league.logo_url} alt="" className="h-3 w-3 object-contain mr-1" />
+                          )}
+                          {league?.name || slug}
+                        </Badge>
+                      )
+                    })}
+                  </div>
                 </div>
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="h-auto p-0 text-xs"
-                  onClick={() => setCurrentStep("leagues")}
-                >
-                  Change leagues
-                </Button>
-              </div>
+              )}
 
               <div className="flex items-center gap-2">
                 <Switch
@@ -820,38 +757,79 @@ export function EventGroupForm() {
               <CardTitle>Channel Settings</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="assignment_mode">Channel Assignment</Label>
-                  <Select
-                    id="assignment_mode"
-                    value={formData.channel_assignment_mode}
-                    onChange={(e) =>
-                      setFormData({ ...formData, channel_assignment_mode: e.target.value })
-                    }
+              {/* Channel Assignment Mode - V1 style tile cards */}
+              <div className="space-y-2">
+                <Label>Channel Assignment Mode</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* AUTO Card */}
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, channel_assignment_mode: "auto", channel_start_number: null })}
+                    className={cn(
+                      "flex flex-col items-start p-4 rounded-lg border-2 text-left transition-all",
+                      formData.channel_assignment_mode === "auto"
+                        ? "border-green-500 bg-green-500/10"
+                        : "border-border hover:border-muted-foreground/50"
+                    )}
                   >
-                    <option value="auto">Automatic</option>
-                    <option value="manual">Manual</option>
-                  </Select>
+                    <span className={cn(
+                      "font-semibold text-sm",
+                      formData.channel_assignment_mode === "auto" && "text-green-500"
+                    )}>
+                      AUTO
+                    </span>
+                    <span className="text-xs text-muted-foreground mt-1">
+                      Auto-assign from global range. Drag to set priority on Event Groups page.
+                    </span>
+                  </button>
+
+                  {/* MANUAL Card */}
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, channel_assignment_mode: "manual" })}
+                    className={cn(
+                      "flex flex-col items-start p-4 rounded-lg border-2 text-left transition-all",
+                      formData.channel_assignment_mode === "manual"
+                        ? "border-primary bg-primary/10"
+                        : "border-border hover:border-muted-foreground/50"
+                    )}
+                  >
+                    <span className={cn(
+                      "font-semibold text-sm",
+                      formData.channel_assignment_mode === "manual" && "text-primary"
+                    )}>
+                      MANUAL
+                    </span>
+                    <span className="text-xs text-muted-foreground mt-1">
+                      Specify a fixed channel start number below.
+                    </span>
+                  </button>
                 </div>
-                {formData.channel_assignment_mode === "manual" && (
-                  <div className="space-y-2">
-                    <Label htmlFor="channel_start">Starting Channel Number</Label>
-                    <Input
-                      id="channel_start"
-                      type="number"
-                      min={1}
-                      value={formData.channel_start_number || ""}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          channel_start_number: e.target.value ? Number(e.target.value) : null,
-                        })
-                      }
-                    />
-                  </div>
-                )}
               </div>
+
+              {/* Channel Start Number - only shown for manual */}
+              {formData.channel_assignment_mode === "manual" && (
+                <div className="space-y-2">
+                  <Label htmlFor="channel_start">Channel Start Number</Label>
+                  <Input
+                    id="channel_start"
+                    type="number"
+                    min={1}
+                    max={9999}
+                    value={formData.channel_start_number || ""}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        channel_start_number: e.target.value ? Number(e.target.value) : null,
+                      })
+                    }
+                    placeholder="Required for MANUAL mode"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    First channel number for created channels (max 9999)
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="duplicate_handling">Duplicate Event Handling</Label>
@@ -882,15 +860,20 @@ export function EventGroupForm() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Channel Group */}
+              {/* Channel Group - V1 style with filter and list */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="channel_group">Channel Group</Label>
+                <Label>Channel Group</Label>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    placeholder="Filter groups..."
+                    value={channelGroupFilter}
+                    onChange={(e) => setChannelGroupFilter(e.target.value)}
+                    className="flex-1"
+                  />
                   <Button
                     type="button"
-                    variant="ghost"
+                    variant="secondary"
                     size="sm"
-                    className="h-7 px-2"
                     onClick={() => setShowCreateGroup(!showCreateGroup)}
                   >
                     <Plus className="h-3.5 w-3.5 mr-1" />
@@ -918,6 +901,7 @@ export function EventGroupForm() {
                           setFormData({ ...formData, channel_group_id: created.id })
                           setNewGroupName("")
                           setShowCreateGroup(false)
+                          setChannelGroupFilter("")
                           refetchChannelGroups()
                         } else {
                           toast.error("Failed to create group")
@@ -939,23 +923,53 @@ export function EventGroupForm() {
                     </Button>
                   </div>
                 )}
-                <Select
-                  id="channel_group"
-                  value={formData.channel_group_id?.toString() || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      channel_group_id: e.target.value ? Number(e.target.value) : null,
+                <div className="border rounded-md max-h-36 overflow-y-auto">
+                  {/* "None" option */}
+                  <button
+                    type="button"
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-accent border-b",
+                      !formData.channel_group_id && "bg-primary/10"
+                    )}
+                    onClick={() => setFormData({ ...formData, channel_group_id: undefined })}
+                  >
+                    <div className={cn(
+                      "w-4 h-4 border rounded flex items-center justify-center",
+                      !formData.channel_group_id && "bg-primary border-primary"
+                    )}>
+                      {!formData.channel_group_id && <Check className="h-3 w-3 text-primary-foreground" />}
+                    </div>
+                    <span className="text-muted-foreground italic">&lt;No group assignment&gt;</span>
+                  </button>
+                  {filteredChannelGroups.length === 0 ? (
+                    <div className="p-3 text-sm text-muted-foreground text-center">
+                      {channelGroupFilter ? "No matching groups" : "No groups found"}
+                    </div>
+                  ) : (
+                    filteredChannelGroups.map((g) => {
+                      const isSelected = formData.channel_group_id === g.id
+                      return (
+                        <button
+                          key={g.id}
+                          type="button"
+                          className={cn(
+                            "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-accent border-b last:border-b-0",
+                            isSelected && "bg-primary/10"
+                          )}
+                          onClick={() => setFormData({ ...formData, channel_group_id: g.id })}
+                        >
+                          <div className={cn(
+                            "w-4 h-4 border rounded flex items-center justify-center",
+                            isSelected && "bg-primary border-primary"
+                          )}>
+                            {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+                          </div>
+                          <span className="flex-1">{g.name}</span>
+                        </button>
+                      )
                     })
-                  }
-                >
-                  <option value="">None (use default)</option>
-                  {channelGroups?.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
-                  ))}
-                </Select>
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   Dispatcharr group to assign created channels to
                 </p>
@@ -1084,119 +1098,216 @@ export function EventGroupForm() {
             </CardContent>
           </Card>}
 
-          {/* Stream Filtering - hidden for child groups */}
-          {!isChildGroup && <Card>
-            <CardHeader>
-              <CardTitle>Stream Filtering</CardTitle>
-              <CardDescription>
-                Use regex patterns to filter which streams are processed
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Include Regex */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="include_regex">Include Pattern</Label>
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={formData.stream_include_regex_enabled || false}
-                      onCheckedChange={(checked) =>
-                        setFormData({ ...formData, stream_include_regex_enabled: checked })
+          {/* Custom Regex - Collapsible section (available for all groups including children) */}
+          <Card>
+            <button
+              type="button"
+              onClick={() => setRegexExpanded(!regexExpanded)}
+              className="w-full"
+            >
+              <CardHeader className="flex flex-row items-center justify-between py-3 cursor-pointer hover:bg-muted/50 rounded-t-lg">
+                <div className="flex items-center gap-2">
+                  {regexExpanded ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  )}
+                  <CardTitle className="text-base">Custom Regex</CardTitle>
+                </div>
+              </CardHeader>
+            </button>
+
+            {regexExpanded && (
+              <CardContent className="space-y-6 pt-0">
+                {/* Stream Filtering Subsection */}
+                <div className="space-y-4">
+                  <div className="border-b pb-2">
+                    <h4 className="font-medium text-sm">Stream Filtering</h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Streams are automatically filtered to only include game streams (those with vs, @, or at).
+                    </p>
+                  </div>
+
+                  {/* Skip Builtin Filter */}
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      id="skip_builtin"
+                      checked={formData.skip_builtin_filter || false}
+                      onClick={() =>
+                        setFormData({ ...formData, skip_builtin_filter: !formData.skip_builtin_filter })
                       }
                     />
-                    <span className="text-xs text-muted-foreground">Enabled</span>
+                    <div>
+                      <Label htmlFor="skip_builtin" className="font-normal cursor-pointer">
+                        Skip built-in game detection
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Disable automatic filtering when stream names don't use standard separators (vs, @, at).
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <Input
-                  id="include_regex"
-                  value={formData.stream_include_regex || ""}
-                  onChange={(e) =>
-                    setFormData({ ...formData, stream_include_regex: e.target.value || null })
-                  }
-                  placeholder="e.g., (HD|1080p|720p)"
-                  disabled={!formData.stream_include_regex_enabled}
-                  className={cn(!formData.stream_include_regex_enabled && "opacity-50")}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Only streams matching this pattern will be processed
-                </p>
-              </div>
 
-              {/* Exclude Regex */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="exclude_regex">Exclude Pattern</Label>
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={formData.stream_exclude_regex_enabled || false}
-                      onCheckedChange={(checked) =>
-                        setFormData({ ...formData, stream_exclude_regex_enabled: checked })
+                  {/* Inclusion Pattern */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        id="include_enabled"
+                        checked={formData.stream_include_regex_enabled || false}
+                        onClick={() =>
+                          setFormData({ ...formData, stream_include_regex_enabled: !formData.stream_include_regex_enabled })
+                        }
+                      />
+                      <Label htmlFor="include_enabled" className="font-normal cursor-pointer">
+                        Inclusion Pattern
+                      </Label>
+                    </div>
+                    <Input
+                      value={formData.stream_include_regex || ""}
+                      onChange={(e) =>
+                        setFormData({ ...formData, stream_include_regex: e.target.value || null })
                       }
+                      placeholder="e.g., Gonzaga|Washington State|Eastern Washington"
+                      disabled={!formData.stream_include_regex_enabled}
+                      className={cn("font-mono text-sm", !formData.stream_include_regex_enabled && "opacity-50")}
                     />
-                    <span className="text-xs text-muted-foreground">Enabled</span>
+                    <p className="text-xs text-muted-foreground">
+                      Only streams matching this pattern will be processed.
+                    </p>
                   </div>
-                </div>
-                <Input
-                  id="exclude_regex"
-                  value={formData.stream_exclude_regex || ""}
-                  onChange={(e) =>
-                    setFormData({ ...formData, stream_exclude_regex: e.target.value || null })
-                  }
-                  placeholder="e.g., (Spanish|French|German)"
-                  disabled={!formData.stream_exclude_regex_enabled}
-                  className={cn(!formData.stream_exclude_regex_enabled && "opacity-50")}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Streams matching this pattern will be skipped
-                </p>
-              </div>
 
-              {/* Custom Teams Regex */}
-              <div className="space-y-2 pt-4 border-t">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="teams_regex">Custom Team Extraction</Label>
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={formData.custom_regex_teams_enabled || false}
-                      onCheckedChange={(checked) =>
-                        setFormData({ ...formData, custom_regex_teams_enabled: checked })
+                  {/* Exclusion Pattern */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        id="exclude_enabled"
+                        checked={formData.stream_exclude_regex_enabled || false}
+                        onClick={() =>
+                          setFormData({ ...formData, stream_exclude_regex_enabled: !formData.stream_exclude_regex_enabled })
+                        }
+                      />
+                      <Label htmlFor="exclude_enabled" className="font-normal cursor-pointer">
+                        Exclusion Pattern
+                      </Label>
+                    </div>
+                    <Input
+                      value={formData.stream_exclude_regex || ""}
+                      onChange={(e) =>
+                        setFormData({ ...formData, stream_exclude_regex: e.target.value || null })
                       }
+                      placeholder="e.g., \(ES\)|\(ALT\)|All.?Star"
+                      disabled={!formData.stream_exclude_regex_enabled}
+                      className={cn("font-mono text-sm", !formData.stream_exclude_regex_enabled && "opacity-50")}
                     />
-                    <span className="text-xs text-muted-foreground">Enabled</span>
+                    <p className="text-xs text-muted-foreground">
+                      Streams matching this pattern will be excluded.
+                    </p>
                   </div>
                 </div>
-                <Input
-                  id="teams_regex"
-                  value={formData.custom_regex_teams || ""}
-                  onChange={(e) =>
-                    setFormData({ ...formData, custom_regex_teams: e.target.value || null })
-                  }
-                  placeholder="e.g., (.+?) vs (.+)"
-                  disabled={!formData.custom_regex_teams_enabled}
-                  className={cn(!formData.custom_regex_teams_enabled && "opacity-50")}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Custom regex to extract team names from stream names. Use capture groups or named groups (?P&lt;team1&gt;...) (?P&lt;team2&gt;...).
-                </p>
-              </div>
 
-              {/* Skip Builtin Filter */}
-              <div className="flex items-center justify-between pt-4 border-t">
-                <div>
-                  <Label>Skip Builtin Patterns</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Disable automatic "Team A vs Team B" pattern detection
-                  </p>
+                {/* Team Matching Subsection */}
+                <div className="space-y-4">
+                  <div className="border-b pb-2">
+                    <h4 className="font-medium text-sm">Team Matching</h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Override built-in matching with custom regex patterns. Enable individual fields as needed.
+                    </p>
+                  </div>
+
+                  {/* Teams Pattern */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        id="teams_enabled"
+                        checked={formData.custom_regex_teams_enabled || false}
+                        onClick={() =>
+                          setFormData({ ...formData, custom_regex_teams_enabled: !formData.custom_regex_teams_enabled })
+                        }
+                      />
+                      <Label htmlFor="teams_enabled" className="font-normal cursor-pointer">
+                        Teams Pattern
+                      </Label>
+                    </div>
+                    <Input
+                      value={formData.custom_regex_teams || ""}
+                      onChange={(e) =>
+                        setFormData({ ...formData, custom_regex_teams: e.target.value || null })
+                      }
+                      placeholder="(?P<team1>[A-Z]{2,3})\s*[@vs]+\s*(?P<team2>[A-Z]{2,3})"
+                      disabled={!formData.custom_regex_teams_enabled}
+                      className={cn("font-mono text-sm", !formData.custom_regex_teams_enabled && "opacity-50")}
+                    />
+                  </div>
+
+                  {/* Date Pattern */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        id="date_enabled"
+                        checked={formData.custom_regex_date_enabled || false}
+                        onClick={() =>
+                          setFormData({ ...formData, custom_regex_date_enabled: !formData.custom_regex_date_enabled })
+                        }
+                      />
+                      <Label htmlFor="date_enabled" className="font-normal cursor-pointer">
+                        Date Pattern
+                      </Label>
+                    </div>
+                    <Input
+                      value={formData.custom_regex_date || ""}
+                      onChange={(e) =>
+                        setFormData({ ...formData, custom_regex_date: e.target.value || null })
+                      }
+                      placeholder="(?P<date>\d{1,2}/\d{1,2})"
+                      disabled={!formData.custom_regex_date_enabled}
+                      className={cn("font-mono text-sm", !formData.custom_regex_date_enabled && "opacity-50")}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Extract date from stream name. Use named group: (?P&lt;date&gt;...)
+                    </p>
+                  </div>
+
+                  {/* Time Pattern */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        id="time_enabled"
+                        checked={formData.custom_regex_time_enabled || false}
+                        onClick={() =>
+                          setFormData({ ...formData, custom_regex_time_enabled: !formData.custom_regex_time_enabled })
+                        }
+                      />
+                      <Label htmlFor="time_enabled" className="font-normal cursor-pointer">
+                        Time Pattern
+                      </Label>
+                    </div>
+                    <Input
+                      value={formData.custom_regex_time || ""}
+                      onChange={(e) =>
+                        setFormData({ ...formData, custom_regex_time: e.target.value || null })
+                      }
+                      placeholder="(?P<time>\d{1,2}:\d{2}\s*(?:AM|PM)?)"
+                      disabled={!formData.custom_regex_time_enabled}
+                      className={cn("font-mono text-sm", !formData.custom_regex_time_enabled && "opacity-50")}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Extract time from stream name. Use named group: (?P&lt;time&gt;...)
+                    </p>
+                  </div>
+
+                  {/* Test Patterns Button - only in edit mode */}
+                  {isEdit && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => toast.info("Test Patterns feature coming soon")}
+                    >
+                      Test Patterns
+                    </Button>
+                  )}
                 </div>
-                <Switch
-                  checked={formData.skip_builtin_filter || false}
-                  onCheckedChange={(checked) =>
-                    setFormData({ ...formData, skip_builtin_filter: checked })
-                  }
-                />
-              </div>
-            </CardContent>
-          </Card>}
+              </CardContent>
+            )}
+          </Card>
 
           {/* Multi-Sport Settings - only show for multi-sport parent groups */}
           {!isChildGroup && formData.leagues.length > 1 && (
@@ -1275,9 +1386,6 @@ export function EventGroupForm() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => navigate("/event-groups")}>
               Cancel
-            </Button>
-            <Button variant="outline" onClick={() => setCurrentStep("leagues")}>
-              Back
             </Button>
             <Button onClick={handleSubmit} disabled={isPending}>
               {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
