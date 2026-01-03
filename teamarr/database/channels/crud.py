@@ -34,7 +34,15 @@ def create_managed_channel(
     """
     exception_keyword = kwargs.get("exception_keyword")
 
-    # Check for existing channel first (handles race conditions)
+    # Check for existing channel by tvg_id first (UNIQUE constraint)
+    existing_by_tvg = conn.execute(
+        "SELECT id FROM managed_channels WHERE tvg_id = ? AND deleted_at IS NULL",
+        (tvg_id,),
+    ).fetchone()
+    if existing_by_tvg:
+        return existing_by_tvg[0]
+
+    # Also check by event composite key (handles race conditions)
     if exception_keyword:
         existing = conn.execute(
             """SELECT id FROM managed_channels
@@ -112,7 +120,15 @@ def create_managed_channel(
         return cursor.lastrowid
     except Exception:
         # Handle race condition - record may have been created between check and insert
-        # Re-check for existing record
+        # First check by tvg_id (the UNIQUE constraint that likely failed)
+        existing_by_tvg = conn.execute(
+            "SELECT id FROM managed_channels WHERE tvg_id = ? AND deleted_at IS NULL",
+            (tvg_id,),
+        ).fetchone()
+        if existing_by_tvg:
+            return existing_by_tvg[0]
+
+        # Also check by event composite key
         if exception_keyword:
             existing = conn.execute(
                 """SELECT id FROM managed_channels
