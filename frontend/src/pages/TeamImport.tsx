@@ -126,9 +126,12 @@ function groupTeamsByProvider(teams: CacheTeam[], importedSet: Set<string>): Gro
   const grouped = new Map<string, { team: CacheTeam; leagues: string[]; importedLeagues: string[] }>()
 
   for (const team of teams) {
-    // Include sport in key to avoid grouping teams from different sports
-    // (e.g., Liverpool FC soccer vs some baseball team with same provider_team_id)
-    const key = `${team.provider}:${team.sport}:${team.provider_team_id}`
+    // Soccer teams play in multiple leagues (EPL + Champions League + FA Cup) - group by team ID
+    // All other sports: include league to prevent grouping different programs
+    // (e.g., Michigan Men's Basketball ≠ Michigan Women's Basketball even if they share school ID)
+    const key = team.sport === "soccer"
+      ? `${team.provider}:${team.sport}:${team.provider_team_id}`
+      : `${team.provider}:${team.sport}:${team.provider_team_id}:${team.league}`
     // Check if this specific team+league combination is imported
     const isImported = importedSet.has(`${team.provider_team_id}:${team.sport}:${team.league}`)
 
