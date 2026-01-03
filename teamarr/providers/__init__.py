@@ -16,6 +16,7 @@ to inject the LeagueMappingSource into providers.
 """
 
 from teamarr.providers.espn import ESPNClient, ESPNProvider
+from teamarr.providers.hockeytech import HockeyTechClient, HockeyTechProvider
 from teamarr.providers.registry import ProviderConfig, ProviderRegistry
 from teamarr.providers.tsdb import RateLimitStats, TSDBClient, TSDBProvider
 
@@ -61,6 +62,13 @@ def _create_tsdb_provider() -> TSDBProvider:
     )
 
 
+def _create_hockeytech_provider() -> HockeyTechProvider:
+    """Factory for HockeyTech provider with injected dependencies."""
+    return HockeyTechProvider(
+        league_mapping_source=ProviderRegistry.get_league_mapping_source(),
+    )
+
+
 # =============================================================================
 # PROVIDER REGISTRATION
 # =============================================================================
@@ -76,10 +84,18 @@ ProviderRegistry.register(
 )
 
 ProviderRegistry.register(
+    name="hockeytech",
+    provider_class=HockeyTechProvider,
+    factory=_create_hockeytech_provider,
+    priority=50,  # CHL leagues (OHL, WHL, QMJHL) + AHL, PWHL, USHL
+    enabled=True,
+)
+
+ProviderRegistry.register(
     name="tsdb",
     provider_class=TSDBProvider,
     factory=_create_tsdb_provider,
-    priority=100,  # Fallback provider
+    priority=100,  # Fallback provider for cricket, boxing, etc.
     enabled=True,
 )
 
@@ -95,6 +111,9 @@ __all__ = [
     # ESPN
     "ESPNClient",
     "ESPNProvider",
+    # HockeyTech
+    "HockeyTechClient",
+    "HockeyTechProvider",
     # TheSportsDB
     "RateLimitStats",
     "TSDBClient",
