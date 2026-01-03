@@ -111,6 +111,7 @@ def list_leagues(
                 "sport": league.sport,
                 "team_count": league.team_count,
                 "logo_url": league.logo_url,
+                "logo_url_dark": league.logo_url_dark,
                 "import_enabled": league.import_enabled,
                 "league_alias": league.league_alias,
             }

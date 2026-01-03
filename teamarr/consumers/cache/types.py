@@ -43,6 +43,7 @@ class LeagueEntry:
     league_name: str | None
     sport: str
     logo_url: str | None
+    logo_url_dark: str | None
     team_count: int
     import_enabled: bool = False  # Show in team importer
     league_alias: str | None = None  # Short display alias (e.g., 'EPL', 'UCL')

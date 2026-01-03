@@ -112,6 +112,7 @@ class TeamLeagueCache:
                 query = """
                     SELECT league_code as league_slug, provider,
                            display_name as league_name, sport, logo_url,
+                           logo_url_dark,
                            cached_team_count as team_count, import_enabled,
                            league_alias
                     FROM leagues
@@ -132,11 +133,12 @@ class TeamLeagueCache:
                 # Prefer configured leagues, fallback to discovered
                 query = """
                     SELECT league_slug, provider, league_name, sport,
-                           logo_url, team_count, import_enabled, league_alias
+                           logo_url, logo_url_dark, team_count, import_enabled, league_alias
                     FROM (
                         -- Configured leagues (preferred)
                         SELECT league_code as league_slug, provider,
                                display_name as league_name, sport, logo_url,
+                               logo_url_dark,
                                cached_team_count as team_count, import_enabled,
                                league_alias,
                                1 as priority
@@ -148,6 +150,7 @@ class TeamLeagueCache:
                         -- Discovered leagues (fallback, exclude if already configured)
                         SELECT lc.league_slug, lc.provider,
                                lc.league_name, lc.sport, lc.logo_url,
+                               NULL as logo_url_dark,
                                lc.team_count, 0 as import_enabled,
                                NULL as league_alias,
                                2 as priority
@@ -179,9 +182,10 @@ class TeamLeagueCache:
                     league_name=row[2],
                     sport=row[3],
                     logo_url=row[4],
-                    team_count=row[5] or 0,
-                    import_enabled=bool(row[6]),
-                    league_alias=row[7],
+                    logo_url_dark=row[5],
+                    team_count=row[6] or 0,
+                    import_enabled=bool(row[7]),
+                    league_alias=row[8],
                 )
                 for row in cursor.fetchall()
             ]
@@ -198,7 +202,7 @@ class TeamLeagueCache:
             cursor.execute(
                 """
                 SELECT league_code, provider, display_name, sport, logo_url,
-                       cached_team_count, import_enabled
+                       logo_url_dark, cached_team_count, import_enabled
                 FROM leagues WHERE league_code = ?
                 """,
                 (league_slug,),
@@ -211,8 +215,9 @@ class TeamLeagueCache:
                     league_name=row[2],
                     sport=row[3],
                     logo_url=row[4],
-                    team_count=row[5] or 0,
-                    import_enabled=bool(row[6]),
+                    logo_url_dark=row[5],
+                    team_count=row[6] or 0,
+                    import_enabled=bool(row[7]),
                 )
 
             # Fallback to discovered leagues
@@ -233,6 +238,7 @@ class TeamLeagueCache:
                 league_name=row[2],
                 sport=row[3],
                 logo_url=row[4],
+                logo_url_dark=None,  # Discovered leagues don't have dark variants
                 team_count=row[5] or 0,
                 import_enabled=False,  # Discovered leagues are not import-enabled
             )

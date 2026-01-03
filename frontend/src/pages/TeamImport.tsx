@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { ChevronRight, Loader2, Check, Search, X } from "lucide-react"
+import { useThemedLogo } from "@/hooks/useTheme"
 
 // Types
 interface League {
@@ -14,6 +15,7 @@ interface League {
   name: string | null
   sport: string
   logo_url: string | null
+  logo_url_dark: string | null
   team_count: number
   provider: string
   import_enabled: boolean
@@ -103,6 +105,13 @@ async function searchTeams(query: string, league?: string): Promise<CacheTeam[]>
 // Helper to get display name for league (use slug if name is null)
 function getLeagueName(league: League): string {
   return league.name || league.slug.toUpperCase()
+}
+
+// Theme-aware league logo component
+function LeagueLogo({ league, className }: { league: League; className?: string }) {
+  const logoUrl = useThemedLogo(league.logo_url, league.logo_url_dark)
+  if (!logoUrl) return null
+  return <img src={logoUrl} alt="" className={className} />
 }
 
 // Group teams by provider:provider_team_id for consolidated display
@@ -415,16 +424,7 @@ export function TeamImport() {
                                 "bg-muted border-l-primary"
                             )}
                           >
-                            {league.logo_url && (
-                              <img
-                                src={league.logo_url}
-                                alt=""
-                                className="h-5 w-5 object-contain"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = "none"
-                                }}
-                              />
-                            )}
+                            <LeagueLogo league={league} className="h-5 w-5 object-contain" />
                             <span className="truncate flex-1 text-left">
                               {getLeagueName(league)}
                             </span>
@@ -608,13 +608,7 @@ export function TeamImport() {
               <div className="border-b p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    {selectedLeague.logo_url && (
-                      <img
-                        src={selectedLeague.logo_url}
-                        alt=""
-                        className="h-10 w-10 object-contain"
-                      />
-                    )}
+                    <LeagueLogo league={selectedLeague} className="h-10 w-10 object-contain" />
                     <div>
                       <h1 className="text-xl font-bold">{getLeagueName(selectedLeague)}</h1>
                       <p className="text-sm text-muted-foreground">

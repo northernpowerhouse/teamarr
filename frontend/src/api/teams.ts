@@ -105,6 +105,7 @@ export interface CachedLeague {
   sport: string
   team_count: number
   logo_url: string | null
+  logo_url_dark: string | null
   import_enabled: boolean
   league_alias: string | null
 }
