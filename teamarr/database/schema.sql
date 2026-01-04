@@ -246,7 +246,7 @@ CREATE TABLE IF NOT EXISTS settings (
     stream_filter_exclude_patterns JSON DEFAULT '[]',
 
     -- Schema Version
-    schema_version INTEGER DEFAULT 7
+    schema_version INTEGER DEFAULT 9
 );
 
 -- Insert default settings
@@ -871,7 +871,7 @@ CREATE TABLE IF NOT EXISTS managed_channel_history (
 
     -- Change source
     change_source TEXT
-        CHECK(change_source IN ('epg_generation', 'reconciliation', 'api', 'scheduler', 'manual', 'external_sync', 'lifecycle', 'cross_group_enforcement', 'keyword_enforcement')),
+        CHECK(change_source IN ('epg_generation', 'reconciliation', 'api', 'scheduler', 'manual', 'external_sync', 'lifecycle', 'cross_group_enforcement', 'keyword_enforcement', 'keyword_ordering')),
 
     -- Change details
     field_name TEXT,                         -- For 'modified': which field changed

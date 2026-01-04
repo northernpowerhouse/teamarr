@@ -355,7 +355,7 @@ class ChannelLifecycleService:
                         conn=conn,
                         managed_channel_id=existing.id,
                         change_type="deleted",
-                        change_source="lifecycle_sync",
+                        change_source="lifecycle",
                         notes="Channel missing from Dispatcharr, marked for cleanup",
                     )
                     # Return empty result - stream will be processed as new channel

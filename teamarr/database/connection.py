@@ -492,6 +492,41 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("Schema upgraded to version 8 (custom_regex_date/time)")
         current_version = 8
 
+    # Version 9: Add 'keyword_ordering' to change_source CHECK constraint
+    if current_version < 9:
+        # SQLite can't alter CHECK constraints, so we recreate the table
+        conn.executescript("""
+            -- Create temp table with updated constraint
+            CREATE TABLE managed_channel_history_new (
+                id INTEGER PRIMARY KEY,
+                managed_channel_id INTEGER NOT NULL REFERENCES managed_channels(id) ON DELETE CASCADE,
+                changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                change_type TEXT NOT NULL
+                    CHECK(change_type IN ('created', 'modified', 'deleted', 'stream_added', 'stream_removed', 'verified', 'synced', 'error')),
+                change_source TEXT
+                    CHECK(change_source IN ('epg_generation', 'reconciliation', 'api', 'scheduler', 'manual', 'external_sync', 'lifecycle', 'cross_group_enforcement', 'keyword_enforcement', 'keyword_ordering')),
+                field_name TEXT,
+                old_value TEXT,
+                new_value TEXT,
+                notes TEXT
+            );
+
+            -- Copy existing data
+            INSERT INTO managed_channel_history_new
+            SELECT * FROM managed_channel_history;
+
+            -- Swap tables
+            DROP TABLE managed_channel_history;
+            ALTER TABLE managed_channel_history_new RENAME TO managed_channel_history;
+
+            -- Recreate index
+            CREATE INDEX IF NOT EXISTS idx_channel_history_channel
+            ON managed_channel_history(managed_channel_id);
+        """)
+        conn.execute("UPDATE settings SET schema_version = 9 WHERE id = 1")
+        logger.info("Schema upgraded to version 9 (keyword_ordering change_source)")
+        current_version = 9
+
 
 def _migrate_teams_to_leagues_array(conn: sqlite3.Connection) -> bool:
     """Migrate teams table from single league to leagues JSON array.
