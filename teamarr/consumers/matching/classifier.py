@@ -149,15 +149,47 @@ def _clean_team_name(name: str) -> str:
     name = re.sub(r"\bDATE_MASK\b", "", name)
     name = re.sub(r"\bTIME_MASK\b", "", name)
 
-    # Remove leading/trailing punctuation and numbers
-    name = re.sub(r"^[\d\s\-:.,]+", "", name)
-    name = re.sub(r"[\d\s\-:.,]+$", "", name)
+    # Remove leading punctuation ONLY (not digits - team names like 49ers, 76ers start with numbers)
+    # Strip whitespace, dashes, colons, periods, commas at the start
+    name = re.sub(r"^[\s\-:.,]+", "", name)
+
+    # Remove trailing punctuation (NOT digits - they could be team names like 49ers, 76ers)
+    # Only strip trailing separators that shouldn't be part of team names
+    name = re.sub(r"[\s\-:.,@]+$", "", name)
 
     # Remove channel numbers like "(1)" or "[2]"
     name = re.sub(r"\s*[\(\[]\d+[\)\]]\s*$", "", name)
 
     # Remove HD, SD, etc.
     name = re.sub(r"\s+\b(HD|SD|FHD|4K|UHD)\b\s*$", "", name, flags=re.IGNORECASE)
+
+    # Strip numbered channel prefixes like "NFL Game Pass 03:", "ESPN+ 45:", "Fox Sports 1:"
+    # Pattern: Words followed by optional number, then colon
+    # This handles "Name Number:" patterns at the start
+    name = re.sub(r"^[A-Za-z][A-Za-z\s]*\d*:\s*", "", name)
+
+    # Handle "|" separator - often used for show description before team names
+    # "Manningcast | MNF with Peyton & Eli: Seahawks" → take part after last "|"
+    # But only if there's no game separator after the "|" portion
+    if "|" in name:
+        # Check if the part after the last colon looks like a team name
+        parts = name.split("|")
+        last_part = parts[-1].strip()
+        # If the last part after "|" has a colon with something after it, use that
+        if ":" in last_part:
+            after_colon = last_part.split(":")[-1].strip()
+            if after_colon and len(after_colon) >= 3:
+                name = after_colon
+
+    # Strip show name prefixes that precede team names
+    # Patterns like "MNF Playbook:", "NFL RedZone:", "Inside the NBA:"
+    # Match pattern: "Word Word:" or "Word Word Word:" at the start
+    # Must start with capital letter and contain only letters/spaces before colon
+    # Apply repeatedly to handle nested prefixes like "Channel: Show: Team"
+    prev = None
+    while prev != name:
+        prev = name
+        name = re.sub(r"^[A-Z][A-Za-z\s]+:\s*", "", name)
 
     return name.strip()
 
