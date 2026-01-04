@@ -76,7 +76,7 @@ class ReconciliationSettingsModel(BaseModel):
     reconcile_on_epg_generation: bool = True
     reconcile_on_startup: bool = True
     auto_fix_orphan_teamarr: bool = True
-    auto_fix_orphan_dispatcharr: bool = False
+    auto_fix_orphan_dispatcharr: bool = True
     auto_fix_duplicates: bool = False
     default_duplicate_event_handling: str = "consolidate"
     channel_history_retention_days: int = 90

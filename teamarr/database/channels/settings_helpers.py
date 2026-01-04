@@ -60,7 +60,7 @@ def get_reconciliation_settings(conn: Connection) -> dict:
             "reconcile_on_epg_generation": True,
             "reconcile_on_startup": True,
             "auto_fix_orphan_teamarr": True,
-            "auto_fix_orphan_dispatcharr": False,
+            "auto_fix_orphan_dispatcharr": True,
             "auto_fix_duplicates": False,
             "default_duplicate_event_handling": "consolidate",
             "channel_history_retention_days": 90,

@@ -326,33 +326,38 @@ class ChannelLifecycleService:
             update_managed_channel,
         )
 
+        from teamarr.database.channels import mark_channel_deleted
+
         result = StreamProcessResult()
         stream_name = stream.get("name", "")
         stream_id = stream.get("id")
 
-        # V1 Parity: Verify channel exists in Dispatcharr, recreate if missing
+        # Verify channel exists in Dispatcharr
+        # If missing, mark as deleted and skip - reconciliation will clean up
+        # This prevents creating orphan channels with new IDs
         if self._channel_manager and existing.dispatcharr_channel_id:
             with self._dispatcharr_lock:
                 disp_channel = self._channel_manager.get_channel(existing.dispatcharr_channel_id)
                 if not disp_channel:
-                    # Channel deleted from Dispatcharr - recreate it
+                    # Channel missing from Dispatcharr - mark deleted and skip
+                    # Next run will create fresh channel, reconciliation cleans DB
                     logger.warning(
                         f"Channel {existing.dispatcharr_channel_id} missing from "
-                        f"Dispatcharr, recreating: {existing.channel_name}"
+                        f"Dispatcharr, marking deleted: {existing.channel_name}"
                     )
-                    new_id = self._recreate_channel_in_dispatcharr(
-                        conn, existing, stream, event, group_config, template
+                    mark_channel_deleted(
+                        conn, existing.id,
+                        reason=f"Missing from Dispatcharr (ID {existing.dispatcharr_channel_id})"
                     )
-                    if new_id:
-                        # Update our record with new Dispatcharr ID
-                        update_managed_channel(
-                            conn, existing.id, {"dispatcharr_channel_id": new_id}
-                        )
-                        existing.dispatcharr_channel_id = new_id
-                        logger.info(
-                            f"Recreated channel in Dispatcharr: {existing.channel_name} "
-                            f"(new ID: {new_id})"
-                        )
+                    log_channel_history(
+                        conn=conn,
+                        managed_channel_id=existing.id,
+                        change_type="deleted",
+                        change_source="lifecycle_sync",
+                        notes=f"Channel missing from Dispatcharr, marked for cleanup",
+                    )
+                    # Return empty result - stream will be processed as new channel
+                    return result
 
         if effective_mode == "ignore":
             # Skip - don't add stream
@@ -582,54 +587,6 @@ class ChannelLifecycleService:
             channel_number=channel_number,
             tvg_id=tvg_id,
         )
-
-    def _recreate_channel_in_dispatcharr(
-        self,
-        conn: Connection,
-        existing: Any,
-        stream: dict,
-        event: Event,
-        group_config: dict,
-        template: dict | None,
-    ) -> int | None:
-        """Recreate a channel in Dispatcharr that was deleted.
-
-        Uses existing channel data from our database to recreate the channel
-        in Dispatcharr with a new ID.
-
-        Returns:
-            New Dispatcharr channel ID, or None if creation failed
-        """
-        if not self._channel_manager:
-            return None
-
-        try:
-            # Get group settings
-            channel_group_id = group_config.get("channel_group_id")
-            stream_profile_id = group_config.get("stream_profile_id")
-            stream_id = stream.get("id")
-
-            # Create in Dispatcharr
-            disp_result = self._channel_manager.create_channel(
-                name=existing.channel_name,
-                channel_number=int(existing.channel_number),
-                tvg_id=existing.tvg_id,
-                stream_ids=[stream_id] if stream_id else [],
-                logo_id=None,  # Will be synced later
-                channel_group_id=channel_group_id,
-                stream_profile_id=stream_profile_id,
-            )
-
-            if disp_result.success and disp_result.channel:
-                # channel is a dict, not an object
-                return disp_result.channel.get("id")
-
-            logger.error(f"Failed to recreate channel: {disp_result.error}")
-            return None
-
-        except Exception as e:
-            logger.exception(f"Error recreating channel in Dispatcharr: {e}")
-            return None
 
     def _generate_channel_name(
         self,

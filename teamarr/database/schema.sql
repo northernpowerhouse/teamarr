@@ -223,7 +223,7 @@ CREATE TABLE IF NOT EXISTS settings (
     reconcile_on_epg_generation BOOLEAN DEFAULT 1,
     reconcile_on_startup BOOLEAN DEFAULT 1,
     auto_fix_orphan_teamarr BOOLEAN DEFAULT 1,    -- Auto-delete DB records for missing channels
-    auto_fix_orphan_dispatcharr BOOLEAN DEFAULT 0, -- DANGEROUS: Auto-delete untracked channels
+    auto_fix_orphan_dispatcharr BOOLEAN DEFAULT 1, -- Auto-delete channels in Dispatcharr not tracked by Teamarr
     auto_fix_duplicates BOOLEAN DEFAULT 0,
 
     -- Duplicate Event Handling
