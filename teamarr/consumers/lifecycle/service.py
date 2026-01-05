@@ -458,7 +458,7 @@ class ChannelLifecycleService:
                             existing.dispatcharr_channel_id
                         )
                         if disp_channel:
-                            current_streams = list(disp_channel.get("streams", []))
+                            current_streams = list(disp_channel.streams)
                             if stream_id not in current_streams:
                                 current_streams.append(stream_id)
                                 self._channel_manager.update_channel(
