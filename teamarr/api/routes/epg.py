@@ -66,15 +66,17 @@ def generate_epg(
     """
     from teamarr.consumers.generation import run_full_generation
     from teamarr.database.settings import get_dispatcharr_settings
-    from teamarr.dispatcharr import get_dispatcharr_client
+    from teamarr.dispatcharr import get_dispatcharr_connection
 
-    # Get Dispatcharr client if configured
+    # Get Dispatcharr connection if configured (not just client)
+    # Must use get_dispatcharr_connection() to get DispatcharrConnection
+    # with .m3u, .channels, .epg managers
     with get_db() as conn:
         dispatcharr_settings = get_dispatcharr_settings(conn)
 
     dispatcharr_client = None
     if dispatcharr_settings.enabled and dispatcharr_settings.url:
-        dispatcharr_client = get_dispatcharr_client(get_db)
+        dispatcharr_client = get_dispatcharr_connection(get_db)
 
     # Run unified generation
     result = run_full_generation(
@@ -140,7 +142,7 @@ def generate_epg_stream():
     """
     from teamarr.consumers.generation import run_full_generation
     from teamarr.database.settings import get_dispatcharr_settings
-    from teamarr.dispatcharr import get_dispatcharr_client
+    from teamarr.dispatcharr import get_dispatcharr_connection
 
     # Check if already in progress
     if is_in_progress():
@@ -167,13 +169,13 @@ def generate_epg_stream():
         def run_generation():
             """Run EPG generation in background thread."""
             try:
-                # Get Dispatcharr client if configured
+                # Get Dispatcharr connection if configured (not just client)
                 with get_db() as conn:
                     dispatcharr_settings = get_dispatcharr_settings(conn)
 
                 dispatcharr_client = None
                 if dispatcharr_settings.enabled and dispatcharr_settings.url:
-                    dispatcharr_client = get_dispatcharr_client(get_db)
+                    dispatcharr_client = get_dispatcharr_connection(get_db)
 
                 # Progress callback that updates status and queues for SSE
                 def progress_callback(

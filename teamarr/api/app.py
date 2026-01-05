@@ -105,15 +105,17 @@ def _run_startup_tasks():
 
         if scheduler_settings.enabled:
             try:
-                # Get Dispatcharr client for scheduler (may be None)
-                client = None
+                # Get Dispatcharr connection for scheduler (may be None)
+                # Must use get_connection() to get the full DispatcharrConnection
+                # with .m3u, .channels, .epg managers (not just the raw client)
+                connection = None
                 try:
                     factory = get_factory()
-                    client = factory.get_client()
+                    connection = factory.get_connection()
                 except Exception:
                     pass
 
-                scheduler_service = create_scheduler_service(get_db, client)
+                scheduler_service = create_scheduler_service(get_db, connection)
                 cron_expr = epg_settings.cron_expression or "0 * * * *"
                 started = scheduler_service.start(cron_expression=cron_expr)
                 if started:
