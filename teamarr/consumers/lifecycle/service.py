@@ -242,8 +242,10 @@ class ChannelLifecycleService:
                             group_config=group_config,
                             template=template,
                         )
-                        result.merge(channel_result)
-                        continue
+                        # None means Dispatcharr channel missing - fall through to create new
+                        if channel_result is not None:
+                            result.merge(channel_result)
+                            continue
 
                     # Check if we should create based on timing
                     decision = self._timing_manager.should_create_channel(
@@ -521,8 +523,13 @@ class ChannelLifecycleService:
         matched_keyword: str | None,
         group_config: dict,
         template: dict | None,
-    ) -> StreamProcessResult:
-        """Handle an existing channel based on duplicate mode."""
+    ) -> StreamProcessResult | None:
+        """Handle an existing channel based on duplicate mode.
+
+        Returns:
+            StreamProcessResult if channel was handled successfully
+            None if Dispatcharr channel is missing and caller should create new
+        """
         from teamarr.database.channels import (
             add_stream_to_channel,
             get_next_stream_priority,
@@ -537,17 +544,16 @@ class ChannelLifecycleService:
         stream_id = stream.get("id")
 
         # Verify channel exists in Dispatcharr
-        # If missing, mark as deleted and skip - reconciliation will clean up
-        # This prevents creating orphan channels with new IDs
+        # If missing, mark as deleted and return None to signal caller to create new
         if self._channel_manager and existing.dispatcharr_channel_id:
             with self._dispatcharr_lock:
                 disp_channel = self._channel_manager.get_channel(existing.dispatcharr_channel_id)
                 if not disp_channel:
-                    # Channel missing from Dispatcharr - mark deleted and skip
-                    # Next run will create fresh channel, reconciliation cleans DB
+                    # Channel missing from Dispatcharr - mark old record deleted
+                    # Return None to signal caller should create new channel
                     logger.warning(
                         f"Channel {existing.dispatcharr_channel_id} missing from "
-                        f"Dispatcharr, marking deleted: {existing.channel_name}"
+                        f"Dispatcharr, marking deleted and will create new: {existing.channel_name}"
                     )
                     mark_channel_deleted(
                         conn, existing.id,
@@ -560,8 +566,8 @@ class ChannelLifecycleService:
                         change_source="lifecycle",
                         notes="Channel missing from Dispatcharr, marked for cleanup",
                     )
-                    # Return empty result - stream will be processed as new channel
-                    return result
+                    # Return None to signal caller to create new channel
+                    return None
 
         if effective_mode == "ignore":
             # Skip - don't add stream
