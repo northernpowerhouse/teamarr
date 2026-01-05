@@ -570,6 +570,14 @@ class ChannelLifecycleService:
         stream_name = stream.get("name", "")
         stream_id = stream.get("id")
 
+        # If channel has no Dispatcharr ID, it's a reactivated record needing fresh creation
+        if not existing.dispatcharr_channel_id:
+            logger.debug(
+                f"Channel {existing.id} has no Dispatcharr ID (reactivated), "
+                f"will create new: {existing.channel_name}"
+            )
+            return None
+
         # Verify channel exists in Dispatcharr
         # If missing, mark as deleted and return None to signal caller to create new
         if self._channel_manager and existing.dispatcharr_channel_id:

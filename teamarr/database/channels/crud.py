@@ -43,12 +43,38 @@ def create_managed_channel(
         channel_id = existing_by_tvg[0]
         was_deleted = existing_by_tvg[1] is not None
         if was_deleted:
-            # Reactivate soft-deleted channel
+            # Reactivate soft-deleted channel with new data
+            # Build UPDATE with all passed-in fields
+            update_fields = {
+                "deleted_at": None,
+                "event_epg_group_id": event_epg_group_id,
+                "event_id": event_id,
+                "event_provider": event_provider,
+                "channel_name": channel_name,
+            }
+            # Add all kwargs fields
+            allowed_fields = [
+                "channel_number", "logo_url", "dispatcharr_channel_id",
+                "dispatcharr_uuid", "dispatcharr_logo_id", "channel_group_id",
+                "stream_profile_id", "channel_profile_ids", "primary_stream_id",
+                "exception_keyword", "home_team", "home_team_abbrev", "home_team_logo",
+                "away_team", "away_team_abbrev", "away_team_logo", "event_date",
+                "event_name", "league", "sport", "venue", "broadcast",
+                "scheduled_delete_at", "sync_status",
+            ]
+            for field_name in allowed_fields:
+                if field_name in kwargs:
+                    value = kwargs[field_name]
+                    if isinstance(value, (list, dict)):
+                        value = json.dumps(value)
+                    update_fields[field_name] = value
+
+            set_clause = ", ".join(f"{k} = ?" for k in update_fields.keys())
+            values = list(update_fields.values()) + [channel_id]
             conn.execute(
-                """UPDATE managed_channels
-                   SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
-                   WHERE id = ?""",
-                (channel_id,),
+                f"UPDATE managed_channels SET {set_clause}, "
+                f"updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                values,
             )
         return channel_id
 
@@ -139,12 +165,38 @@ def create_managed_channel(
             channel_id = existing_by_tvg[0]
             was_deleted = existing_by_tvg[1] is not None
             if was_deleted:
-                # Reactivate soft-deleted channel
+                # Reactivate soft-deleted channel with new data
+                # Build UPDATE with all passed-in fields
+                update_fields = {
+                    "deleted_at": None,
+                    "event_epg_group_id": event_epg_group_id,
+                    "event_id": event_id,
+                    "event_provider": event_provider,
+                    "channel_name": channel_name,
+                }
+                # Add all kwargs fields
+                allowed_fields = [
+                    "channel_number", "logo_url", "dispatcharr_channel_id",
+                    "dispatcharr_uuid", "dispatcharr_logo_id", "channel_group_id",
+                    "stream_profile_id", "channel_profile_ids", "primary_stream_id",
+                    "exception_keyword", "home_team", "home_team_abbrev", "home_team_logo",
+                    "away_team", "away_team_abbrev", "away_team_logo", "event_date",
+                    "event_name", "league", "sport", "venue", "broadcast",
+                    "scheduled_delete_at", "sync_status",
+                ]
+                for field_name in allowed_fields:
+                    if field_name in kwargs:
+                        value = kwargs[field_name]
+                        if isinstance(value, (list, dict)):
+                            value = json.dumps(value)
+                        update_fields[field_name] = value
+
+                set_clause = ", ".join(f"{k} = ?" for k in update_fields.keys())
+                values_list = list(update_fields.values()) + [channel_id]
                 conn.execute(
-                    """UPDATE managed_channels
-                       SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
-                       WHERE id = ?""",
-                    (channel_id,),
+                    f"UPDATE managed_channels SET {set_clause}, "
+                    f"updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    values_list,
                 )
             return channel_id
 
