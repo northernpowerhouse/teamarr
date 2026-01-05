@@ -43,8 +43,18 @@ BUILTIN_EVENT_PATTERNS = [
     r"\bGame\s+\d+\b",  # "Game 7" (Playoffs)
     r"\bMatch\s+\d+\b",  # "Match 1"
     r"\bUFC\s+\d+\b",  # "UFC 310"
+    r"\bUFC\s+(?:Fight\s*Night|FN)\b",  # "UFC Fight Night" without number
     r"\bPPV\b",  # Pay-per-view events
     r"\bRedZone\b",  # NFL RedZone - passes filter, may not match event
+    # Combat sports patterns
+    r"\b(?:UFC|Boxing|MMA)\s*:",  # "UFC: Main Card", "Boxing: Crawford vs Spence"
+    r"\b(?:Main\s*Card|Prelims|Early\s*Prelims|Undercard)\b",  # Card segments
+    r"\bContender\s*Series\b",  # Dana White's Contender Series
+    r"\bPBC\b",  # Premier Boxing Champions
+    r"\bTop\s*Rank\b",  # Top Rank Boxing
+    r"\bMatchroom\b",  # Matchroom Boxing
+    r"\bBellator\b",  # Bellator MMA
+    r"\bONE\s*(?:Championship|FC)\b",  # ONE Championship
 ]
 
 # Compiled regex for event stream detection
