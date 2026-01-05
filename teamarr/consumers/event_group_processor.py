@@ -441,7 +441,7 @@ class EventGroupProcessor:
                 return result
 
             # Step 3: Match streams to events
-            match_result = self._match_streams(streams, group.leagues, target_date, group.id)
+            match_result = self._match_streams(streams, group, target_date)
             result.matched_count = match_result.matched_count
             result.unmatched_count = match_result.unmatched_count
             result.cache_hits = match_result.cache_hits
@@ -747,7 +747,7 @@ class EventGroupProcessor:
 
             # Step 3: Match streams to events
             match_result = self._match_streams(
-                streams, leagues, target_date, group.id,
+                streams, group, target_date,
                 stream_progress_callback=stream_progress_callback,
             )
             result.streams_matched = match_result.matched_count
@@ -988,7 +988,7 @@ class EventGroupProcessor:
 
             # Step 3: Match streams to events (uses fingerprint cache)
             match_result = self._match_streams(
-                streams, group.leagues, target_date, group.id,
+                streams, group, target_date,
                 stream_progress_callback=stream_progress_callback,
             )
             result.streams_matched = match_result.matched_count
@@ -1238,9 +1238,8 @@ class EventGroupProcessor:
     def _match_streams(
         self,
         streams: list[dict],
-        leagues: list[str],
+        group: EventEPGGroup,
         target_date: date,
-        group_id: int,
         stream_progress_callback: Callable | None = None,
     ) -> BatchMatchResult:
         """Match streams to events using StreamMatcher.
@@ -1254,9 +1253,8 @@ class EventGroupProcessor:
 
         Args:
             streams: List of stream dicts
-            leagues: Leagues to include in results
+            group: Event EPG group (contains leagues, custom regex, etc.)
             target_date: Date to match events for
-            group_id: Event group ID
             stream_progress_callback: Optional callback(current, total, stream_name, matched)
         """
         # Get all enabled leagues to search (not just the group's configured leagues)
@@ -1272,9 +1270,9 @@ class EventGroupProcessor:
         matcher = StreamMatcher(
             service=self._service,
             db_factory=self._db_factory,
-            group_id=group_id,
+            group_id=group.id,
             search_leagues=all_leagues,  # Search ALL leagues
-            include_leagues=leagues,  # Filter to group's configured leagues
+            include_leagues=group.leagues,  # Filter to group's configured leagues
             include_final_events=include_final_events,
             sport_durations=sport_durations,
             generation=getattr(self, "_generation", None),  # Use shared generation if set
