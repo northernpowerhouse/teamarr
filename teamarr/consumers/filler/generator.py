@@ -449,8 +449,8 @@ class FillerGenerator:
             if template.subtitle:
                 subtitle = self._resolver.resolve(template.subtitle, context)
 
-            # Resolve art URL template if present, fallback to logo_url
-            icon = logo_url
+            # Resolve art URL template if present (no fallback - show nothing if unresolved)
+            icon = None
             if template.art_url:
                 resolved_art = self._resolver.resolve(template.art_url, context)
                 # Only use if resolution succeeded (no unresolved placeholders)
