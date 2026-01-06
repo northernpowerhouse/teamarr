@@ -887,7 +887,8 @@ export function EPG() {
                       </TableCell>
                       <TableCell>
                         {getMatchMethodBadge(stream.match_method)}
-                        {stream.from_cache && stream.match_method !== "cache" && (
+                        {/* Use !! to convert number to boolean - prevents React rendering 0 */}
+                        {!!stream.from_cache && stream.match_method !== "cache" && (
                           <Badge variant="outline" className="ml-1">Cached</Badge>
                         )}
                       </TableCell>
