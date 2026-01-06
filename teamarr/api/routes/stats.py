@@ -333,12 +333,17 @@ def get_live_stats(
             "event": {"games_today": 0, "live_now": 0, "by_league": {}, "live_events": []},
         }
 
-        # Fetch team EPG XMLTV content
+        # Fetch team EPG XMLTV content (only for active teams)
         # Use a shared seen set to dedupe games that appear in multiple teams' XMLTV
         # (e.g., when both Pacers and Bulls are tracked, their game appears in both)
         if epg_type is None or epg_type == "team":
             team_seen: set[tuple[str, str, str]] = set()
-            cursor = conn.execute("SELECT xmltv_content FROM team_epg_xmltv")
+            cursor = conn.execute("""
+                SELECT x.xmltv_content
+                FROM team_epg_xmltv x
+                JOIN teams t ON x.team_id = t.id
+                WHERE t.active = 1
+            """)
             for row in cursor.fetchall():
                 if row["xmltv_content"]:
                     _parse_xmltv_for_live_stats(
