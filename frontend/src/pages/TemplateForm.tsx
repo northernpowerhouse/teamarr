@@ -2155,27 +2155,30 @@ function XmltvTab({ formData, setFormData, resolveTemplate: _resolveTemplate }: 
       <Card>
         <CardHeader>
           <CardTitle className="text-base">🏷️ Tags</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Tags only apply to events, not to filler (pregame/postgame/idle).
+          </p>
         </CardHeader>
         <CardContent className="space-y-3">
           <label className="flex items-center gap-2 cursor-pointer">
             <Checkbox checked={flags.new} onClick={() => updateFlags("new", !flags.new)} />
             <div>
               <span>Include New Tag</span>
-              <p className="text-xs text-muted-foreground">Adds &lt;new/&gt; tag to scheduled game events</p>
+              <p className="text-xs text-muted-foreground">Adds &lt;new/&gt; tag to events</p>
             </div>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <Checkbox checked={flags.live} onClick={() => updateFlags("live", !flags.live)} />
             <div>
               <span>Include Live Tag</span>
-              <p className="text-xs text-muted-foreground">Adds &lt;live/&gt; tag to scheduled game events</p>
+              <p className="text-xs text-muted-foreground">Adds &lt;live/&gt; tag to events</p>
             </div>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <Checkbox checked={flags.date} onClick={() => updateFlags("date", !flags.date)} />
             <div>
               <span>Include Date Tag</span>
-              <p className="text-xs text-muted-foreground">Adds &lt;date&gt; tag with program air date in YYYYMMDD format</p>
+              <p className="text-xs text-muted-foreground">Adds &lt;date&gt; tag with air date (YYYYMMDD) to events</p>
             </div>
           </label>
         </CardContent>
