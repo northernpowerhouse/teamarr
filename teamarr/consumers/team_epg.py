@@ -508,7 +508,11 @@ class TeamEPGGenerator:
                     f"Failed to load filler config for template {options.template_id}: {e}"
                 )
 
-        # Default filler config
+        # Default filler config - WARN because user's template settings are not being used
+        logger.warning(
+            "Using hardcoded filler defaults - user's template filler settings ignored. "
+            "This happens when template_id is not set or template loading failed."
+        )
         return FillerConfig(
             category=options.template.category if options.template else "Sports",
         )

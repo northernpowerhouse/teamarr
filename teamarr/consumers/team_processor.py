@@ -474,6 +474,17 @@ class TeamProcessor:
             if template:
                 template_config = template_to_programme_config(template)
                 filler_config = template_to_filler_config(template)
+                logger.debug(f"Loaded template {team.template_id} for {team.team_name}")
+            else:
+                logger.warning(
+                    f"Template {team.template_id} not found for {team.team_name} - "
+                    "using hardcoded defaults. Assign a valid template to fix."
+                )
+        else:
+            logger.warning(
+                f"No template assigned to {team.team_name} - using hardcoded defaults. "
+                "Assign a template in the Teams page to customize filler content."
+            )
 
         return TeamEPGOptions(
             schedule_days_ahead=settings.get("team_schedule_days_ahead", 30),
