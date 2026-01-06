@@ -141,7 +141,8 @@ class SportsDataService:
                 events = provider.get_team_schedule(team_id, league, days_ahead)
                 if events:
                     # Serialize to dict before caching
-                    self._cache.set(cache_key, [event_to_dict(e) for e in events], CACHE_TTL_SCHEDULE)
+                    serialized = [event_to_dict(e) for e in events]
+                    self._cache.set(cache_key, serialized, CACHE_TTL_SCHEDULE)
                     return events
         return []
 
