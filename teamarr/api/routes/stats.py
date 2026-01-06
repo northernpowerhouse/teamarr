@@ -106,7 +106,7 @@ def get_dashboard_stats():
         latest_run = conn.execute("""
             SELECT id, streams_matched, streams_unmatched, streams_fetched, streams_cached,
                    programmes_total, programmes_events, programmes_pregame,
-                   programmes_postgame, programmes_idle,
+                   programmes_postgame, programmes_idle, channels_active,
                    extra_metrics
             FROM processing_runs
             WHERE status = 'completed' AND run_type = 'full_epg'
@@ -210,18 +210,21 @@ def get_dashboard_stats():
             programmes_total = latest_run["programmes_total"] or 0
             events_total = latest_run["programmes_events"] or 0
 
-            # If we have teams and no groups, all events are team-based
-            # If we have groups and no teams, all events are event-based
-            # Otherwise estimate based on ratio of teams to groups processed
-            if teams_processed > 0 and groups_processed == 0:
+            # Get active managed channels count for event EPG
+            channels_active = latest_run["channels_active"] or 0
+
+            # If we have teams and no managed channels, all events are team-based
+            # If we have managed channels and no teams, all events are event-based
+            # Otherwise estimate based on ratio of teams to managed channels
+            if teams_processed > 0 and channels_active == 0:
                 events_team = events_total
                 events_event = 0
-            elif groups_processed > 0 and teams_processed == 0:
+            elif channels_active > 0 and teams_processed == 0:
                 events_team = 0
                 events_event = events_total
-            elif teams_processed > 0 and groups_processed > 0:
-                # Estimate proportionally
-                total_channels = teams_processed + groups_processed
+            elif teams_processed > 0 and channels_active > 0:
+                # Estimate proportionally based on channel count
+                total_channels = teams_processed + channels_active
                 events_team = int(events_total * teams_processed / total_channels)
                 events_event = events_total - events_team
             else:
@@ -241,8 +244,8 @@ def get_dashboard_stats():
                 + epg_stats["filler_idle"]
             )
             epg_stats["channels_team"] = teams_processed
-            epg_stats["channels_event"] = groups_processed
-            epg_stats["channels_total"] = teams_processed + groups_processed
+            epg_stats["channels_event"] = channels_active
+            epg_stats["channels_total"] = teams_processed + channels_active
 
         # Managed channels stats
         channels_cursor = conn.execute("""
@@ -331,21 +334,25 @@ def get_live_stats(
         }
 
         # Fetch team EPG XMLTV content
+        # Use a shared seen set to dedupe games that appear in multiple teams' XMLTV
+        # (e.g., when both Pacers and Bulls are tracked, their game appears in both)
         if epg_type is None or epg_type == "team":
+            team_seen: set[tuple[str, str, str]] = set()
             cursor = conn.execute("SELECT xmltv_content FROM team_epg_xmltv")
             for row in cursor.fetchall():
                 if row["xmltv_content"]:
                     _parse_xmltv_for_live_stats(
-                        row["xmltv_content"], stats["team"], now, today, user_tz
+                        row["xmltv_content"], stats["team"], now, today, user_tz, team_seen
                     )
 
         # Fetch event EPG XMLTV content
         if epg_type is None or epg_type == "event":
+            event_seen: set[tuple[str, str, str]] = set()
             cursor = conn.execute("SELECT xmltv_content FROM event_epg_xmltv")
             for row in cursor.fetchall():
                 if row["xmltv_content"]:
                     _parse_xmltv_for_live_stats(
-                        row["xmltv_content"], stats["event"], now, today, user_tz
+                        row["xmltv_content"], stats["event"], now, today, user_tz, event_seen
                     )
 
         # Convert by_league dict to sorted list
@@ -390,12 +397,17 @@ def _parse_xmltv_for_live_stats(
     now: datetime,
     today,
     user_tz: ZoneInfo,
+    seen: set[tuple[str, str, str]],
 ) -> None:
     """Parse XMLTV content and update stats dict with games today/live now.
 
     Only counts actual game programmes (not filler like pregame/postgame/idle).
     V2 adds comments inside <programme> for filler: teamarr:filler-pregame, etc.
     Programmes without a filler comment are games.
+
+    Args:
+        seen: Shared set to dedupe games across multiple XMLTV files (e.g., when
+              both teams in a matchup are tracked).
     """
     try:
         # Parse with comments enabled to detect teamarr metadata
@@ -403,9 +415,6 @@ def _parse_xmltv_for_live_stats(
         root = ET.fromstring(xmltv_content, parser)
     except ET.ParseError:
         return
-
-    # Track which programmes we've seen to avoid duplicates
-    seen = set()
 
     for programme in root.findall(".//programme"):
         # Check if this programme has a filler comment inside it
