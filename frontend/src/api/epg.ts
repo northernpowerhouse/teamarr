@@ -249,3 +249,59 @@ export async function getFailedMatches(
   params.set("limit", limit.toString())
   return api.get(`/epg/failed-matches?${params}`)
 }
+
+// Event search for manual match correction
+export interface EventSearchResult {
+  event_id: string
+  event_name: string
+  league: string
+  league_name: string | null
+  start_time: string
+  home_team: string | null
+  away_team: string | null
+  status: string | null
+}
+
+export interface EventSearchResponse {
+  count: number
+  target_date: string
+  events: EventSearchResult[]
+}
+
+export async function searchEvents(
+  league?: string,
+  team?: string,
+  targetDate?: string,
+  limit = 50
+): Promise<EventSearchResponse> {
+  const params = new URLSearchParams()
+  if (league) params.set("league", league)
+  if (team) params.set("team", team)
+  if (targetDate) params.set("target_date", targetDate)
+  params.set("limit", limit.toString())
+  return api.get(`/epg/events/search?${params}`)
+}
+
+// Stream match correction
+export interface MatchCorrectionRequest {
+  group_id: number
+  stream_id: number
+  stream_name: string
+  correct_event_id: string | null
+  correct_league: string | null
+  notes?: string | null
+}
+
+export interface MatchCorrectionResponse {
+  success: boolean
+  fingerprint: string
+  message: string
+  previous_event_id: string | null
+  new_event_id: string | null
+}
+
+export async function correctStreamMatch(
+  request: MatchCorrectionRequest
+): Promise<MatchCorrectionResponse> {
+  return api.post("/epg/streams/correct", request)
+}

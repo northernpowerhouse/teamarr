@@ -21,7 +21,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import {
   Table,
@@ -51,10 +50,11 @@ import {
   getTeamXmltvUrl,
   getMatchedStreams,
   getFailedMatches,
+  searchEvents,
+  correctStreamMatch,
 } from "@/api/epg"
-import { getLeagues, getLeagueTeams } from "@/api/teams"
-import { useCreateAlias } from "@/api/aliases"
-import type { FailedMatch } from "@/api/epg"
+import { getLeagues } from "@/api/teams"
+import type { FailedMatch, EventSearchResult } from "@/api/epg"
 import type { CachedLeague } from "@/api/teams"
 
 function formatDuration(ms: number | null): string {
@@ -135,13 +135,15 @@ export function EPG() {
   // Modal states
   const [matchedModalRunId, setMatchedModalRunId] = useState<number | null>(null)
   const [failedModalRunId, setFailedModalRunId] = useState<number | null>(null)
-  const [aliasDialogOpen, setAliasDialogOpen] = useState(false)
+  const [eventMatcherOpen, setEventMatcherOpen] = useState(false)
 
-  // Alias form state
-  const [aliasText, setAliasText] = useState("")
-  const [selectedLeague, setSelectedLeague] = useState("")
-  const [selectedTeamId, setSelectedTeamId] = useState("")
-  const [teamSearchQuery, setTeamSearchQuery] = useState("")
+  // Event matcher state
+  const [matcherStream, setMatcherStream] = useState<FailedMatch | null>(null)
+  const [matcherLeague, setMatcherLeague] = useState("")
+  const [matcherEvents, setMatcherEvents] = useState<EventSearchResult[]>([])
+  const [matcherLoading, setMatcherLoading] = useState(false)
+  const [matcherSubmitting, setMatcherSubmitting] = useState(false)
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
 
   // Gap highlighting state
   const [highlightedGap, setHighlightedGap] = useState<{
@@ -168,11 +170,11 @@ export function EPG() {
     enabled: failedModalRunId !== null,
   })
 
-  // Fetch leagues for alias dialog, matched modal, and failed modal
+  // Fetch leagues for event matcher, matched modal, and failed modal
   const { data: leaguesData, isLoading: leaguesLoading } = useQuery({
     queryKey: ["cache", "leagues"],
     queryFn: () => getLeagues(false),
-    enabled: aliasDialogOpen || matchedModalRunId !== null || failedModalRunId !== null,
+    enabled: eventMatcherOpen || matchedModalRunId !== null || failedModalRunId !== null,
     staleTime: 5 * 60 * 1000,
   })
 
@@ -186,16 +188,6 @@ export function EPG() {
     }
     return (code: string | null) => code ? (map.get(code) ?? code) : "-"
   }, [leaguesData?.leagues])
-
-  // Fetch teams when league selected
-  const { data: teamsData, isLoading: teamsLoading } = useQuery({
-    queryKey: ["cache", "leagues", selectedLeague, "teams"],
-    queryFn: () => getLeagueTeams(selectedLeague),
-    enabled: !!selectedLeague && aliasDialogOpen,
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const createAliasMutation = useCreateAlias()
 
   // Sort leagues by sport then name
   const sortedLeagues = useMemo(() => {
@@ -216,24 +208,6 @@ export function EPG() {
     }
     return grouped
   }, [sortedLeagues])
-
-  // Filter teams by search
-  const filteredTeams = useMemo(() => {
-    if (!teamsData) return []
-    if (!teamSearchQuery) return teamsData
-    const query = teamSearchQuery.toLowerCase()
-    return teamsData.filter(
-      (t) =>
-        t.team_name.toLowerCase().includes(query) ||
-        t.team_abbrev?.toLowerCase().includes(query)
-    )
-  }, [teamsData, teamSearchQuery])
-
-  // Get selected team
-  const selectedTeam = useMemo(() => {
-    if (!selectedTeamId || !teamsData) return null
-    return teamsData.find((t) => t.provider_team_id === selectedTeamId) || null
-  }, [selectedTeamId, teamsData])
 
   const handleCopyUrl = async () => {
     try {
@@ -282,29 +256,49 @@ export function EPG() {
     }
   }
 
-  const handleOpenCreateAlias = (failedMatch: FailedMatch) => {
-    setAliasText(failedMatch.stream_name)
-    setSelectedLeague(failedMatch.detected_league ?? "")
-    setSelectedTeamId("")
-    setTeamSearchQuery("")
-    setAliasDialogOpen(true)
+  const handleOpenEventMatcher = (failedMatch: FailedMatch) => {
+    setMatcherStream(failedMatch)
+    setMatcherLeague(failedMatch.detected_league ?? "")
+    setMatcherEvents([])
+    setSelectedEventId(null)
+    setEventMatcherOpen(true)
   }
 
-  const handleCreateAlias = async () => {
-    if (!selectedTeam || !selectedLeague || !aliasText.trim()) return
-
+  const handleSearchEvents = async () => {
+    if (!matcherLeague) return
+    setMatcherLoading(true)
     try {
-      await createAliasMutation.mutateAsync({
-        alias: aliasText.toLowerCase().trim(),
-        league: selectedLeague,
-        team_id: selectedTeam.provider_team_id,
-        team_name: selectedTeam.team_name,
-        provider: selectedTeam.provider,
+      const result = await searchEvents(matcherLeague, undefined, undefined, 50)
+      setMatcherEvents(result.events)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to search events")
+    } finally {
+      setMatcherLoading(false)
+    }
+  }
+
+  const handleApplyCorrection = async () => {
+    if (!matcherStream || !selectedEventId || !matcherLeague) return
+    if (matcherStream.stream_id === null) {
+      toast.error("Cannot correct: stream_id is missing")
+      return
+    }
+
+    setMatcherSubmitting(true)
+    try {
+      await correctStreamMatch({
+        group_id: matcherStream.group_id,
+        stream_id: matcherStream.stream_id,
+        stream_name: matcherStream.stream_name,
+        correct_event_id: selectedEventId,
+        correct_league: matcherLeague,
       })
-      toast.success("Alias created successfully")
-      setAliasDialogOpen(false)
-    } catch {
-      // Error shown by mutation
+      toast.success("Stream matched to event successfully")
+      setEventMatcherOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to apply correction")
+    } finally {
+      setMatcherSubmitting(false)
     }
   }
 
@@ -980,8 +974,8 @@ export function EPG() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleOpenCreateAlias(failure)}
-                          title="Create alias for this stream"
+                          onClick={() => handleOpenEventMatcher(failure)}
+                          title="Match stream to event"
                         >
                           <Plus className="h-4 w-4" />
                         </Button>
@@ -1004,138 +998,144 @@ export function EPG() {
         </DialogContent>
       </Dialog>
 
-      {/* Create Alias Dialog */}
-      <Dialog open={aliasDialogOpen} onOpenChange={setAliasDialogOpen}>
-        <DialogContent onClose={() => setAliasDialogOpen(false)} className="max-w-lg">
+      {/* Event Matcher Dialog */}
+      <Dialog open={eventMatcherOpen} onOpenChange={setEventMatcherOpen}>
+        <DialogContent onClose={() => setEventMatcherOpen(false)} className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>Create Team Alias</DialogTitle>
+            <DialogTitle>Match Stream to Event</DialogTitle>
             <DialogDescription>
-              Map this stream name to a team for future matching
+              Select the correct event for this stream
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            {/* Alias Text */}
-            <div className="space-y-2">
-              <Label htmlFor="alias">Alias Text *</Label>
-              <Input
-                id="alias"
-                value={aliasText}
-                onChange={(e) => setAliasText(e.target.value)}
-                placeholder="e.g., Spurs, Man U, NYG"
-              />
-              <p className="text-xs text-muted-foreground">
-                The text that appears in stream names (case-insensitive)
-              </p>
-            </div>
 
-            {/* League Dropdown */}
-            <div className="space-y-2">
-              <Label htmlFor="league">League *</Label>
+          <div className="space-y-4 py-4 flex-1 overflow-hidden flex flex-col">
+            {/* Stream Info */}
+            {matcherStream && (
+              <div className="bg-muted p-3 rounded-md">
+                <p className="text-xs text-muted-foreground mb-1">Stream Name</p>
+                <p className="font-medium text-sm truncate" title={matcherStream.stream_name}>
+                  {matcherStream.stream_name}
+                </p>
+                {matcherStream.group_name && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Group: {matcherStream.group_name}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* League Selection */}
+            <div className="flex gap-2">
               {leaguesLoading ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Loading leagues...
                 </div>
               ) : (
-                <Select
-                  id="league"
-                  value={selectedLeague}
-                  onChange={(e) => {
-                    setSelectedLeague(e.target.value)
-                    setSelectedTeamId("")
-                    setTeamSearchQuery("")
-                  }}
-                >
-                  <option value="">Select a league...</option>
-                  {Object.entries(leaguesBySport).map(([sport, leagues]) => (
-                    <optgroup key={sport} label={sport}>
-                      {leagues.map((league) => (
-                        <option key={league.slug} value={league.slug}>
-                          {league.name} ({league.team_count} teams)
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </Select>
-              )}
-            </div>
-
-            {/* Team Dropdown */}
-            <div className="space-y-2">
-              <Label htmlFor="team">Team *</Label>
-              {!selectedLeague ? (
-                <p className="text-sm text-muted-foreground py-2">
-                  Select a league first
-                </p>
-              ) : teamsLoading ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading teams...
-                </div>
-              ) : (
                 <>
-                  <div className="relative mb-2">
-                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search teams..."
-                      className="pl-10"
-                      value={teamSearchQuery}
-                      onChange={(e) => setTeamSearchQuery(e.target.value)}
-                    />
-                  </div>
                   <Select
-                    id="team"
-                    value={selectedTeamId}
-                    onChange={(e) => setSelectedTeamId(e.target.value)}
+                    className="flex-1"
+                    value={matcherLeague}
+                    onChange={(e) => setMatcherLeague(e.target.value)}
                   >
-                    <option value="">Select a team...</option>
-                    {filteredTeams.map((team) => (
-                      <option key={team.provider_team_id} value={team.provider_team_id}>
-                        {team.team_name}
-                        {team.team_abbrev ? ` (${team.team_abbrev})` : ""}
-                      </option>
+                    <option value="">Select a league...</option>
+                    {Object.entries(leaguesBySport).map(([sport, leagues]) => (
+                      <optgroup key={sport} label={sport}>
+                        {leagues.map((league) => (
+                          <option key={league.slug} value={league.slug}>
+                            {league.name}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </Select>
+                  <Button
+                    onClick={handleSearchEvents}
+                    disabled={!matcherLeague || matcherLoading}
+                  >
+                    {matcherLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Search className="h-4 w-4" />
+                    )}
+                    Search
+                  </Button>
                 </>
               )}
             </div>
 
-            {/* Selected team preview */}
-            {selectedTeam && (
-              <div className="bg-muted p-3 rounded-md space-y-1">
-                <p className="text-sm font-medium">Selected Team</p>
-                <div className="flex items-center gap-3">
-                  {selectedTeam.logo_url && (
-                    <img
-                      src={selectedTeam.logo_url}
-                      alt=""
-                      className="h-8 w-8 object-contain"
-                    />
-                  )}
-                  <div className="text-sm">
-                    <p className="font-medium">{selectedTeam.team_name}</p>
-                    <p className="text-muted-foreground">
-                      {selectedTeam.provider.toUpperCase()} ID: {selectedTeam.provider_team_id}
-                    </p>
-                  </div>
+            {/* Events List */}
+            <div className="flex-1 overflow-auto border rounded-md">
+              {matcherEvents.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  {matcherLoading ? "Searching..." : "Select a league and click Search"}
                 </div>
-              </div>
-            )}
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[40%]">Matchup</TableHead>
+                      <TableHead className="w-[25%]">Time</TableHead>
+                      <TableHead className="w-[20%]">Status</TableHead>
+                      <TableHead className="w-[15%]">Select</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {matcherEvents.map((event) => (
+                      <TableRow
+                        key={event.event_id}
+                        className={selectedEventId === event.event_id ? "bg-muted" : ""}
+                      >
+                        <TableCell className="font-medium">
+                          {event.away_team && event.home_team ? (
+                            <span>
+                              {event.away_team} @ {event.home_team}
+                            </span>
+                          ) : (
+                            event.event_name
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {formatDateTime(event.start_time)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={event.status === "in" ? "default" : "secondary"}>
+                            {event.status || "scheduled"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant={selectedEventId === event.event_id ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setSelectedEventId(event.event_id)}
+                          >
+                            {selectedEventId === event.event_id ? <Check className="h-4 w-4" /> : "Select"}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAliasDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setEventMatcherOpen(false)}>
               Cancel
             </Button>
             <Button
-              onClick={handleCreateAlias}
-              disabled={
-                !aliasText.trim() ||
-                !selectedLeague ||
-                !selectedTeamId ||
-                createAliasMutation.isPending
-              }
+              onClick={handleApplyCorrection}
+              disabled={!selectedEventId || matcherSubmitting}
             >
-              {createAliasMutation.isPending ? "Creating..." : "Create Alias"}
+              {matcherSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Applying...
+                </>
+              ) : (
+                "Apply Match"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
