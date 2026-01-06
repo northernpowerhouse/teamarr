@@ -14,6 +14,7 @@ Design principles:
 - Respects midnight crossover mode from settings
 """
 
+import logging
 from datetime import date as date_type
 from datetime import datetime, timedelta
 
@@ -32,6 +33,8 @@ from .types import (
     FillerTemplate,
     FillerType,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class FillerGenerator:

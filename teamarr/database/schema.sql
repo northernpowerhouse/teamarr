@@ -524,6 +524,7 @@ INSERT OR REPLACE INTO leagues (league_code, provider, provider_league_id, provi
     -- Football (ESPN)
     ('nfl', 'espn', 'football/nfl', NULL, 'NFL', 'Football', 'https://a.espncdn.com/i/teamlogos/leagues/500/nfl.png', NULL, 1, NULL, 'nfl', 'team_vs_team', 'NFL Football', NULL, NULL),
     ('college-football', 'espn', 'football/college-football', NULL, 'NCAA Football', 'Football', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/football.png', NULL, 1, 'NCAAF', 'ncaaf', 'team_vs_team', 'College Football', NULL, NULL),
+    ('ufl', 'espn', 'football/ufl', NULL, 'UFL', 'Football', 'https://a.espncdn.com/i/teamlogos/leagues/500/ufl.png', NULL, 1, NULL, 'ufl', 'team_vs_team', 'UFL Football', NULL, NULL),
 
     -- Basketball (ESPN)
     ('nba', 'espn', 'basketball/nba', NULL, 'NBA', 'Basketball', 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png', NULL, 1, NULL, 'nba', 'team_vs_team', 'NBA Basketball', NULL, NULL),
