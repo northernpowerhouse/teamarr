@@ -236,6 +236,15 @@ class ChannelLifecycleManager:
             if is_final and not self.include_final_events:
                 return ExcludedReason.EVENT_FINAL
 
+        # Time-based fallback: if event end time + buffer is in the past, treat as final
+        # This catches stale cached events that still show old status
+        # Buffer is 2 hours after estimated end time to be safe
+        if not self.include_final_events:
+            event_end = self.get_event_end_time(event)
+            event_end_with_buffer = event_end + timedelta(hours=2)
+            if now > event_end_with_buffer:
+                return ExcludedReason.EVENT_FINAL
+
         # Check if we're past delete threshold (event is over)
         delete_threshold = self._calculate_delete_threshold(event)
         if delete_threshold and now >= delete_threshold:
