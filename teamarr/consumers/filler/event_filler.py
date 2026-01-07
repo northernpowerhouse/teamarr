@@ -390,14 +390,13 @@ class EventFillerGenerator:
         """Select appropriate postgame template based on game status.
 
         Supports conditional descriptions (final vs in-progress).
+        Fetches fresh status from provider for accurate final detection.
         """
         if not config.postgame_conditional.enabled:
             return config.postgame_template
 
-        # Check if game is final (V1 parity - comprehensive check)
-        status_state = event.status.state.lower() if event.status.state else ""
-        status_detail = event.status.detail.lower() if event.status.detail else ""
-        is_final = status_state in ("final", "post", "completed") or "final" in status_detail
+        # Refresh event status for accurate final detection
+        is_final = self._check_event_final(event)
 
         if is_final and config.postgame_conditional.description_final:
             return FillerTemplate(
@@ -415,6 +414,25 @@ class EventFillerGenerator:
             )
 
         return config.postgame_template
+
+    def _check_event_final(self, event: Event) -> bool:
+        """Check if event is final, refreshing status from provider if needed.
+
+        Fetches fresh status via summary endpoint to get accurate final detection.
+        """
+        if not event:
+            return False
+
+        # Refresh event status from provider for accurate final detection
+        if self._service:
+            refreshed = self._service.refresh_event_status(event)
+        else:
+            refreshed = event
+
+        # V1 parity - comprehensive final check
+        status_state = refreshed.status.state.lower() if refreshed.status.state else ""
+        status_detail = refreshed.status.detail.lower() if refreshed.status.detail else ""
+        return status_state in ("final", "post", "completed") or "final" in status_detail
 
 
 def template_to_event_filler_config(template) -> EventFillerConfig:

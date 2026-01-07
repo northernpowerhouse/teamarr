@@ -237,6 +237,34 @@ class SportsDataService:
                     return event
         return None
 
+    def refresh_event_status(self, event: Event) -> Event:
+        """Refresh event with fresh status from provider.
+
+        Fetches fresh data from summary endpoint to get accurate final status.
+        Used by filler generation for conditional descriptions (final vs not final).
+
+        Args:
+            event: Event with potentially stale status from schedule/scoreboard cache
+
+        Returns:
+            Event with refreshed status (or original if refresh fails)
+        """
+        if not event:
+            return event
+
+        # Fetch fresh event data (bypasses schedule cache, uses 30min single event cache)
+        fresh_event = self.get_event(event.id, event.league)
+        if fresh_event:
+            logger.debug(
+                f"Refreshed event {event.id}: "
+                f"status {event.status.state} -> {fresh_event.status.state}"
+            )
+            return fresh_event
+
+        # Return original if refresh fails
+        logger.debug(f"Could not refresh event {event.id}, using cached status")
+        return event
+
     def get_team_stats(self, team_id: str, league: str) -> TeamStats | None:
         """Get detailed team statistics."""
         cache_key = make_cache_key("stats", league, team_id)

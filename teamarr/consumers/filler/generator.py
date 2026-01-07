@@ -498,10 +498,7 @@ class FillerGenerator:
         elif filler_type == FillerType.POSTGAME:
             # Check for conditional postgame template
             if config.postgame_conditional.enabled and last_event:
-                # V1 parity - comprehensive final check
-                status_state = last_event.status.state.lower() if last_event.status.state else ""
-                status_detail = last_event.status.detail.lower() if last_event.status.detail else ""
-                is_final = status_state in ("final", "post", "completed") or "final" in status_detail
+                is_final = self._check_event_final(last_event)
                 if is_final and config.postgame_conditional.description_final:
                     return FillerTemplate(
                         title=config.postgame_template.title,
@@ -530,10 +527,7 @@ class FillerGenerator:
 
             # Check for conditional idle template
             if config.idle_conditional.enabled and last_event:
-                # V1 parity - comprehensive final check
-                status_state = last_event.status.state.lower() if last_event.status.state else ""
-                status_detail = last_event.status.detail.lower() if last_event.status.detail else ""
-                is_final = status_state in ("final", "post", "completed") or "final" in status_detail
+                is_final = self._check_event_final(last_event)
                 if is_final and config.idle_conditional.description_final:
                     return FillerTemplate(
                         title=config.idle_template.title,
@@ -550,6 +544,24 @@ class FillerGenerator:
                     )
 
             return config.idle_template
+
+    def _check_event_final(self, event: Event) -> bool:
+        """Check if event is final, refreshing status from provider if needed.
+
+        Fetches fresh status via summary endpoint to get accurate final detection.
+        Caches enriched events to avoid redundant API calls.
+        """
+        if not event:
+            return False
+
+        # Refresh event status from provider for accurate final detection
+        # Uses 30-minute cache on single events (get_event)
+        refreshed = self._service.refresh_event_status(event)
+
+        # V1 parity - comprehensive final check
+        status_state = refreshed.status.state.lower() if refreshed.status.state else ""
+        status_detail = refreshed.status.detail.lower() if refreshed.status.detail else ""
+        return status_state in ("final", "post", "completed") or "final" in status_detail
 
     def _build_filler_context(
         self,
