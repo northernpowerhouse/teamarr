@@ -2,9 +2,9 @@
 
 Takes team configuration, fetches schedule, generates programmes with template support.
 
-Two-phase data flow:
-- Discovery (schedule, 8hr cache): Event IDs, teams, start times (batch)
-- Enrichment (summary, 30min cache): Odds, rich data (per event, ESPN only)
+Data flow:
+- Schedule endpoint (8hr cache): Events with teams, start times, venue, broadcasts
+- Scoreboard provides odds for today's games (when betting lines are released)
 """
 
 import logging
@@ -17,7 +17,7 @@ from teamarr.core import Event, Programme, TemplateConfig
 from teamarr.services import SportsDataService
 from teamarr.templates.context_builder import ContextBuilder
 from teamarr.templates.resolver import TemplateResolver
-from teamarr.utilities.sports import get_effective_duration, get_sport_duration
+from teamarr.utilities.sports import get_effective_duration
 from teamarr.utilities.tz import now_user, to_user_tz
 
 logger = logging.getLogger(__name__)
@@ -220,10 +220,6 @@ class TeamEPGGenerator:
                             seen_event_ids.add(event.id)
                             all_events.append(event)
 
-        # Enrich all events for rich data (odds, etc.)
-        # Only ESPN events benefit - TSDB enrichment adds no value
-        all_events = self._enrich_events(all_events)
-
         # Fetch team stats once for all events
         team_stats = self._service.get_team_stats(team_id, league)
 
@@ -366,15 +362,11 @@ class TeamEPGGenerator:
         if not description:
             description = self._resolver.resolve(options.template.description_format, context)
 
-        # Icon priority: template program_art_url > channel logo > home team logo
-        # Resolve template variables in program_art_url if present
-        icon = None
+        # Icon: template program_art_url > channel logo > home team logo
+        # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
         if options.template.program_art_url:
-            resolved_art = self._resolver.resolve(options.template.program_art_url, context)
-            # Only use if resolution succeeded (no unresolved placeholders)
-            if "{" not in resolved_art:
-                icon = resolved_art
-        if not icon:
+            icon = self._resolver.resolve(options.template.program_art_url, context)
+        else:
             icon = logo_url or (event.home_team.logo_url if event.home_team else None)
 
         # Resolve categories (may contain {sport} variable)
@@ -397,41 +389,6 @@ class TeamEPGGenerator:
             categories=resolved_categories,
             xmltv_flags=options.template.xmltv_flags,
         )
-
-    def _enrich_events(self, events: list[Event]) -> list[Event]:
-        """Enrich events with data from summary endpoint.
-
-        Two-phase architecture:
-        - Discovery (schedule endpoint, 8hr cache): IDs, teams, start times
-        - Enrichment (summary endpoint, 30min cache): Odds, rich data
-
-        Only enriches ESPN events - TSDB's lookupevent returns identical
-        data to eventsday, so enrichment wastes API quota.
-        """
-        # Split ESPN events (need enrichment) from others (pass through)
-        espn_events = [e for e in events if e.provider == "espn"]
-        other_events = [e for e in events if e.provider != "espn"]
-
-        # No ESPN events? Return as-is
-        if not espn_events:
-            return events
-
-        def enrich_single(event: Event) -> Event:
-            fresh = self._service.get_event(event.id, event.league)
-            return fresh if fresh else event
-
-        # Single event: fetch directly (no thread overhead)
-        # Multiple events: fetch in parallel (e.g., 30+ events over 30 days)
-        enriched_espn = []
-        if len(espn_events) == 1:
-            enriched_espn.append(enrich_single(espn_events[0]))
-        else:
-            with ThreadPoolExecutor(max_workers=min(len(espn_events), 20)) as executor:
-                futures = {executor.submit(enrich_single, e): e for e in espn_events}
-                for future in as_completed(futures):
-                    enriched_espn.append(future.result())
-
-        return enriched_espn + other_events
 
     def _generate_fillers(
         self,
@@ -491,8 +448,6 @@ class TeamEPGGenerator:
         If options.filler_config is already set (pre-loaded by TeamProcessor),
         returns it directly to avoid DB access in threads.
         """
-        from teamarr.consumers.filler import FillerConfig
-
         # Use pre-loaded config if available (critical for thread-safety)
         if options.filler_config is not None:
             return options.filler_config

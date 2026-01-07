@@ -11,7 +11,7 @@ from teamarr.core import Event, Team, TeamStats
 
 @dataclass
 class Odds:
-    """Betting odds for a game (available ~1 week out from summary endpoint)."""
+    """Betting odds for a game (available when betting lines are released, typically same-day)."""
 
     provider: str = ""  # "ESPN BET", "DraftKings", etc.
     spread: float = 0.0  # Point spread (absolute value)

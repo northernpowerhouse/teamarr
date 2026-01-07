@@ -879,6 +879,7 @@ class ChannelLifecycleService:
 
         if name_format:
             # Resolve using full template engine
+            # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
             base_name = self._resolve_template(name_format, event)
         else:
             # Default format: "Away @ Home"
@@ -916,19 +917,14 @@ class ChannelLifecycleService:
                 # Dict with event_channel_logo_url
                 logo_url = template.get("event_channel_logo_url")
 
-        if logo_url and "{" in logo_url:
-            # Has template variables - resolve them
-            resolved = self._resolve_template(logo_url, event)
-
-            # Check if resolution succeeded (no unresolved placeholders)
-            if "{" not in resolved:
-                return resolved
-
         if logo_url:
-            # Static URL - use as-is
+            # Resolve template variables if present
+            # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
+            if "{" in logo_url:
+                return self._resolve_template(logo_url, event)
             return logo_url
 
-        # Fallback to home team logo
+        # No template URL - use home team logo
         if event.home_team and event.home_team.logo_url:
             return event.home_team.logo_url
 
@@ -1103,7 +1099,7 @@ class ChannelLifecycleService:
                     stored_delete_str = str(stored_delete_str)
                 if expected_delete_str != stored_delete_str:
                     db_updates["scheduled_delete_at"] = expected_delete_str
-                    changes_made.append(f"scheduled_delete_at updated")
+                    changes_made.append("scheduled_delete_at updated")
 
             # Apply Dispatcharr updates
             if update_data:
@@ -1286,9 +1282,7 @@ class ChannelLifecycleService:
             StreamProcessResult with deleted channels
         """
         from teamarr.database.channels import (
-            get_all_managed_channels,
             get_channels_pending_deletion,
-            update_managed_channel,
         )
 
         result = StreamProcessResult()

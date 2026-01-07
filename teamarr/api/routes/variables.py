@@ -165,7 +165,7 @@ def get_conditions(template_type: str = "team"):
             "requires_value": False,
             "providers": "espn",
         },
-        # ESPN-only: requires odds enrichment
+        # ESPN-only: only ESPN provides odds data
         {
             "name": "has_odds",
             "description": "Betting odds are available for the game",

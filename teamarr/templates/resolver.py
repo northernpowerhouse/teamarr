@@ -54,7 +54,11 @@ class TemplateResolver:
 
         def replace(match: re.Match) -> str:
             var_name = match.group(1).lower()
-            return variables.get(var_name, "")
+            # Keep unknown variables literal (helps users identify typos)
+            # Known variables with empty values still get replaced with ""
+            if var_name not in variables:
+                return match.group(0)  # Return original {variable} unchanged
+            return variables[var_name]
 
         return VARIABLE_PATTERN.sub(replace, template)
 

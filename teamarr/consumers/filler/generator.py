@@ -452,13 +452,9 @@ class FillerGenerator:
             if template.subtitle:
                 subtitle = self._resolver.resolve(template.subtitle, context)
 
-            # Resolve art URL template if present (no fallback - show nothing if unresolved)
-            icon = None
-            if template.art_url:
-                resolved_art = self._resolver.resolve(template.art_url, context)
-                # Only use if resolution succeeded (no unresolved placeholders)
-                if "{" not in resolved_art:
-                    icon = resolved_art
+            # Resolve art URL if present
+            # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
+            icon = self._resolver.resolve(template.art_url, context) if template.art_url else None
 
             # Only include categories if categories_apply_to == "all"
             # Filler never gets xmltv_flags (new/live/date are for live events only)

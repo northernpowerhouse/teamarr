@@ -7,9 +7,9 @@ Note: This queries DATA providers (ESPN, TheSportsDB) by league.
 Event groups (M3U provider stream collections) are a separate concept
 handled elsewhere.
 
-Two-phase data flow:
-- Discovery (scoreboard, 8hr cache): Event IDs, teams, start times (batch)
-- Enrichment (summary, 30min cache): Odds, rich data (per event, ESPN only)
+Data flow:
+- Scoreboard endpoint (8hr cache): Events with teams, start times, venue, broadcasts
+- Scoreboard includes odds when betting lines are released (typically same-day)
 """
 
 from dataclasses import dataclass, field
@@ -78,10 +78,6 @@ class EventEPGGenerator:
             events = self._service.get_events(league, target_date)
             all_events.extend(events)
 
-        # Enrich all events for rich data (odds, etc.)
-        # Only ESPN events benefit - TSDB enrichment adds no value
-        all_events = self._enrich_events(all_events)
-
         programmes = []
         channels = []
 
@@ -96,6 +92,7 @@ class EventEPGGenerator:
             )
 
             # Generate channel name from template
+            # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
             channel_name = self._resolver.resolve(options.template.channel_name_format, context)
 
             channel_info = EventChannelInfo(
@@ -187,15 +184,11 @@ class EventEPGGenerator:
         if not description:
             description = self._resolver.resolve(options.template.description_format, context)
 
-        # Icon priority: template program_art_url > home team logo
-        # Resolve template variables in program_art_url if present
-        icon = None
+        # Icon: use template program_art_url if set, otherwise home team logo
+        # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
         if options.template.program_art_url:
-            resolved_art = self._resolver.resolve(options.template.program_art_url, context)
-            # Only use if resolution succeeded (no unresolved placeholders)
-            if "{" not in resolved_art:
-                icon = resolved_art
-        if not icon:
+            icon = self._resolver.resolve(options.template.program_art_url, context)
+        else:
             icon = event.home_team.logo_url if event.home_team else None
 
         # Resolve categories (may contain {sport} variable)
@@ -313,6 +306,7 @@ class EventEPGGenerator:
             )
 
             # Generate channel name from template
+            # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
             channel_name = self._resolver.resolve(options.template.channel_name_format, context)
 
             channel_info = EventChannelInfo(
@@ -329,27 +323,3 @@ class EventEPGGenerator:
             programmes.append(programme)
 
         return programmes, channels
-
-    def _enrich_events(self, events: list[Event]) -> list[Event]:
-        """Enrich events with data from summary endpoint.
-
-        Two-phase architecture:
-        - Discovery (scoreboard endpoint, 8hr cache): IDs, teams, start times
-        - Enrichment (summary endpoint, 30min cache): Odds, rich data
-
-        Only enriches ESPN events - TSDB's lookupevent returns identical
-        data to eventsday, so enrichment wastes API quota.
-        """
-        enriched = []
-        for event in events:
-            # Only enrich ESPN events (TSDB enrichment adds no value)
-            if event.provider == "espn":
-                fresh = self._service.get_event(event.id, event.league)
-                if fresh:
-                    enriched.append(fresh)
-                else:
-                    enriched.append(event)  # Fallback to discovery data
-            else:
-                enriched.append(event)
-
-        return enriched

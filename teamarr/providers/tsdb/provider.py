@@ -185,10 +185,12 @@ class TSDBProvider(SportsProvider):
         Teams are seeded from tsdb_seed.json on startup and refreshed
         weekly via cache refresh. No API calls needed.
         """
-        from teamarr.consumers.cache import get_cache
+        from teamarr.database import get_db
+        from teamarr.database.team_cache import get_team_name_by_id
 
-        cache = get_cache()
-        team_name = cache.get_team_name_by_id(team_id, league, provider="tsdb")
+        with get_db() as conn:
+            team_name = get_team_name_by_id(conn, team_id, league, provider="tsdb")
+
         if team_name:
             return team_name
 
