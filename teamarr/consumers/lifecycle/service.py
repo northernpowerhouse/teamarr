@@ -918,7 +918,7 @@ class ChannelLifecycleService:
         """Resolve logo URL from template.
 
         Uses full template engine for variable resolution.
-        Falls back to home team logo if no template.
+        No fallback to team logo - if no template, returns None.
 
         Args:
             event: Event data
@@ -940,10 +940,6 @@ class ChannelLifecycleService:
             if "{" in logo_url:
                 return self._resolve_template(logo_url, event)
             return logo_url
-
-        # No template URL - use home team logo
-        if event.home_team and event.home_team.logo_url:
-            return event.home_team.logo_url
 
         return None
 
@@ -1165,12 +1161,13 @@ class ChannelLifecycleService:
                         conn, existing.id, {"channel_profile_ids": json.dumps(group_profile_ids)}
                     )
 
-            # 8. Sync logo - V1 parity
+            # 8. Sync logo - handles both updates and removals
             logo_url = self._resolve_logo_url(event, template)
+            current_logo_id = getattr(existing, "dispatcharr_logo_id", None)
+            stored_logo_url = getattr(existing, "logo_url", None)
+
             if logo_url and self._logo_manager:
-                current_logo_id = getattr(existing, "dispatcharr_logo_id", None)
-                # Check if logo needs update (URL changed or no logo set)
-                stored_logo_url = getattr(existing, "logo_url", None)
+                # Logo is set - check if needs update
                 if logo_url != stored_logo_url:
                     with self._dispatcharr_lock:
                         # Upload new logo
@@ -1202,6 +1199,32 @@ class ChannelLifecycleService:
                                     self._logo_manager.delete(current_logo_id)
                                 except Exception:
                                     pass  # Ignore logo deletion failures
+
+            elif stored_logo_url and self._logo_manager:
+                # Logo was removed from template - clear it
+                with self._dispatcharr_lock:
+                    # Remove logo from Dispatcharr channel
+                    self._channel_manager.update_channel(
+                        existing.dispatcharr_channel_id,
+                        {"logo_id": None},
+                    )
+                    # Update DB
+                    update_managed_channel(
+                        conn,
+                        existing.id,
+                        {
+                            "logo_url": None,
+                            "dispatcharr_logo_id": None,
+                        },
+                    )
+                    changes_made.append("logo removed")
+
+                    # Delete old logo from Dispatcharr
+                    if current_logo_id:
+                        try:
+                            self._logo_manager.delete(current_logo_id)
+                        except Exception:
+                            pass  # Ignore logo deletion failures
 
             # Log changes if any
             if changes_made:

@@ -97,14 +97,13 @@ class EventEPGGenerator:
             # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
             channel_name = self._resolver.resolve(options.template.channel_name_format, context)
 
-            # Use template-configured logo if set, otherwise fall back to home team logo
+            # Use template-configured logo if set (no fallback to team logo)
             # Resolve template variables in logo URL (e.g., {league_id}, {home_team_pascal})
+            channel_icon = None
             if options.template.event_channel_logo_url:
                 channel_icon = self._resolver.resolve(
                     options.template.event_channel_logo_url, context
                 )
-            else:
-                channel_icon = event.home_team.logo_url if event.home_team else None
 
             channel_info = EventChannelInfo(
                 channel_id=channel_id,
@@ -195,12 +194,11 @@ class EventEPGGenerator:
         if not description:
             description = self._resolver.resolve(options.template.description_format, context)
 
-        # Icon: use template program_art_url if set, otherwise home team logo
+        # Icon: use template program_art_url if set (no fallback to team logo)
         # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
+        icon = None
         if options.template.program_art_url:
             icon = self._resolver.resolve(options.template.program_art_url, context)
-        else:
-            icon = event.home_team.logo_url if event.home_team else None
 
         # Resolve categories (may contain {sport} variable)
         # Apply title case for proper XMLTV formatting (e.g., "Football" not "football")
@@ -320,14 +318,13 @@ class EventEPGGenerator:
             # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
             channel_name = self._resolver.resolve(options.template.channel_name_format, context)
 
-            # Use template-configured logo if set, otherwise fall back to home team logo
+            # Use template-configured logo if set (no fallback to team logo)
             # Resolve template variables in logo URL (e.g., {league_id}, {home_team_pascal})
+            channel_icon = None
             if options.template.event_channel_logo_url:
                 channel_icon = self._resolver.resolve(
                     options.template.event_channel_logo_url, context
                 )
-            else:
-                channel_icon = event.home_team.logo_url if event.home_team else None
 
             channel_info = EventChannelInfo(
                 channel_id=tvg_id,
