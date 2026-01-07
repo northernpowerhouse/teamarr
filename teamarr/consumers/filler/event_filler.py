@@ -406,7 +406,7 @@ class EventFillerGenerator:
             return config.postgame_template
 
         # Check if game is final
-        is_final = event.status.state == "post" or event.status.detail == "Final"
+        is_final = event.status.state == "final" or event.status.detail == "Final"
 
         if is_final and config.postgame_conditional.description_final:
             return FillerTemplate(
