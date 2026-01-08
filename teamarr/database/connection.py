@@ -619,6 +619,16 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("Schema upgraded to version 17 (settings.event_match_days_back)")
         current_version = 17
 
+    # Version 18: Add duration_volleyball to settings
+    # Volleyball game duration setting (default 2.5 hours)
+    if current_version < 18:
+        _add_column_if_not_exists(
+            conn, "settings", "duration_volleyball", "REAL DEFAULT 2.5"
+        )
+        conn.execute("UPDATE settings SET schema_version = 18 WHERE id = 1")
+        logger.info("Schema upgraded to version 18 (settings.duration_volleyball)")
+        current_version = 18
+
 
 def _rename_filtered_no_match_to_failed_count(conn: sqlite3.Connection) -> None:
     """Rename filtered_no_match column to failed_count.
