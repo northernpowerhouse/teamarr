@@ -327,11 +327,18 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
     custom_regex_time_enabled BOOLEAN DEFAULT 0,
     skip_builtin_filter BOOLEAN DEFAULT 0,   -- Skip built-in team name extraction
 
+    -- Team Filtering (canonical team selection, inherited by children)
+    include_teams JSON,                          -- Teams to include: [{"provider":"espn","team_id":"33","league":"nfl","name":"Ravens"}, ...]
+    exclude_teams JSON,                          -- Teams to exclude: same format
+    team_filter_mode TEXT DEFAULT 'include'      -- 'include' (whitelist) or 'exclude' (blacklist)
+        CHECK(team_filter_mode IN ('include', 'exclude')),
+
     -- Processing Stats (updated by EPG generation)
     -- Three categories: FILTERED (pre-match), FAILED (match attempted), EXCLUDED (matched but excluded)
     filtered_include_regex INTEGER DEFAULT 0,   -- FILTERED: Didn't match include regex
     filtered_exclude_regex INTEGER DEFAULT 0,   -- FILTERED: Matched exclude regex
     filtered_not_event INTEGER DEFAULT 0,       -- FILTERED: Stream doesn't look like event (placeholder)
+    filtered_team INTEGER DEFAULT 0,            -- FILTERED: Team not in include/exclude list
     failed_count INTEGER DEFAULT 0,             -- FAILED: Match attempted but couldn't find event
     streams_excluded INTEGER DEFAULT 0,         -- EXCLUDED: Matched but excluded (aggregate)
     -- EXCLUDED breakdown by reason

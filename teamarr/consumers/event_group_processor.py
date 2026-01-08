@@ -79,6 +79,7 @@ class ProcessingResult:
     filtered_not_event: int = 0  # Didn't look like an event (no vs/@/at/date)
     filtered_include_regex: int = 0  # Didn't match include pattern
     filtered_exclude_regex: int = 0  # Matched exclude pattern
+    filtered_team: int = 0  # Team not in include/exclude filter
 
     # Stream matching
     streams_matched: int = 0
@@ -805,6 +806,13 @@ class EventGroupProcessor:
 
             # Step 4: Add matched streams to parent's channels
             matched_streams = self._build_matched_stream_list(streams, match_result)
+
+            # Apply team include/exclude filtering (inherits from parent if not set)
+            matched_streams, filtered_team_count = self._filter_by_teams(
+                matched_streams, group, conn
+            )
+            result.filtered_team = filtered_team_count
+
             if matched_streams:
                 child_processor = self._get_child_processor()
                 child_result = child_processor.process_child_streams(
@@ -842,6 +850,7 @@ class EventGroupProcessor:
                 filtered_exclude_regex=result.filtered_exclude_regex,
                 failed_count=result.streams_unmatched,
                 filtered_not_event=result.filtered_not_event,
+                filtered_team=result.filtered_team,
                 streams_excluded=result.streams_excluded,
                 total_stream_count=result.streams_fetched,  # V1 parity
                 excluded_event_final=result.excluded_event_final,
@@ -1068,6 +1077,12 @@ class EventGroupProcessor:
             # This ensures lifecycle filtering uses current final status
             matched_streams = self._enrich_matched_events(matched_streams)
 
+            # Apply team include/exclude filtering
+            matched_streams, filtered_team_count = self._filter_by_teams(
+                matched_streams, group, conn
+            )
+            result.filtered_team = filtered_team_count
+
             # Extract all stream IDs for cleanup (V1 parity: cleanup missing streams)
             all_stream_ids = [s.get("id") for s in streams if s.get("id")]
 
@@ -1151,6 +1166,7 @@ class EventGroupProcessor:
                 filtered_exclude_regex=result.filtered_exclude_regex,
                 failed_count=result.streams_unmatched,
                 filtered_not_event=result.filtered_not_event,
+                filtered_team=result.filtered_team,
                 streams_excluded=result.streams_excluded,
                 total_stream_count=result.streams_fetched,  # V1 parity
                 excluded_event_final=result.excluded_event_final,
@@ -1452,6 +1468,130 @@ class EventGroupProcessor:
 
         logger.debug(f"Enriched {len(enriched)} matched events with fresh status")
         return enriched
+
+    def _filter_by_teams(
+        self,
+        matched_streams: list[dict],
+        group: "EventEPGGroup",
+        conn,
+    ) -> tuple[list[dict], int]:
+        """Filter matched streams by team include/exclude configuration.
+
+        Uses canonical team selection (provider, team_id) for unambiguous matching.
+        Filter is set on parent groups and inherited by children.
+
+        Args:
+            matched_streams: List of {'stream': ..., 'event': ...} dicts
+            group: The event group being processed
+            conn: Database connection for parent lookup
+
+        Returns:
+            Tuple of (filtered_streams, filtered_count)
+        """
+        # Get effective team filter (from group or parent)
+        include_teams, exclude_teams, mode = self._get_effective_team_filter(group, conn)
+
+        # No filter configured
+        if not include_teams and not exclude_teams:
+            return matched_streams, 0
+
+        filter_list = include_teams if include_teams else exclude_teams
+        filtered = []
+        filtered_count = 0
+
+        for match in matched_streams:
+            event = match.get("event")
+            if not event:
+                # No event - can't filter by team, keep it
+                filtered.append(match)
+                continue
+
+            # Check if either team matches filter
+            home_match = self._team_matches_filter(event.home_team, filter_list)
+            away_match = self._team_matches_filter(event.away_team, filter_list)
+            team_in_filter = home_match or away_match
+
+            if mode == "include":
+                # Include mode: keep if team IS in list
+                if team_in_filter:
+                    filtered.append(match)
+                else:
+                    filtered_count += 1
+                    logger.debug(
+                        f"Team filter excluded: {event.name} - "
+                        f"neither {event.home_team.name if event.home_team else 'N/A'} "
+                        f"nor {event.away_team.name if event.away_team else 'N/A'} in include list"
+                    )
+            else:
+                # Exclude mode: keep if team is NOT in list
+                if not team_in_filter:
+                    filtered.append(match)
+                else:
+                    filtered_count += 1
+                    logger.debug(
+                        f"Team filter excluded: {event.name} - "
+                        f"team in exclude list"
+                    )
+
+        if filtered_count > 0:
+            logger.info(f"Team filter: {filtered_count} streams excluded, {len(filtered)} remaining")
+
+        return filtered, filtered_count
+
+    def _get_effective_team_filter(
+        self,
+        group: "EventEPGGroup",
+        conn,
+    ) -> tuple[list[dict] | None, list[dict] | None, str]:
+        """Get team filter, inheriting from parent if needed.
+
+        Returns:
+            Tuple of (include_teams, exclude_teams, mode)
+        """
+        from teamarr.database.groups import get_group
+
+        # If group has its own filter, use it
+        if group.include_teams or group.exclude_teams:
+            return group.include_teams, group.exclude_teams, group.team_filter_mode
+
+        # Otherwise inherit from parent
+        if group.parent_group_id:
+            parent = get_group(conn, group.parent_group_id)
+            if parent and (parent.include_teams or parent.exclude_teams):
+                return parent.include_teams, parent.exclude_teams, parent.team_filter_mode
+
+        return None, None, "include"
+
+    def _team_matches_filter(
+        self,
+        team,
+        filter_teams: list[dict],
+    ) -> bool:
+        """Check if a team matches any entry in the filter list.
+
+        Matches on provider + team_id. League is optional (some teams
+        play in multiple leagues).
+
+        Args:
+            team: Team object from event
+            filter_teams: List of filter entries with provider, team_id, league
+
+        Returns:
+            True if team matches any filter entry
+        """
+        if not team or not filter_teams:
+            return False
+
+        for f in filter_teams:
+            if f.get("provider") == team.provider and f.get("team_id") == team.id:
+                # League check is optional
+                filter_league = f.get("league")
+                if filter_league:
+                    if filter_league == team.league:
+                        return True
+                else:
+                    return True
+        return False
 
     def _sort_matched_streams(
         self,

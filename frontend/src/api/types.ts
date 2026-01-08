@@ -1,5 +1,13 @@
 // API Response Types
 
+// Team filter entry for include/exclude filtering
+export interface TeamFilterEntry {
+  provider: string      // e.g., "espn", "tsdb"
+  team_id: string       // provider_team_id from team_cache
+  league: string        // e.g., "nfl", "nba"
+  name?: string | null  // For display only, not used in matching
+}
+
 export interface EventGroup {
   id: number
   name: string
@@ -32,6 +40,10 @@ export interface EventGroup {
   custom_regex_time: string | null
   custom_regex_time_enabled: boolean
   skip_builtin_filter: boolean
+  // Team filtering (canonical team selection, inherited by children)
+  include_teams: TeamFilterEntry[] | null
+  exclude_teams: TeamFilterEntry[] | null
+  team_filter_mode: 'include' | 'exclude'
   // Processing stats
   last_refresh: string | null
   stream_count: number
@@ -40,6 +52,7 @@ export interface EventGroup {
   filtered_include_regex: number
   filtered_exclude_regex: number
   filtered_not_event: number
+  filtered_team: number
   // Matching stats
   failed_count: number  // FAILED: Match attempted but couldn't find event
   streams_excluded: number  // EXCLUDED: Matched but excluded by timing (past/final/early)
@@ -88,6 +101,10 @@ export interface EventGroupCreate {
   custom_regex_time?: string | null
   custom_regex_time_enabled?: boolean
   skip_builtin_filter?: boolean
+  // Team filtering (canonical team selection, inherited by children)
+  include_teams?: TeamFilterEntry[] | null
+  exclude_teams?: TeamFilterEntry[] | null
+  team_filter_mode?: 'include' | 'exclude'
   // Multi-sport enhancements (Phase 3)
   channel_sort_order?: string
   overlap_handling?: string
@@ -111,6 +128,8 @@ export interface EventGroupUpdate extends Partial<EventGroupCreate> {
   clear_custom_regex_teams?: boolean
   clear_custom_regex_date?: boolean
   clear_custom_regex_time?: boolean
+  clear_include_teams?: boolean
+  clear_exclude_teams?: boolean
 }
 
 export interface EventGroupListResponse {

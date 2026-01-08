@@ -502,12 +502,13 @@ export function EventGroups() {
     const filteredIncludeRegex = groups.reduce((sum, g) => sum + (g.filtered_include_regex || 0), 0)
     const filteredExcludeRegex = groups.reduce((sum, g) => sum + (g.filtered_exclude_regex || 0), 0)
     const filteredNotEvent = groups.reduce((sum, g) => sum + (g.filtered_not_event || 0), 0)
+    const filteredTeam = groups.reduce((sum, g) => sum + (g.filtered_team || 0), 0)
     const streamsExcluded = groups.reduce((sum, g) => sum + (g.streams_excluded || 0), 0)
     const excludedEventFinal = groups.reduce((sum, g) => sum + (g.excluded_event_final || 0), 0)
     const excludedEventPast = groups.reduce((sum, g) => sum + (g.excluded_event_past || 0), 0)
     const excludedBeforeWindow = groups.reduce((sum, g) => sum + (g.excluded_before_window || 0), 0)
     const excludedLeagueNotIncluded = groups.reduce((sum, g) => sum + (g.excluded_league_not_included || 0), 0)
-    const totalFiltered = filteredIncludeRegex + filteredExcludeRegex + filteredNotEvent
+    const totalFiltered = filteredIncludeRegex + filteredExcludeRegex + filteredNotEvent + filteredTeam
     const matched = groups.reduce((sum, g) => sum + (g.matched_count || 0), 0)
     const failedCount = groups.reduce((sum, g) => sum + (g.failed_count || 0), 0)
     // Match rate = matched / (matched + failed) - percentage of match attempts that succeeded
@@ -526,6 +527,7 @@ export function EventGroups() {
       filteredIncludeRegex,
       filteredExcludeRegex,
       filteredNotEvent,
+      filteredTeam,
       failedCount,
       streamsExcluded,
       excludedEventFinal,
@@ -802,6 +804,12 @@ export function EventGroups() {
                         <div className="flex justify-between text-sm">
                           <span>Exclude Regex Matched</span>
                           <span className="font-medium">{stats.filteredExcludeRegex}</span>
+                        </div>
+                      )}
+                      {(stats.filteredTeam ?? 0) > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span>Team Filter</span>
+                          <span className="font-medium">{stats.filteredTeam}</span>
                         </div>
                       )}
                       <div className="flex justify-between text-sm font-medium pt-1 border-t">

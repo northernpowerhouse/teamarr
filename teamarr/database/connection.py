@@ -665,6 +665,24 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("Schema upgraded to version 20 (event_epg_groups.group_mode)")
         current_version = 20
 
+    # Version 21: Add team filtering columns to event_epg_groups
+    # Canonical team selection (not regex) for filtering events by team
+    if current_version < 21:
+        _add_column_if_not_exists(conn, "event_epg_groups", "include_teams", "JSON")
+        _add_column_if_not_exists(conn, "event_epg_groups", "exclude_teams", "JSON")
+        _add_column_if_not_exists(
+            conn,
+            "event_epg_groups",
+            "team_filter_mode",
+            "TEXT DEFAULT 'include' CHECK(team_filter_mode IN ('include', 'exclude'))",
+        )
+        _add_column_if_not_exists(
+            conn, "event_epg_groups", "filtered_team", "INTEGER DEFAULT 0"
+        )
+        conn.execute("UPDATE settings SET schema_version = 21 WHERE id = 1")
+        logger.info("Schema upgraded to version 21 (team filtering columns)")
+        current_version = 21
+
 
 def _rename_filtered_no_match_to_failed_count(conn: sqlite3.Connection) -> None:
     """Rename filtered_no_match column to failed_count.

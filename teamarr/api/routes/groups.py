@@ -20,6 +20,18 @@ router = APIRouter()
 # =============================================================================
 
 
+class TeamFilterEntry(BaseModel):
+    """A team reference for include/exclude filtering.
+
+    Uses canonical team selection from team_cache for unambiguous identification.
+    """
+
+    provider: str  # e.g., "espn", "tsdb"
+    team_id: str  # provider_team_id from team_cache
+    league: str  # e.g., "nfl", "nba"
+    name: str | None = None  # For display only, not used in matching
+
+
 class GroupCreate(BaseModel):
     """Create event EPG group request."""
 
@@ -53,6 +65,10 @@ class GroupCreate(BaseModel):
     custom_regex_time: str | None = None
     custom_regex_time_enabled: bool = False
     skip_builtin_filter: bool = False
+    # Team filtering (canonical team selection, inherited by children)
+    include_teams: list[TeamFilterEntry] | None = None
+    exclude_teams: list[TeamFilterEntry] | None = None
+    team_filter_mode: str = "include"  # "include" (whitelist) or "exclude" (blacklist)
     # Multi-sport enhancements (Phase 3)
     channel_sort_order: str = "time"
     overlap_handling: str = "add_stream"
@@ -92,6 +108,10 @@ class GroupUpdate(BaseModel):
     custom_regex_time: str | None = None
     custom_regex_time_enabled: bool | None = None
     skip_builtin_filter: bool | None = None
+    # Team filtering (canonical team selection, inherited by children)
+    include_teams: list[TeamFilterEntry] | None = None
+    exclude_teams: list[TeamFilterEntry] | None = None
+    team_filter_mode: str | None = None  # "include" (whitelist) or "exclude" (blacklist)
     # Multi-sport enhancements (Phase 3)
     channel_sort_order: str | None = None
     overlap_handling: str | None = None
@@ -114,6 +134,8 @@ class GroupUpdate(BaseModel):
     clear_custom_regex_teams: bool = False
     clear_custom_regex_date: bool = False
     clear_custom_regex_time: bool = False
+    clear_include_teams: bool = False
+    clear_exclude_teams: bool = False
 
 
 class GroupResponse(BaseModel):
@@ -150,6 +172,10 @@ class GroupResponse(BaseModel):
     custom_regex_time: str | None = None
     custom_regex_time_enabled: bool = False
     skip_builtin_filter: bool = False
+    # Team filtering (canonical team selection, inherited by children)
+    include_teams: list[TeamFilterEntry] | None = None
+    exclude_teams: list[TeamFilterEntry] | None = None
+    team_filter_mode: str = "include"  # "include" (whitelist) or "exclude" (blacklist)
     # Processing stats
     last_refresh: str | None = None
     stream_count: int = 0
@@ -158,6 +184,7 @@ class GroupResponse(BaseModel):
     filtered_include_regex: int = 0  # FILTERED: Didn't match include regex
     filtered_exclude_regex: int = 0  # FILTERED: Matched exclude regex
     filtered_not_event: int = 0  # FILTERED: Stream doesn't look like event
+    filtered_team: int = 0  # FILTERED: Team not in include/exclude filter
     failed_count: int = 0  # FAILED: Match attempted but couldn't find event
     streams_excluded: int = 0  # EXCLUDED: Matched but excluded (aggregate)
     # EXCLUDED breakdown by reason
@@ -298,13 +325,17 @@ def list_groups(
                 custom_regex_time=g.custom_regex_time,
                 custom_regex_time_enabled=g.custom_regex_time_enabled,
                 skip_builtin_filter=g.skip_builtin_filter,
+                include_teams=[TeamFilterEntry(**t) for t in g.include_teams] if g.include_teams else None,
+                exclude_teams=[TeamFilterEntry(**t) for t in g.exclude_teams] if g.exclude_teams else None,
+                team_filter_mode=g.team_filter_mode,
                 last_refresh=g.last_refresh.isoformat() if g.last_refresh else None,
                 stream_count=g.stream_count,
                 matched_count=g.matched_count,
                 filtered_include_regex=g.filtered_include_regex,
                 filtered_exclude_regex=g.filtered_exclude_regex,
-                failed_count=g.failed_count,
                 filtered_not_event=g.filtered_not_event,
+                filtered_team=g.filtered_team,
+                failed_count=g.failed_count,
                 streams_excluded=g.streams_excluded,
                 excluded_event_final=g.excluded_event_final,
                 excluded_event_past=g.excluded_event_past,
@@ -375,6 +406,9 @@ def create_group(request: GroupCreate):
             custom_regex_time=request.custom_regex_time,
             custom_regex_time_enabled=request.custom_regex_time_enabled,
             skip_builtin_filter=request.skip_builtin_filter,
+            include_teams=[t.model_dump() for t in request.include_teams] if request.include_teams else None,
+            exclude_teams=[t.model_dump() for t in request.exclude_teams] if request.exclude_teams else None,
+            team_filter_mode=request.team_filter_mode,
             channel_sort_order=request.channel_sort_order,
             overlap_handling=request.overlap_handling,
             enabled=request.enabled,
@@ -413,13 +447,17 @@ def create_group(request: GroupCreate):
         custom_regex_time=group.custom_regex_time,
         custom_regex_time_enabled=group.custom_regex_time_enabled,
         skip_builtin_filter=group.skip_builtin_filter,
+        include_teams=[TeamFilterEntry(**t) for t in group.include_teams] if group.include_teams else None,
+        exclude_teams=[TeamFilterEntry(**t) for t in group.exclude_teams] if group.exclude_teams else None,
+        team_filter_mode=group.team_filter_mode,
         last_refresh=group.last_refresh.isoformat() if group.last_refresh else None,
         stream_count=group.stream_count,
         matched_count=group.matched_count,
         filtered_include_regex=group.filtered_include_regex,
         filtered_exclude_regex=group.filtered_exclude_regex,
-        failed_count=group.failed_count,
         filtered_not_event=group.filtered_not_event,
+        filtered_team=group.filtered_team,
+        failed_count=group.failed_count,
         streams_excluded=group.streams_excluded,
         excluded_event_final=group.excluded_event_final,
         excluded_event_past=group.excluded_event_past,
@@ -479,13 +517,17 @@ def get_group_by_id(group_id: int):
         custom_regex_time=group.custom_regex_time,
         custom_regex_time_enabled=group.custom_regex_time_enabled,
         skip_builtin_filter=group.skip_builtin_filter,
+        include_teams=[TeamFilterEntry(**t) for t in group.include_teams] if group.include_teams else None,
+        exclude_teams=[TeamFilterEntry(**t) for t in group.exclude_teams] if group.exclude_teams else None,
+        team_filter_mode=group.team_filter_mode,
         last_refresh=group.last_refresh.isoformat() if group.last_refresh else None,
         stream_count=group.stream_count,
         matched_count=group.matched_count,
         filtered_include_regex=group.filtered_include_regex,
         filtered_exclude_regex=group.filtered_exclude_regex,
-        failed_count=group.failed_count,
         filtered_not_event=group.filtered_not_event,
+        filtered_team=group.filtered_team,
+        failed_count=group.failed_count,
         streams_excluded=group.streams_excluded,
         excluded_event_final=group.excluded_event_final,
         excluded_event_past=group.excluded_event_past,
@@ -566,6 +608,9 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
             custom_regex_time=request.custom_regex_time,
             custom_regex_time_enabled=request.custom_regex_time_enabled,
             skip_builtin_filter=request.skip_builtin_filter,
+            include_teams=[t.model_dump() for t in request.include_teams] if request.include_teams else None,
+            exclude_teams=[t.model_dump() for t in request.exclude_teams] if request.exclude_teams else None,
+            team_filter_mode=request.team_filter_mode,
             channel_sort_order=request.channel_sort_order,
             overlap_handling=request.overlap_handling,
             enabled=request.enabled,
@@ -585,6 +630,8 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
             clear_custom_regex_teams=request.clear_custom_regex_teams,
             clear_custom_regex_date=request.clear_custom_regex_date,
             clear_custom_regex_time=request.clear_custom_regex_time,
+            clear_include_teams=request.clear_include_teams,
+            clear_exclude_teams=request.clear_exclude_teams,
         )
 
         group = get_group(conn, group_id)
@@ -621,13 +668,17 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
         custom_regex_time=group.custom_regex_time,
         custom_regex_time_enabled=group.custom_regex_time_enabled,
         skip_builtin_filter=group.skip_builtin_filter,
+        include_teams=[TeamFilterEntry(**t) for t in group.include_teams] if group.include_teams else None,
+        exclude_teams=[TeamFilterEntry(**t) for t in group.exclude_teams] if group.exclude_teams else None,
+        team_filter_mode=group.team_filter_mode,
         last_refresh=group.last_refresh.isoformat() if group.last_refresh else None,
         stream_count=group.stream_count,
         matched_count=group.matched_count,
         filtered_include_regex=group.filtered_include_regex,
         filtered_exclude_regex=group.filtered_exclude_regex,
-        failed_count=group.failed_count,
         filtered_not_event=group.filtered_not_event,
+        filtered_team=group.filtered_team,
+        failed_count=group.failed_count,
         streams_excluded=group.streams_excluded,
         excluded_event_final=group.excluded_event_final,
         excluded_event_past=group.excluded_event_past,

@@ -20,6 +20,7 @@ import {
 } from "@/hooks/useGroups"
 import { useTemplates } from "@/hooks/useTemplates"
 import type { EventGroupCreate, EventGroupUpdate } from "@/api/types"
+import { TeamPicker } from "@/components/TeamPicker"
 
 // Group mode
 type GroupMode = "single" | "multi" | null
@@ -130,6 +131,10 @@ export function EventGroupForm() {
     channel_sort_order: "time",
     overlap_handling: "add_stream",
     enabled: true,
+    // Team filtering
+    include_teams: null,
+    exclude_teams: null,
+    team_filter_mode: "include",
   })
 
   // Single-league selection
@@ -184,6 +189,7 @@ export function EventGroupForm() {
 
   // Collapsible section states
   const [regexExpanded, setRegexExpanded] = useState(false)
+  const [teamFilterExpanded, setTeamFilterExpanded] = useState(false)
 
   // Mutations
   const createMutation = useCreateGroup()
@@ -222,6 +228,10 @@ export function EventGroupForm() {
         custom_regex_time: group.custom_regex_time,
         custom_regex_time_enabled: group.custom_regex_time_enabled,
         skip_builtin_filter: group.skip_builtin_filter,
+        // Team filtering
+        include_teams: group.include_teams,
+        exclude_teams: group.exclude_teams,
+        team_filter_mode: group.team_filter_mode || "include",
         // Multi-sport enhancements (Phase 3)
         channel_sort_order: group.channel_sort_order || "time",
         overlap_handling: group.overlap_handling || "add_stream",
@@ -1657,6 +1667,116 @@ export function EventGroupForm() {
               </CardContent>
             )}
           </Card>
+
+          {/* Team Filtering - only show for parent groups */}
+          {!isChildGroup && (
+            <Card>
+              <button
+                type="button"
+                onClick={() => setTeamFilterExpanded(!teamFilterExpanded)}
+                className="w-full"
+              >
+                <CardHeader className="flex flex-row items-center justify-between py-3 cursor-pointer hover:bg-muted/50 rounded-t-lg">
+                  <div className="flex items-center gap-2">
+                    {teamFilterExpanded ? (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    <CardTitle className="text-base">Team Filtering</CardTitle>
+                    {((formData.include_teams?.length ?? 0) > 0 || (formData.exclude_teams?.length ?? 0) > 0) && (
+                      <Badge variant="secondary" className="text-xs">
+                        {(formData.include_teams?.length ?? 0) + (formData.exclude_teams?.length ?? 0)} teams
+                      </Badge>
+                    )}
+                  </div>
+                </CardHeader>
+              </button>
+
+              {teamFilterExpanded && (
+                <CardContent className="space-y-4 pt-0">
+                  <p className="text-sm text-muted-foreground">
+                    Filter events by specific teams. Child groups inherit this filter.
+                  </p>
+
+                  {/* Mode selector */}
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="team_filter_mode"
+                        value="include"
+                        checked={formData.team_filter_mode === "include"}
+                        onChange={() => {
+                          // Move teams to include list when switching modes
+                          const teams = formData.exclude_teams || []
+                          setFormData({
+                            ...formData,
+                            team_filter_mode: "include",
+                            include_teams: teams.length > 0 ? teams : formData.include_teams,
+                            exclude_teams: null,
+                          })
+                        }}
+                        className="text-primary"
+                      />
+                      <span className="text-sm">Include only these teams</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="team_filter_mode"
+                        value="exclude"
+                        checked={formData.team_filter_mode === "exclude"}
+                        onChange={() => {
+                          // Move teams to exclude list when switching modes
+                          const teams = formData.include_teams || []
+                          setFormData({
+                            ...formData,
+                            team_filter_mode: "exclude",
+                            exclude_teams: teams.length > 0 ? teams : formData.exclude_teams,
+                            include_teams: null,
+                          })
+                        }}
+                        className="text-primary"
+                      />
+                      <span className="text-sm">Exclude these teams</span>
+                    </label>
+                  </div>
+
+                  {/* Team picker */}
+                  <TeamPicker
+                    leagues={formData.leagues}
+                    selectedTeams={
+                      formData.team_filter_mode === "include"
+                        ? (formData.include_teams || [])
+                        : (formData.exclude_teams || [])
+                    }
+                    onSelectionChange={(teams) => {
+                      if (formData.team_filter_mode === "include") {
+                        setFormData({
+                          ...formData,
+                          include_teams: teams.length > 0 ? teams : null,
+                          exclude_teams: null,
+                        })
+                      } else {
+                        setFormData({
+                          ...formData,
+                          exclude_teams: teams.length > 0 ? teams : null,
+                          include_teams: null,
+                        })
+                      }
+                    }}
+                  />
+
+                  <p className="text-xs text-muted-foreground">
+                    {formData.team_filter_mode === "include"
+                      ? "Only events involving these teams will be matched."
+                      : "Events involving these teams will be excluded."}
+                  </p>
+                </CardContent>
+              )}
+            </Card>
+          )}
 
           {/* Multi-Sport Settings - only show for multi-sport parent groups */}
           {!isChildGroup && formData.leagues.length > 1 && (
