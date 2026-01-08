@@ -1543,12 +1543,19 @@ class EventGroupProcessor:
         group: "EventEPGGroup",
         conn,
     ) -> tuple[list[dict] | None, list[dict] | None, str]:
-        """Get team filter, inheriting from parent if needed.
+        """Get team filter, inheriting from parent if needed, with settings fallback.
+
+        Priority chain:
+        1. Group's own filter (if configured)
+        2. Parent group's filter (if child and parent has filter)
+        3. Global settings default (if configured)
+        4. No filtering (default)
 
         Returns:
             Tuple of (include_teams, exclude_teams, mode)
         """
         from teamarr.database.groups import get_group
+        from teamarr.database.settings import get_team_filter_settings
 
         # If group has its own filter, use it
         if group.include_teams or group.exclude_teams:
@@ -1559,6 +1566,11 @@ class EventGroupProcessor:
             parent = get_group(conn, group.parent_group_id)
             if parent and (parent.include_teams or parent.exclude_teams):
                 return parent.include_teams, parent.exclude_teams, parent.team_filter_mode
+
+        # Fall back to global settings default
+        settings = get_team_filter_settings(conn)
+        if settings.include_teams or settings.exclude_teams:
+            return settings.include_teams, settings.exclude_teams, settings.mode
 
         return None, None, "include"
 

@@ -162,6 +162,29 @@ class DisplaySettingsModel(BaseModel):
 
 
 # =============================================================================
+# TEAM FILTER SETTINGS
+# =============================================================================
+
+
+class TeamFilterSettingsModel(BaseModel):
+    """Default team filtering settings for event groups."""
+
+    include_teams: list[dict] | None = None
+    exclude_teams: list[dict] | None = None
+    mode: str = "include"
+
+
+class TeamFilterSettingsUpdate(BaseModel):
+    """Update model for team filter settings."""
+
+    include_teams: list[dict] | None = None
+    exclude_teams: list[dict] | None = None
+    mode: str | None = None
+    clear_include_teams: bool = False
+    clear_exclude_teams: bool = False
+
+
+# =============================================================================
 # ALL SETTINGS
 # =============================================================================
 
@@ -176,5 +199,6 @@ class AllSettingsModel(BaseModel):
     epg: EPGSettingsModel
     durations: DurationSettingsModel
     display: DisplaySettingsModel
+    team_filter: TeamFilterSettingsModel | None = None
     epg_generation_counter: int = 0
-    schema_version: int = 3
+    schema_version: int = 22

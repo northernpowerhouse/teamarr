@@ -35,10 +35,15 @@ import {
   useUpdateDurationSettings,
   useUpdateDisplaySettings,
   useUpdateReconciliationSettings,
+  useTeamFilterSettings,
+  useUpdateTeamFilterSettings,
   useExceptionKeywords,
   useCreateExceptionKeyword,
   useDeleteExceptionKeyword,
 } from "@/hooks/useSettings"
+import { TeamPicker } from "@/components/TeamPicker"
+import { getLeagues } from "@/api/teams"
+import { useQuery } from "@tanstack/react-query"
 import { useCacheStatus, useRefreshCache } from "@/hooks/useEPG"
 import type {
   DispatcharrSettings,
@@ -48,6 +53,7 @@ import type {
   DurationSettings,
   DisplaySettings,
   ReconciliationSettings,
+  TeamFilterSettings,
 } from "@/api/settings"
 
 function formatRelativeTime(dateStr: string | null): string {
@@ -125,6 +131,14 @@ export function Settings() {
   const createKeyword = useCreateExceptionKeyword()
   const deleteKeyword = useDeleteExceptionKeyword()
 
+  // Team filter settings
+  const { data: teamFilterData } = useTeamFilterSettings()
+  const updateTeamFilter = useUpdateTeamFilterSettings()
+  const { data: leaguesData } = useQuery({
+    queryKey: ["cache", "leagues"],
+    queryFn: () => getLeagues(),
+  })
+
   // V1 Migration state
   const [v1DbPath, setV1DbPath] = useState("/v1-data/teamarr.db")
   const [isMigrating, setIsMigrating] = useState<string | null>(null)
@@ -142,6 +156,11 @@ export function Settings() {
   const [durations, setDurations] = useState<DurationSettings | null>(null)
   const [display, setDisplay] = useState<DisplaySettings | null>(null)
   const [reconciliation, setReconciliation] = useState<ReconciliationSettings | null>(null)
+  const [teamFilter, setTeamFilter] = useState<TeamFilterSettings>({
+    include_teams: null,
+    exclude_teams: null,
+    mode: "include",
+  })
   const [newKeyword, setNewKeyword] = useState({ keywords: "", behavior: "consolidate" })
 
   // Initialize local state from settings
@@ -166,6 +185,19 @@ export function Settings() {
       }
     }
   }, [settings])
+
+  // Sync team filter state when data loads
+  useEffect(() => {
+    if (teamFilterData) {
+      setTeamFilter(teamFilterData)
+    }
+  }, [teamFilterData])
+
+  // Get league slugs for TeamPicker
+  const availableLeagues = useMemo(() =>
+    leaguesData?.leagues?.map(l => l.slug) ?? [],
+    [leaguesData]
+  )
 
   const handleSaveDispatcharr = async () => {
     try {
@@ -418,10 +450,14 @@ export function Settings() {
 
       {/* General Tab */}
       {activeTab === "general" && (
+      <>
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold">General Settings</h2>
+        <p className="text-sm text-muted-foreground">Configure timezone, time format, and display preferences</p>
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>System Settings</CardTitle>
-          <CardDescription>Configure timezone, time format, and display preferences</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-3 gap-4">
@@ -480,14 +516,19 @@ export function Settings() {
           </Button>
         </CardContent>
       </Card>
+      </>
       )}
 
       {/* Teams Tab */}
       {activeTab === "teams" && (
+      <>
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold">Team Based Streams</h2>
+        <p className="text-sm text-muted-foreground">Configure settings for team-based EPG generation</p>
+      </div>
       <Card>
         <CardHeader>
-          <CardTitle>Team Based Streams</CardTitle>
-          <CardDescription>Configure settings for team-based EPG generation</CardDescription>
+          <CardTitle>Channel Settings</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-3 gap-4">
@@ -550,14 +591,19 @@ export function Settings() {
           </Button>
         </CardContent>
       </Card>
+      </>
       )}
 
       {/* Event Groups Tab */}
       {activeTab === "events" && (
+      <>
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold">Event Based Streams</h2>
+        <p className="text-sm text-muted-foreground">Configure settings for event-based EPG generation (Event Groups)</p>
+      </div>
       <Card>
         <CardHeader>
-          <CardTitle>Event Based Streams</CardTitle>
-          <CardDescription>Configure settings for event-based EPG generation (Event Groups)</CardDescription>
+          <CardTitle>Channel Lifecycle</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-3 gap-4">
@@ -667,101 +713,6 @@ export function Settings() {
             </div>
           </div>
 
-          {/* Exception Keywords Table */}
-          {reconciliation?.default_duplicate_event_handling === "consolidate" && (
-            <div className="space-y-3 pt-3 border-t">
-              <Label>Exception Keywords</Label>
-              <p className="text-xs text-muted-foreground">
-                Streams matching these keywords get special handling during consolidation
-              </p>
-
-              <div className="border rounded-md">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium">Keywords (comma-separated)</th>
-                      <th className="px-3 py-2 text-left font-medium w-40">Behavior</th>
-                      <th className="px-3 py-2 w-12"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {keywordsQuery.data?.keywords.map((kw) => (
-                      <tr key={kw.id} className="border-t">
-                        <td className="px-3 py-2">{kw.keywords}</td>
-                        <td className="px-3 py-2">
-                          <Select
-                            value={kw.behavior}
-                            onChange={async (e) => {
-                              const newBehavior = e.target.value
-                              try {
-                                await fetch(`/api/v1/keywords/${kw.id}`, {
-                                  method: "PUT",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ behavior: newBehavior }),
-                                })
-                                keywordsQuery.refetch()
-                                toast.success(`Updated behavior to "${newBehavior}"`)
-                              } catch (err) {
-                                toast.error("Failed to update keyword behavior")
-                              }
-                            }}
-                            className="w-40 h-8"
-                          >
-                            <option value="consolidate">Sub-Consolidate</option>
-                            <option value="separate">Separate</option>
-                            <option value="ignore">Ignore</option>
-                          </Select>
-                        </td>
-                        <td className="px-3 py-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteKeyword(kw.id)}
-                            disabled={deleteKeyword.isPending}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                    {(!keywordsQuery.data?.keywords || keywordsQuery.data.keywords.length === 0) && (
-                      <tr>
-                        <td colSpan={3} className="px-3 py-4 text-center text-muted-foreground">
-                          No exception keywords defined
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="flex gap-2">
-                <Input
-                  placeholder="e.g., Spanish, En Español, ESP"
-                  value={newKeyword.keywords}
-                  onChange={(e) => setNewKeyword({ ...newKeyword, keywords: e.target.value })}
-                  className="flex-1"
-                />
-                <Select
-                  value={newKeyword.behavior}
-                  onChange={(e) => setNewKeyword({ ...newKeyword, behavior: e.target.value })}
-                  className="w-40"
-                >
-                  <option value="consolidate">Sub-Consolidate</option>
-                  <option value="separate">Separate</option>
-                  <option value="ignore">Ignore</option>
-                </Select>
-                <Button onClick={handleAddKeyword} disabled={createKeyword.isPending}>
-                  {createKeyword.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Plus className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
-
           <Button
             onClick={handleSaveEventGroupSettings}
             disabled={updateEPG.isPending || updateLifecycle.isPending || updateReconciliation.isPending}
@@ -775,15 +726,207 @@ export function Settings() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Exception Keywords Card */}
+      {reconciliation?.default_duplicate_event_handling === "consolidate" && (
+      <Card>
+        <CardHeader>
+          <CardTitle>Exception Keywords</CardTitle>
+          <CardDescription>
+            Streams matching these keywords get special handling during consolidation
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="border rounded-md">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Keywords (comma-separated)</th>
+                  <th className="px-3 py-2 text-left font-medium w-40">Behavior</th>
+                  <th className="px-3 py-2 w-12"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {keywordsQuery.data?.keywords.map((kw) => (
+                  <tr key={kw.id} className="border-t">
+                    <td className="px-3 py-2">{kw.keywords}</td>
+                    <td className="px-3 py-2">
+                      <Select
+                        value={kw.behavior}
+                        onChange={async (e) => {
+                          const newBehavior = e.target.value
+                          try {
+                            await fetch(`/api/v1/keywords/${kw.id}`, {
+                              method: "PUT",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ behavior: newBehavior }),
+                            })
+                            keywordsQuery.refetch()
+                            toast.success(`Updated behavior to "${newBehavior}"`)
+                          } catch (err) {
+                            toast.error("Failed to update keyword behavior")
+                          }
+                        }}
+                        className="w-40 h-8"
+                      >
+                        <option value="consolidate">Sub-Consolidate</option>
+                        <option value="separate">Separate</option>
+                        <option value="ignore">Ignore</option>
+                      </Select>
+                    </td>
+                    <td className="px-3 py-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteKeyword(kw.id)}
+                        disabled={deleteKeyword.isPending}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+                {(!keywordsQuery.data?.keywords || keywordsQuery.data.keywords.length === 0) && (
+                  <tr>
+                    <td colSpan={3} className="px-3 py-4 text-center text-muted-foreground">
+                      No exception keywords defined
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex gap-2">
+            <Input
+              placeholder="e.g., Spanish, En Español, ESP"
+              value={newKeyword.keywords}
+              onChange={(e) => setNewKeyword({ ...newKeyword, keywords: e.target.value })}
+              className="flex-1"
+            />
+            <Select
+              value={newKeyword.behavior}
+              onChange={(e) => setNewKeyword({ ...newKeyword, behavior: e.target.value })}
+              className="w-40"
+            >
+              <option value="consolidate">Sub-Consolidate</option>
+              <option value="separate">Separate</option>
+              <option value="ignore">Ignore</option>
+            </Select>
+            <Button onClick={handleAddKeyword} disabled={createKeyword.isPending}>
+              {createKeyword.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+      )}
+
+      {/* Default Team Filter Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Default Team Filter</CardTitle>
+          <CardDescription>
+            Global team filter applied to all event groups that don't have their own filter.
+            Groups can override this with their own settings.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Mode selector */}
+          <div className="flex items-center gap-4">
+            <Label>Filter Mode:</Label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="default-team-filter-mode"
+                  value="include"
+                  checked={teamFilter.mode === "include"}
+                  onChange={() => setTeamFilter({ ...teamFilter, mode: "include" })}
+                  className="accent-primary"
+                />
+                <span className="text-sm">Include only these teams</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="default-team-filter-mode"
+                  value="exclude"
+                  checked={teamFilter.mode === "exclude"}
+                  onChange={() => setTeamFilter({ ...teamFilter, mode: "exclude" })}
+                  className="accent-primary"
+                />
+                <span className="text-sm">Exclude these teams</span>
+              </label>
+            </div>
+          </div>
+
+          {/* TeamPicker */}
+          <TeamPicker
+            leagues={availableLeagues}
+            selectedTeams={
+              teamFilter.mode === "include"
+                ? (teamFilter.include_teams ?? [])
+                : (teamFilter.exclude_teams ?? [])
+            }
+            onSelectionChange={(teams) => {
+              if (teamFilter.mode === "include") {
+                setTeamFilter({ ...teamFilter, include_teams: teams.length > 0 ? teams : null, exclude_teams: null })
+              } else {
+                setTeamFilter({ ...teamFilter, exclude_teams: teams.length > 0 ? teams : null, include_teams: null })
+              }
+            }}
+            placeholder="Search teams to add to default filter..."
+          />
+
+          {/* Save button */}
+          <div className="flex justify-between items-center">
+            <p className="text-xs text-muted-foreground">
+              {teamFilter.mode === "include"
+                ? "Only events involving these teams will be matched (unless group has its own filter)."
+                : "Events involving these teams will be excluded (unless group has its own filter)."}
+            </p>
+            <Button
+              onClick={() => {
+                updateTeamFilter.mutate({
+                  include_teams: teamFilter.include_teams,
+                  exclude_teams: teamFilter.exclude_teams,
+                  mode: teamFilter.mode,
+                  clear_include_teams: teamFilter.mode === "exclude" || !teamFilter.include_teams,
+                  clear_exclude_teams: teamFilter.mode === "include" || !teamFilter.exclude_teams,
+                }, {
+                  onSuccess: () => toast.success("Default team filter saved"),
+                  onError: () => toast.error("Failed to save team filter"),
+                })
+              }}
+              disabled={updateTeamFilter.isPending}
+            >
+              {updateTeamFilter.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              Save Default Filter
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+      </>
       )}
 
       {/* EPG Generation Tab */}
       {activeTab === "epg" && (
       <>
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold">EPG Generation</h2>
+        <p className="text-sm text-muted-foreground">Configure EPG output, scheduling, and game durations</p>
+      </div>
       <Card>
         <CardHeader>
-          <CardTitle>EPG Generation</CardTitle>
-          <CardDescription>Configure EPG output and scheduling</CardDescription>
+          <CardTitle>Output Settings</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-3 gap-4">
@@ -990,6 +1133,10 @@ export function Settings() {
       {/* Integrations Tab */}
       {activeTab === "integrations" && (
       <>
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold">Integrations</h2>
+        <p className="text-sm text-muted-foreground">Configure connections to external services</p>
+      </div>
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -1192,6 +1339,10 @@ export function Settings() {
       {/* Advanced Tab */}
       {activeTab === "advanced" && (
       <>
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold">Advanced</h2>
+        <p className="text-sm text-muted-foreground">Import, export, and other advanced options</p>
+      </div>
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">

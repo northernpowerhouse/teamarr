@@ -12,6 +12,7 @@ from .read import (
     get_lifecycle_settings,
     get_scheduler_settings,
     get_stream_filter_settings,
+    get_team_filter_settings,
 )
 from .types import (
     AllSettings,
@@ -24,6 +25,7 @@ from .types import (
     ReconciliationSettings,
     SchedulerSettings,
     StreamFilterSettings,
+    TeamFilterSettings,
 )
 from .update import (
     increment_epg_generation_counter,
@@ -34,6 +36,7 @@ from .update import (
     update_lifecycle_settings,
     update_reconciliation_settings,
     update_scheduler_settings,
+    update_team_filter_settings,
 )
 
 __all__ = [
@@ -47,6 +50,7 @@ __all__ = [
     "DisplaySettings",
     "APISettings",
     "StreamFilterSettings",
+    "TeamFilterSettings",
     "AllSettings",
     # Read operations
     "get_all_settings",
@@ -56,6 +60,7 @@ __all__ = [
     "get_epg_settings",
     "get_display_settings",
     "get_stream_filter_settings",
+    "get_team_filter_settings",
     # Update operations
     "update_dispatcharr_settings",
     "update_scheduler_settings",
@@ -64,5 +69,6 @@ __all__ = [
     "update_reconciliation_settings",
     "update_duration_settings",
     "update_display_settings",
+    "update_team_filter_settings",
     "increment_epg_generation_counter",
 ]

@@ -17,6 +17,7 @@ from .types import (
     ReconciliationSettings,
     SchedulerSettings,
     StreamFilterSettings,
+    TeamFilterSettings,
 )
 
 # Single source of truth for defaults - the dataclass itself
@@ -122,6 +123,15 @@ def get_all_settings(conn: Connection) -> AllSettings:
             else True,
             include_patterns=json.loads(row["stream_filter_include_patterns"] or "[]"),
             exclude_patterns=json.loads(row["stream_filter_exclude_patterns"] or "[]"),
+        ),
+        team_filter=TeamFilterSettings(
+            include_teams=json.loads(row["default_include_teams"])
+            if row["default_include_teams"]
+            else None,
+            exclude_teams=json.loads(row["default_exclude_teams"])
+            if row["default_exclude_teams"]
+            else None,
+            mode=row["default_team_filter_mode"] or "include",
         ),
         epg_generation_counter=row["epg_generation_counter"] or 0,
         schema_version=row["schema_version"] or 2,
@@ -287,4 +297,33 @@ def get_stream_filter_settings(conn: Connection) -> StreamFilterSettings:
         else True,
         include_patterns=json.loads(row["stream_filter_include_patterns"] or "[]"),
         exclude_patterns=json.loads(row["stream_filter_exclude_patterns"] or "[]"),
+    )
+
+
+def get_team_filter_settings(conn: Connection) -> TeamFilterSettings:
+    """Get default team filtering settings.
+
+    Args:
+        conn: Database connection
+
+    Returns:
+        TeamFilterSettings object with global default team filter
+    """
+    cursor = conn.execute(
+        """SELECT default_include_teams, default_exclude_teams, default_team_filter_mode
+           FROM settings WHERE id = 1"""
+    )
+    row = cursor.fetchone()
+
+    if not row:
+        return TeamFilterSettings()
+
+    return TeamFilterSettings(
+        include_teams=json.loads(row["default_include_teams"])
+        if row["default_include_teams"]
+        else None,
+        exclude_teams=json.loads(row["default_exclude_teams"])
+        if row["default_exclude_teams"]
+        else None,
+        mode=row["default_team_filter_mode"] or "include",
     )

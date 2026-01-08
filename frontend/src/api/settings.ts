@@ -72,6 +72,27 @@ export interface DisplaySettings {
   tsdb_api_key: string | null  // Optional TheSportsDB premium API key
 }
 
+export interface TeamFilterEntry {
+  provider: string
+  team_id: string
+  league: string
+  name?: string | null
+}
+
+export interface TeamFilterSettings {
+  include_teams: TeamFilterEntry[] | null
+  exclude_teams: TeamFilterEntry[] | null
+  mode: "include" | "exclude"
+}
+
+export interface TeamFilterSettingsUpdate {
+  include_teams?: TeamFilterEntry[] | null
+  exclude_teams?: TeamFilterEntry[] | null
+  mode?: "include" | "exclude"
+  clear_include_teams?: boolean
+  clear_exclude_teams?: boolean
+}
+
 export interface ExceptionKeyword {
   id: number
   keywords: string
@@ -94,6 +115,7 @@ export interface AllSettings {
   epg: EPGSettings
   durations: DurationSettings
   reconciliation: ReconciliationSettings
+  team_filter?: TeamFilterSettings
   epg_generation_counter: number
   schema_version: number
 }
@@ -227,6 +249,17 @@ export async function updateDisplaySettings(
   data: DisplaySettings
 ): Promise<DisplaySettings> {
   return api.put("/settings/display", data)
+}
+
+// Team Filter Settings API
+export async function getTeamFilterSettings(): Promise<TeamFilterSettings> {
+  return api.get("/settings/team-filter")
+}
+
+export async function updateTeamFilterSettings(
+  data: TeamFilterSettingsUpdate
+): Promise<TeamFilterSettings> {
+  return api.put("/settings/team-filter", data)
 }
 
 // Exception Keywords API

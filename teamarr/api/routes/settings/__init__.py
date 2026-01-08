@@ -14,6 +14,7 @@ from .dispatcharr import router as dispatcharr_router
 from .display import router as display_router
 from .epg import router as epg_router
 from .lifecycle import router as lifecycle_router
+from .team_filter import router as team_filter_router
 from .models import (
     AllSettingsModel,
     DispatcharrSettingsModel,
@@ -23,6 +24,7 @@ from .models import (
     LifecycleSettingsModel,
     ReconciliationSettingsModel,
     SchedulerSettingsModel,
+    TeamFilterSettingsModel,
 )
 
 # Main router that includes all sub-routers
@@ -33,6 +35,7 @@ router.include_router(dispatcharr_router)
 router.include_router(lifecycle_router)
 router.include_router(epg_router)
 router.include_router(display_router)
+router.include_router(team_filter_router)
 
 
 # =============================================================================
@@ -108,6 +111,11 @@ def get_settings():
             xmltv_generator_name=settings.display.xmltv_generator_name,
             xmltv_generator_url=settings.display.xmltv_generator_url,
         ),
+        team_filter=TeamFilterSettingsModel(
+            include_teams=settings.team_filter.include_teams,
+            exclude_teams=settings.team_filter.exclude_teams,
+            mode=settings.team_filter.mode,
+        ),
         epg_generation_counter=settings.epg_generation_counter,
         schema_version=settings.schema_version,
     )
@@ -124,4 +132,5 @@ __all__ = [
     "LifecycleSettingsModel",
     "ReconciliationSettingsModel",
     "SchedulerSettingsModel",
+    "TeamFilterSettingsModel",
 ]

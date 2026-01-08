@@ -118,6 +118,19 @@ class StreamFilterSettings:
 
 
 @dataclass
+class TeamFilterSettings:
+    """Default team filtering for event groups.
+
+    Global default applied to all event groups that don't have their own filter.
+    Groups can override this with their own include/exclude_teams settings.
+    """
+
+    include_teams: list[dict] | None = None
+    exclude_teams: list[dict] | None = None
+    mode: str = "include"  # 'include' or 'exclude'
+
+
+@dataclass
 class AllSettings:
     """Complete application settings."""
 
@@ -130,5 +143,6 @@ class AllSettings:
     display: DisplaySettings = field(default_factory=DisplaySettings)
     api: APISettings = field(default_factory=APISettings)
     stream_filter: StreamFilterSettings = field(default_factory=StreamFilterSettings)
+    team_filter: TeamFilterSettings = field(default_factory=TeamFilterSettings)
     epg_generation_counter: int = 0
-    schema_version: int = 20
+    schema_version: int = 22

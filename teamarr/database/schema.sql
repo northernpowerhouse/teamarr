@@ -193,6 +193,11 @@ CREATE TABLE IF NOT EXISTS settings (
     channel_range_start INTEGER DEFAULT 101,     -- First auto-assigned channel number
     channel_range_end INTEGER,                   -- Last auto-assigned channel (null = no limit)
 
+    -- Default Team Filtering (for Event Groups)
+    default_include_teams JSON,                  -- Global include filter [{"provider":"espn","team_id":"33","league":"nfl"}, ...]
+    default_exclude_teams JSON,                  -- Global exclude filter (same format)
+    default_team_filter_mode TEXT DEFAULT 'include' CHECK(default_team_filter_mode IN ('include', 'exclude')),
+
     -- Scheduled Generation
     cron_expression TEXT DEFAULT '0 * * * *',    -- Cron for auto EPG generation
 

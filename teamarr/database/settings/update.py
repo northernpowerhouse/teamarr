@@ -3,6 +3,7 @@
 Functions to modify settings in the database.
 """
 
+import json
 from sqlite3 import Connection
 
 
@@ -309,3 +310,51 @@ def increment_epg_generation_counter(conn: Connection) -> int:
     cursor = conn.execute("SELECT epg_generation_counter FROM settings WHERE id = 1")
     row = cursor.fetchone()
     return row["epg_generation_counter"] if row else 1
+
+
+def update_team_filter_settings(
+    conn: Connection,
+    include_teams: list[dict] | None = None,
+    exclude_teams: list[dict] | None = None,
+    mode: str | None = None,
+    clear_include_teams: bool = False,
+    clear_exclude_teams: bool = False,
+) -> bool:
+    """Update default team filtering settings.
+
+    Args:
+        conn: Database connection
+        include_teams: Teams to include (replaces existing)
+        exclude_teams: Teams to exclude (replaces existing)
+        mode: Filter mode ('include' or 'exclude')
+        clear_include_teams: Set to True to clear include_teams to NULL
+        clear_exclude_teams: Set to True to clear exclude_teams to NULL
+
+    Returns:
+        True if updated
+    """
+    updates = []
+    values = []
+
+    if clear_include_teams:
+        updates.append("default_include_teams = NULL")
+    elif include_teams is not None:
+        updates.append("default_include_teams = ?")
+        values.append(json.dumps(include_teams))
+
+    if clear_exclude_teams:
+        updates.append("default_exclude_teams = NULL")
+    elif exclude_teams is not None:
+        updates.append("default_exclude_teams = ?")
+        values.append(json.dumps(exclude_teams))
+
+    if mode is not None:
+        updates.append("default_team_filter_mode = ?")
+        values.append(mode)
+
+    if not updates:
+        return False
+
+    query = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
+    cursor = conn.execute(query, values)
+    return cursor.rowcount > 0

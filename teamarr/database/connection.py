@@ -683,6 +683,21 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("Schema upgraded to version 21 (team filtering columns)")
         current_version = 21
 
+    # Version 22: Add default team filter columns to settings
+    # Global default team filter applied to groups without their own filter
+    if current_version < 22:
+        _add_column_if_not_exists(conn, "settings", "default_include_teams", "JSON")
+        _add_column_if_not_exists(conn, "settings", "default_exclude_teams", "JSON")
+        _add_column_if_not_exists(
+            conn,
+            "settings",
+            "default_team_filter_mode",
+            "TEXT DEFAULT 'include'",
+        )
+        conn.execute("UPDATE settings SET schema_version = 22 WHERE id = 1")
+        logger.info("Schema upgraded to version 22 (default team filter settings)")
+        current_version = 22
+
 
 def _rename_filtered_no_match_to_failed_count(conn: sqlite3.Connection) -> None:
     """Rename filtered_no_match column to failed_count.

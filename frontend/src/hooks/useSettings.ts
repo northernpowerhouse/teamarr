@@ -19,6 +19,8 @@ import {
   updateReconciliationSettings,
   getDisplaySettings,
   updateDisplaySettings,
+  getTeamFilterSettings,
+  updateTeamFilterSettings,
   getExceptionKeywords,
   createExceptionKeyword,
   updateExceptionKeyword,
@@ -32,6 +34,7 @@ import type {
   DurationSettings,
   ReconciliationSettings,
   DisplaySettings,
+  TeamFilterSettingsUpdate,
 } from "@/api/settings"
 
 export function useSettings() {
@@ -196,6 +199,24 @@ export function useUpdateDisplaySettings() {
 
   return useMutation({
     mutationFn: (data: DisplaySettings) => updateDisplaySettings(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["settings"] })
+    },
+  })
+}
+
+export function useTeamFilterSettings() {
+  return useQuery({
+    queryKey: ["settings", "team-filter"],
+    queryFn: getTeamFilterSettings,
+  })
+}
+
+export function useUpdateTeamFilterSettings() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (data: TeamFilterSettingsUpdate) => updateTeamFilterSettings(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] })
     },
