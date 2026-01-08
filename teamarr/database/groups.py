@@ -742,9 +742,10 @@ def update_group_stats(
 
 
 def delete_group(conn: Connection, group_id: int) -> bool:
-    """Delete an event EPG group.
+    """Delete an event EPG group and all its children.
 
-    Note: This will cascade delete all managed_channels for this group.
+    Note: This will cascade delete all managed_channels for this group
+    and recursively delete all child groups.
 
     Args:
         conn: Database connection
@@ -753,6 +754,14 @@ def delete_group(conn: Connection, group_id: int) -> bool:
     Returns:
         True if deleted
     """
+    # Recursively delete child groups first
+    cursor = conn.execute(
+        "SELECT id FROM event_epg_groups WHERE parent_group_id = ?", (group_id,)
+    )
+    for row in cursor.fetchall():
+        delete_group(conn, row["id"])
+
+    # Delete the group itself
     cursor = conn.execute("DELETE FROM event_epg_groups WHERE id = ?", (group_id,))
     return cursor.rowcount > 0
 
