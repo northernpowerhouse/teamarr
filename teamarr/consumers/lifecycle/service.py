@@ -1275,6 +1275,40 @@ class ChannelLifecycleService:
 
         return result
 
+    def _remove_stream_from_dispatcharr_channel(
+        self,
+        dispatcharr_channel_id: int,
+        stream_id: int,
+    ) -> bool:
+        """Remove a stream from a Dispatcharr channel's stream list.
+
+        Args:
+            dispatcharr_channel_id: The Dispatcharr channel ID
+            stream_id: The stream ID to remove
+
+        Returns:
+            True if the stream was removed, False otherwise
+        """
+        if not self._channel_manager:
+            return False
+
+        with self._dispatcharr_lock:
+            current = self._channel_manager.get_channel(dispatcharr_channel_id)
+            if not current:
+                return False
+
+            # streams is tuple[int, ...] of IDs
+            current_ids = list(current.streams) if current.streams else []
+            if stream_id not in current_ids:
+                return False
+
+            current_ids.remove(stream_id)
+            self._channel_manager.update_channel(
+                dispatcharr_channel_id,
+                {"streams": current_ids},
+            )
+            return True
+
     def delete_managed_channel(
         self,
         conn: Connection,
@@ -1638,21 +1672,10 @@ class ChannelLifecycleService:
                                 remove_stream_from_channel(conn, channel.id, stream_id)
 
                                 # Remove from Dispatcharr
-                                if self._channel_manager:
-                                    with self._dispatcharr_lock:
-                                        current = self._channel_manager.get_channel(
-                                            channel.dispatcharr_channel_id
-                                        )
-                                        if current:
-                                            # streams is tuple[int, ...] of IDs
-                                            s = current.streams
-                                            current_ids = list(s) if s else []
-                                            if stream_id in current_ids:
-                                                current_ids.remove(stream_id)
-                                                self._channel_manager.update_channel(
-                                                    channel.dispatcharr_channel_id,
-                                                    {"streams": current_ids},
-                                                )
+                                self._remove_stream_from_dispatcharr_channel(
+                                    channel.dispatcharr_channel_id,
+                                    stream_id,
+                                )
 
                                 # Log history
                                 log_channel_history(
