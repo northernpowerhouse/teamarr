@@ -555,21 +555,21 @@ INSERT OR REPLACE INTO leagues (league_code, provider, provider_league_id, provi
     ('mens-college-hockey', 'espn', 'hockey/mens-college-hockey', NULL, 'NCAA Men''s Ice Hockey', 'Hockey', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/icehockey.png', NULL, 1, 'NCAA Hockey', 'ncaah', 'team_vs_team', 'College Hockey', NULL, NULL),
     ('womens-college-hockey', 'espn', 'hockey/womens-college-hockey', NULL, 'NCAA Women''s Ice Hockey', 'Hockey', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/icehockey.png', NULL, 1, 'NCAA W Hockey', 'ncaawh', 'team_vs_team', 'Women''s College Hockey', NULL, NULL),
 
-    -- Hockey - CHL/Canadian Junior (HockeyTech)
+    -- Hockey - CHL/Canadian Major Junior (HockeyTech)
+    ('chl', 'hockeytech', 'chl', NULL, 'Canadian Hockey League', 'Hockey', 'https://raw.githubusercontent.com/sethwv/game-thumbs/dev/assets/CHL.png', NULL, 1, 'CHL', 'chl', 'team_vs_team', NULL, NULL, NULL),
     ('ohl', 'hockeytech', 'ohl', NULL, 'Ontario Hockey League', 'Hockey', 'https://raw.githubusercontent.com/sethwv/game-thumbs/main/assets/OHL_LIGHTMODE.png', 'https://raw.githubusercontent.com/sethwv/game-thumbs/main/assets/OHL_DARKMODE.png', 1, 'OHL', 'ohl', 'team_vs_team', NULL, NULL, NULL),
     ('whl', 'hockeytech', 'whl', NULL, 'Western Hockey League', 'Hockey', 'https://media.chl.ca/wp-content/uploads/sites/6/2023/08/18153245/Western_Hockey_League.svg_-1.png', NULL, 1, 'WHL', 'whl', 'team_vs_team', NULL, NULL, NULL),
     ('qmjhl', 'hockeytech', 'lhjmq', NULL, 'Quebec Major Junior Hockey League', 'Hockey', 'https://media.chl.ca/wp-content/uploads/sites/2/2023/05/25155229/logo_q_lg.png', NULL, 1, 'QMJHL', 'qmjhl', 'team_vs_team', NULL, NULL, NULL),
 
-    -- Hockey - Pro Leagues (HockeyTech)
+    -- Hockey - Pro/Minor Pro Leagues (HockeyTech)
     ('ahl', 'hockeytech', 'ahl', NULL, 'American Hockey League', 'Hockey', 'https://theahl.com/wp-content/uploads/sites/3/2025/10/AHL90_500.png', NULL, 1, 'AHL', 'ahl', 'team_vs_team', NULL, NULL, NULL),
+    ('echl', 'hockeytech', 'echl', NULL, 'East Coast Hockey League', 'Hockey', 'https://raw.githubusercontent.com/sethwv/game-thumbs/dev/assets/ECHL.png', NULL, 1, 'ECHL', 'echl', 'team_vs_team', NULL, NULL, NULL),
     ('pwhl', 'hockeytech', 'pwhl', NULL, 'Professional Women''s Hockey League', 'Hockey', 'https://raw.githubusercontent.com/sethwv/game-thumbs/main/assets/PWHL.png', NULL, 1, 'PWHL', 'pwhl', 'team_vs_team', NULL, NULL, NULL),
 
-    -- Hockey - Junior (HockeyTech)
+    -- Hockey - US Junior (HockeyTech)
     ('ushl', 'hockeytech', 'ushl', NULL, 'United States Hockey League', 'Hockey', 'https://dbukjj6eu5tsf.cloudfront.net/ushl.sidearmsports.com/images/responsive_2022/ushl_on-dark.svg', NULL, 1, 'USHL', 'ushl', 'team_vs_team', NULL, NULL, NULL),
-    ('echl', 'hockeytech', 'echl', NULL, 'East Coast Hockey League', 'Hockey', 'https://raw.githubusercontent.com/sethwv/game-thumbs/dev/assets/ECHL.png', NULL, 1, 'ECHL', 'echl', 'team_vs_team', NULL, NULL, NULL),
 
     -- Hockey - Canadian Junior A (HockeyTech)
-    ('chl', 'hockeytech', 'chl', NULL, 'Canadian Hockey League', 'Hockey', 'https://raw.githubusercontent.com/sethwv/game-thumbs/dev/assets/CHL.png', NULL, 1, 'CHL', 'chl', 'team_vs_team', NULL, NULL, NULL),
     ('ojhl', 'hockeytech', 'ojhl', NULL, 'Ontario Junior Hockey League', 'Hockey', 'https://www.ojhl.ca/wp-content/uploads/sites/2/2023/04/cropped-ojhl-512.png', NULL, 1, 'OJHL', 'ojhl', 'team_vs_team', NULL, NULL, NULL),
     ('bchl', 'hockeytech', 'bchl', NULL, 'British Columbia Hockey League', 'Hockey', 'https://bchl.ca/wp-content/uploads/2015/12/BCHL-Footer-Logo.png', NULL, 1, 'BCHL', 'bchl', 'team_vs_team', NULL, NULL, NULL),
     ('sjhl', 'hockeytech', 'sjhl', NULL, 'Saskatchewan Junior Hockey League', 'Hockey', 'https://www.sjhl.ca/wp-content/uploads/sites/2/2019/08/SJHL_Logo_512px.png', NULL, 1, 'SJHL', 'sjhl', 'team_vs_team', NULL, NULL, NULL),
