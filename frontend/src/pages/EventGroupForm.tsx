@@ -336,6 +336,34 @@ export function EventGroupForm() {
 
       if (isEdit) {
         const updateData: EventGroupUpdate = { ...submitData }
+
+        // Compute clear flags for nullable fields that were changed from a value to null/undefined
+        // This is required because the backend only clears fields when explicit clear_* flags are set
+        if (group) {
+          // Helper to check if field should be cleared (had value, now doesn't)
+          const shouldClear = (original: unknown, current: unknown) =>
+            original != null && (current == null || current === undefined)
+
+          if (shouldClear(group.channel_group_id, formData.channel_group_id)) {
+            updateData.clear_channel_group_id = true
+          }
+          if (shouldClear(group.stream_profile_id, formData.stream_profile_id)) {
+            updateData.clear_stream_profile_id = true
+          }
+          if (shouldClear(group.template_id, formData.template_id)) {
+            updateData.clear_template = true
+          }
+          if (shouldClear(group.channel_start_number, formData.channel_start_number)) {
+            updateData.clear_channel_start_number = true
+          }
+          if (shouldClear(group.parent_group_id, formData.parent_group_id)) {
+            updateData.clear_parent_group_id = true
+          }
+          if (shouldClear(group.display_name, formData.display_name)) {
+            updateData.clear_display_name = true
+          }
+        }
+
         await updateMutation.mutateAsync({ groupId: Number(groupId), data: updateData })
         toast.success(`Updated group "${formData.name}"`)
       } else {
