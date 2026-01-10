@@ -55,13 +55,17 @@ interface ChannelProfile {
 
 async function fetchChannelGroups(): Promise<ChannelGroup[]> {
   const response = await fetch("/api/v1/dispatcharr/channel-groups")
-  if (!response.ok) return []
+  if (!response.ok) {
+    throw new Error(response.status === 503 ? "Dispatcharr not connected" : "Failed to fetch channel groups")
+  }
   return response.json()
 }
 
 async function fetchChannelProfiles(): Promise<ChannelProfile[]> {
   const response = await fetch("/api/v1/dispatcharr/channel-profiles")
-  if (!response.ok) return []
+  if (!response.ok) {
+    throw new Error(response.status === 503 ? "Dispatcharr not connected" : "Failed to fetch channel profiles")
+  }
   return response.json()
 }
 
@@ -152,13 +156,15 @@ export function EventGroupForm() {
   })
 
   // Fetch channel groups and profiles from Dispatcharr
-  const { data: channelGroups, refetch: refetchChannelGroups } = useQuery({
+  const { data: channelGroups, refetch: refetchChannelGroups, isError: channelGroupsError, error: channelGroupsErrorMsg } = useQuery({
     queryKey: ["dispatcharr-channel-groups"],
     queryFn: fetchChannelGroups,
+    retry: false,  // Don't retry on connection errors
   })
-  const { data: channelProfiles, refetch: refetchChannelProfiles } = useQuery({
+  const { data: channelProfiles, refetch: refetchChannelProfiles, isError: channelProfilesError, error: channelProfilesErrorMsg } = useQuery({
     queryKey: ["dispatcharr-channel-profiles"],
     queryFn: fetchChannelProfiles,
+    retry: false,  // Don't retry on connection errors
   })
 
   // Inline create state
@@ -1312,7 +1318,11 @@ export function EventGroupForm() {
                     </div>
                     <span className="text-muted-foreground italic">&lt;No group assignment&gt;</span>
                   </button>
-                  {filteredChannelGroups.length === 0 ? (
+                  {channelGroupsError ? (
+                    <div className="p-3 text-sm text-destructive text-center">
+                      {channelGroupsErrorMsg instanceof Error ? channelGroupsErrorMsg.message : "Failed to load channel groups"}
+                    </div>
+                  ) : filteredChannelGroups.length === 0 ? (
                     <div className="p-3 text-sm text-muted-foreground text-center">
                       {channelGroupFilter ? "No matching groups" : "No groups found"}
                     </div>
@@ -1420,7 +1430,11 @@ export function EventGroupForm() {
                   </div>
                 )}
                 <div className="border rounded-md max-h-40 overflow-y-auto">
-                  {channelProfiles?.length === 0 ? (
+                  {channelProfilesError ? (
+                    <div className="p-3 text-sm text-destructive text-center">
+                      {channelProfilesErrorMsg instanceof Error ? channelProfilesErrorMsg.message : "Failed to load channel profiles"}
+                    </div>
+                  ) : channelProfiles?.length === 0 ? (
                     <div className="p-3 text-sm text-muted-foreground text-center">
                       No profiles found
                     </div>
