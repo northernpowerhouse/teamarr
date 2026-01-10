@@ -61,7 +61,8 @@ from teamarr.utilities.xmltv import merge_xmltv_content, programmes_to_xmltv
 logger = logging.getLogger(__name__)
 
 # Number of parallel workers for event fetching
-MAX_WORKERS = 100
+# Reduced from 100 to 50 to prevent overwhelming external APIs
+MAX_WORKERS = 50
 
 
 @dataclass
