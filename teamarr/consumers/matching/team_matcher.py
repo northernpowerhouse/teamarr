@@ -378,6 +378,7 @@ class TeamMatcher:
         best_match: Event | None = None
         best_method: MatchMethod = MatchMethod.FUZZY
         best_confidence: float = 0.0
+        best_date_distance: int = 999  # Days from target_date
 
         for event in events:
             # Validate event is within search window (lifecycle handles exclusions)
@@ -400,10 +401,17 @@ class TeamMatcher:
             # Try to match teams
             match_result = self._match_teams_to_event(team1_normalized, team2_normalized, event)
 
-            if match_result and match_result[1] > best_confidence:
-                best_match = event
-                best_method = match_result[0]
-                best_confidence = match_result[1]
+            if match_result:
+                date_distance = abs((event_date - ctx.target_date).days)
+
+                # Prefer higher confidence, then closer date to target_date
+                if match_result[1] > best_confidence or (
+                    match_result[1] == best_confidence and date_distance < best_date_distance
+                ):
+                    best_match = event
+                    best_method = match_result[0]
+                    best_confidence = match_result[1]
+                    best_date_distance = date_distance
 
         if best_match:
             # If multiple events same day (doubleheader), pick closest to stream time
@@ -469,6 +477,7 @@ class TeamMatcher:
         best_league: str | None = None
         best_method: MatchMethod = MatchMethod.FUZZY
         best_confidence: float = 0.0
+        best_date_distance: int = 999  # Days from target_date
 
         for league, event in events:
             # Validate event is within search window (lifecycle handles exclusions)
@@ -491,11 +500,18 @@ class TeamMatcher:
             # Try to match teams
             match_result = self._match_teams_to_event(team1_normalized, team2_normalized, event)
 
-            if match_result and match_result[1] > best_confidence:
-                best_match = event
-                best_league = league
-                best_method = match_result[0]
-                best_confidence = match_result[1]
+            if match_result:
+                date_distance = abs((event_date - ctx.target_date).days)
+
+                # Prefer higher confidence, then closer date to target_date
+                if match_result[1] > best_confidence or (
+                    match_result[1] == best_confidence and date_distance < best_date_distance
+                ):
+                    best_match = event
+                    best_league = league
+                    best_method = match_result[0]
+                    best_confidence = match_result[1]
+                    best_date_distance = date_distance
 
         if best_match and best_league:
             return MatchOutcome.matched(
