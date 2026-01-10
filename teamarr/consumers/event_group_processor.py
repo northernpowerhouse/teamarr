@@ -1288,14 +1288,15 @@ class EventGroupProcessor:
 
         return result.passed, result
 
-    def _get_all_enabled_leagues(self) -> list[str]:
-        """Get all enabled leagues from the database.
+    def _get_all_known_leagues(self) -> list[str]:
+        """Get all known leagues from the league cache.
 
-        Used to search all possible leagues when matching streams,
-        rather than just the group's configured leagues.
+        Returns ALL leagues discovered from providers (ESPN, TSDB, etc.),
+        not just the import-enabled leagues in the leagues table.
+        This allows matching against any league for multi-sport groups.
         """
         with self._db_factory() as conn:
-            cursor = conn.execute("SELECT league_code FROM leagues WHERE enabled = 1")
+            cursor = conn.execute("SELECT league_slug FROM league_cache")
             return [row[0] for row in cursor.fetchall()]
 
     def _fetch_events(self, leagues: list[str], target_date: date) -> list[Event]:
@@ -1378,8 +1379,10 @@ class EventGroupProcessor:
             target_date: Date to match events for
             stream_progress_callback: Optional callback(current, total, stream_name, matched)
         """
-        # Get all enabled leagues to search (not just the group's configured leagues)
-        all_leagues = self._get_all_enabled_leagues()
+        # Get ALL known leagues from the cache to search against
+        # This includes all leagues discovered from ESPN/TSDB (287+), not just
+        # the 64 import-enabled leagues in the leagues table
+        search_leagues = self._get_all_known_leagues()
 
         # Load settings for event filtering
         with self._db_factory() as conn:
@@ -1394,7 +1397,7 @@ class EventGroupProcessor:
             service=self._service,
             db_factory=self._db_factory,
             group_id=group.id,
-            search_leagues=all_leagues,  # Search ALL leagues
+            search_leagues=search_leagues,  # Search ALL leagues + group's leagues
             include_leagues=group.leagues,  # Filter to group's configured leagues
             include_final_events=include_final_events,
             sport_durations=sport_durations,
