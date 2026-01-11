@@ -55,7 +55,7 @@ import { TeamPicker } from "@/components/TeamPicker"
 import { getUniqueSports, filterLeaguesBySport } from "@/lib/utils"
 
 // Fetch leagues for logo lookup, sport mapping, and display alias
-async function fetchLeagues(): Promise<{ slug: string; name: string; logo_url: string | null; sport: string | null; league_alias: string | null }[]> {
+async function fetchLeagues(): Promise<{ slug: string; name: string; logo_url: string | null; sport: string | null; league_alias: string | null; import_enabled: boolean }[]> {
   const response = await fetch("/api/v1/cache/leagues")
   if (!response.ok) return []
   const data = await response.json()
