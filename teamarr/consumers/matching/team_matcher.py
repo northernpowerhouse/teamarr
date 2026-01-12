@@ -394,8 +394,9 @@ class TeamMatcher:
 
             # Check for sport mismatch from stream (if detected)
             # e.g., "Ice Hockey" in stream name should not match NFL events
+            # Use case-insensitive comparison (event.sport is lowercase, hint may be capitalized)
             if ctx.classified.sport_hint:
-                if event.sport != ctx.classified.sport_hint:
+                if event.sport.lower() != ctx.classified.sport_hint.lower():
                     continue
 
             # Try to match teams
@@ -493,8 +494,9 @@ class TeamMatcher:
 
             # Check for sport mismatch from stream (if detected)
             # e.g., "Ice Hockey" in stream name should not match NFL events
+            # Use case-insensitive comparison (event.sport is lowercase, hint may be capitalized)
             if ctx.classified.sport_hint:
-                if event.sport != ctx.classified.sport_hint:
+                if event.sport.lower() != ctx.classified.sport_hint.lower():
                     continue
 
             # Try to match teams
