@@ -5,8 +5,8 @@ import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from teamarr.api.routes import (
@@ -234,6 +234,8 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    from teamarr.database.connection import is_v1_database_detected
+
     app = FastAPI(
         title="Teamarr API",
         description="Sports EPG generation service - V2 Architecture",
@@ -243,6 +245,25 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
         lifespan=lifespan,
     )
+
+    # Migration mode middleware - block all API routes except migration endpoints
+    @app.middleware("http")
+    async def migration_mode_middleware(request: Request, call_next):
+        if is_v1_database_detected():
+            path = request.url.path
+            # Allow these routes in migration mode:
+            # - /health (health check)
+            # - /api/v1/migration/* (migration endpoints)
+            # - Static files and SPA routes (no /api prefix)
+            if path.startswith("/api/") and not path.startswith("/api/v1/migration"):
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "detail": "V1 database detected - migration required",
+                        "migration_mode": True,
+                    },
+                )
+        return await call_next(request)
 
     # Include API routers - clean V2 API
     app.include_router(health.router, tags=["Health"])
