@@ -1,6 +1,7 @@
 """Templates API endpoints."""
 
 import json
+import logging
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
@@ -12,7 +13,6 @@ from teamarr.api.models import (
     TemplateUpdate,
 )
 from teamarr.database import get_db
-import logging
 
 logger = logging.getLogger(__name__)
 

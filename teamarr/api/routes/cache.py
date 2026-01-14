@@ -10,6 +10,7 @@ Provides endpoints for cache management:
 """
 
 import json
+import logging
 import queue
 import threading
 
@@ -26,7 +27,6 @@ from teamarr.api.cache_refresh_status import (
 )
 from teamarr.database import get_db
 from teamarr.services import create_cache_service
-import logging
 
 logger = logging.getLogger(__name__)
 

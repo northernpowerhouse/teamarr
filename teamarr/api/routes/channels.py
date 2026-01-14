@@ -7,6 +7,7 @@ Provides REST API for:
 - Lifecycle sync (create/delete based on timing)
 """
 
+import logging
 from datetime import date, datetime
 from typing import Any
 
@@ -14,7 +15,6 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from teamarr.database import get_db
-import logging
 
 logger = logging.getLogger(__name__)
 

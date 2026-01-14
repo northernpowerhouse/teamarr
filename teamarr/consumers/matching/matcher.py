@@ -20,12 +20,14 @@ Usage:
     matcher.purge_stale()
 """
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
 from teamarr.config import get_user_timezone
+from teamarr.consumers.matching import MATCH_WINDOW_DAYS
 from teamarr.consumers.matching.classifier import (
     ClassifiedStream,
     CustomRegexConfig,
@@ -49,7 +51,6 @@ from teamarr.core import Event
 from teamarr.database.leagues import get_league
 from teamarr.services import SportsDataService
 from teamarr.utilities.event_status import is_event_final
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -294,8 +295,6 @@ class StreamMatcher:
         - Past dates: use full 30-day cache for matching
         - TSDB leagues: always cache-only
         """
-        MATCH_WINDOW_DAYS = 30  # Use full 30-day cache for matching
-
         self._prefetched_events = {}
         total_events = 0
 

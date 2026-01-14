@@ -1,6 +1,7 @@
 """EPG generation endpoints."""
 
 import json
+import logging
 import queue
 import threading
 from datetime import date, datetime
@@ -36,7 +37,6 @@ from teamarr.services import (
     SportsDataService,
     create_epg_service,
 )
-import logging
 
 logger = logging.getLogger(__name__)
 

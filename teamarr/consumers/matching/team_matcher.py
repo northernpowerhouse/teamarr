@@ -12,6 +12,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from teamarr.consumers.matching import MATCH_WINDOW_DAYS
 from teamarr.consumers.matching.classifier import ClassifiedStream, StreamCategory
 from teamarr.consumers.matching.normalizer import normalize_for_matching
 from teamarr.consumers.matching.result import (
@@ -62,8 +63,7 @@ class MatchContext:
         event_start = event.start_time.astimezone(self.user_tz)
         event_date = event_start.date()
 
-        # Use full 30-day window for matching
-        earliest_date = self.target_date - timedelta(days=30)
+        earliest_date = self.target_date - timedelta(days=MATCH_WINDOW_DAYS)
 
         return event_date >= earliest_date
 
@@ -150,11 +150,10 @@ class TeamMatcher:
         if cache_result:
             return cache_result
 
-        # Fetch events: use full 30-day cache for matching
+        # Fetch events from MATCH_WINDOW_DAYS back to today
         # - Today: fetch from API (ESPN only)
         # - Past: always use cache
         # - TSDB leagues: always cache-only
-        MATCH_WINDOW_DAYS = 30  # Use full 30-day cache for matching
         is_tsdb = self._service.get_provider_name(league) == "tsdb"
         events = []
         for offset in range(-MATCH_WINDOW_DAYS, 1):
@@ -274,7 +273,6 @@ class TeamMatcher:
                     all_events.append((league, event))
         else:
             # Fallback: fetch events per-stream (slower, used when no prefetch)
-            MATCH_WINDOW_DAYS = 30  # Use full 30-day cache for matching
             for league in leagues_to_search:
                 is_tsdb = self._service.get_provider_name(league) == "tsdb"
                 for offset in range(-MATCH_WINDOW_DAYS, 1):
@@ -311,15 +309,12 @@ class TeamMatcher:
     def _check_cache(self, ctx: MatchContext) -> MatchOutcome | None:
         """Check cache for existing match.
 
-        User-corrected entries are always trusted.
+        User-corrected entries are always trusted (pinned).
         Algorithmic entries are validated against date.
         """
         entry = self._cache.get(ctx.group_id, ctx.stream_id, ctx.stream_name)
         if not entry:
             return None
-
-        # TODO: Check if user_corrected and return with USER_CORRECTED method
-        # For now, treat all cache hits the same
 
         # Touch the cache entry to keep it fresh
         self._cache.touch(ctx.group_id, ctx.stream_id, ctx.stream_name, ctx.generation)
@@ -331,6 +326,24 @@ class TeamMatcher:
             logger.debug("[MATCH_CACHE] Invalid: failed to reconstruct event for stream=%d", ctx.stream_id)
             self._cache.delete(ctx.group_id, ctx.stream_id, ctx.stream_name)
             return None
+
+        # User-corrected entries are pinned - always trust them regardless of date
+        if entry.user_corrected:
+            logger.debug(
+                "[CACHE_HIT] stream_id=%d event=%s (user corrected)",
+                ctx.stream_id,
+                event.id,
+            )
+            return MatchOutcome.matched(
+                MatchMethod.USER_CORRECTED,
+                event,
+                detected_league=entry.league,
+                confidence=1.0,
+                stream_name=ctx.stream_name,
+                stream_id=ctx.stream_id,
+                parsed_team1=ctx.team1,
+                parsed_team2=ctx.team2,
+            )
 
         # V1 Parity: Cached events from yesterday should be re-matched to get fresh status.
         # The cached event has OLD status from when it was cached, which may have
