@@ -469,7 +469,7 @@ def _refresh_m3u_accounts(db_factory: Callable[[], Any], dispatcharr_client: Any
     batch_result = m3u_manager.refresh_multiple(
         list(account_ids),
         timeout=120,
-        skip_if_recent_minutes=60,
+        skip_if_recent_minutes=30,
     )
 
     result["refreshed"] = batch_result.succeeded_count - batch_result.skipped_count
