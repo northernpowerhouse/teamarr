@@ -127,18 +127,29 @@ def format_date_short(dt: datetime) -> str:
 
 
 def format_datetime_xmltv(dt: datetime) -> str:
-    """Format datetime for XMLTV output in UTC.
+    """Format datetime for XMLTV output in user's configured timezone.
 
-    Converts to UTC and formats as: YYYYMMDDHHMMSS +0000
+    Converts to user timezone and formats as: YYYYMMDDHHMMSS +/-HHMM
 
     Args:
-        dt: Datetime to format (will be converted to UTC)
+        dt: Datetime to format (will be converted to user timezone)
 
     Returns:
-        XMLTV formatted datetime string in UTC
+        XMLTV formatted datetime string with timezone offset
     """
-    utc_dt = to_utc(dt)
-    return utc_dt.strftime("%Y%m%d%H%M%S") + " +0000"
+    local_dt = to_user_tz(dt)
+    # Get UTC offset in seconds, convert to HHMM format
+    offset = local_dt.utcoffset()
+    if offset is None:
+        offset_str = "+0000"
+    else:
+        total_seconds = int(offset.total_seconds())
+        sign = "+" if total_seconds >= 0 else "-"
+        total_seconds = abs(total_seconds)
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        offset_str = f"{sign}{hours:02d}{minutes:02d}"
+    return local_dt.strftime("%Y%m%d%H%M%S") + " " + offset_str
 
 
 def get_timezone_abbrev(dt: datetime) -> str:
