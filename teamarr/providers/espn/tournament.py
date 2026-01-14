@@ -114,7 +114,7 @@ class TournamentParserMixin:
             )
 
         except Exception as e:
-            logger.warning(f"Failed to parse tournament event: {e}")
+            logger.warning("[ESPN_TOURNAMENT] Failed to parse event: %s", e)
             return None
 
     def _make_tournament_abbrev(self, name: str) -> str:

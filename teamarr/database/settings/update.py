@@ -4,7 +4,10 @@ Functions to modify settings in the database.
 """
 
 import json
+import logging
 from sqlite3 import Connection
+
+logger = logging.getLogger(__name__)
 
 
 _NOT_PROVIDED = object()  # Sentinel to distinguish "not provided" from None
@@ -68,7 +71,10 @@ def update_dispatcharr_settings(
 
     query = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
     cursor = conn.execute(query, values)
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] Dispatcharr settings: %s", [u.split(" = ")[0] for u in updates])
+        return True
+    return False
 
 
 def update_scheduler_settings(
@@ -101,7 +107,10 @@ def update_scheduler_settings(
 
     query = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
     cursor = conn.execute(query, values)
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] Scheduler settings: %s", [u.split(" = ")[0] for u in updates])
+        return True
+    return False
 
 
 def update_lifecycle_settings(
@@ -144,7 +153,10 @@ def update_lifecycle_settings(
 
     query = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
     cursor = conn.execute(query, values)
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] Lifecycle settings: %s", [u.split(" = ")[0] for u in updates])
+        return True
+    return False
 
 
 def update_epg_settings(conn: Connection, **kwargs) -> bool:
@@ -186,7 +198,10 @@ def update_epg_settings(conn: Connection, **kwargs) -> bool:
 
     query = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
     cursor = conn.execute(query, values)
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] EPG settings: %s", [u.split(" = ")[0] for u in updates])
+        return True
+    return False
 
 
 def update_reconciliation_settings(conn: Connection, **kwargs) -> bool:
@@ -225,7 +240,10 @@ def update_reconciliation_settings(conn: Connection, **kwargs) -> bool:
 
     query = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
     cursor = conn.execute(query, values)
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] Reconciliation settings: %s", [u.split(" = ")[0] for u in updates])
+        return True
+    return False
 
 
 def update_duration_settings(conn: Connection, **kwargs) -> bool:
@@ -268,7 +286,10 @@ def update_duration_settings(conn: Connection, **kwargs) -> bool:
 
     query = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
     cursor = conn.execute(query, values)
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] Duration settings: %s", [u.split(" = ")[0] for u in updates])
+        return True
+    return False
 
 
 def update_display_settings(conn: Connection, **kwargs) -> bool:
@@ -306,7 +327,10 @@ def update_display_settings(conn: Connection, **kwargs) -> bool:
 
     query = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
     cursor = conn.execute(query, values)
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] Display settings: %s", [u.split(" = ")[0] for u in updates])
+        return True
+    return False
 
 
 def increment_epg_generation_counter(conn: Connection) -> int:
@@ -378,4 +402,7 @@ def update_team_filter_settings(
 
     query = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
     cursor = conn.execute(query, values)
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] Team filter settings: %s", [u.split(" = ")[0] for u in updates])
+        return True
+    return False

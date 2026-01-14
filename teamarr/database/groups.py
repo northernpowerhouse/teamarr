@@ -4,9 +4,12 @@ Provides CRUD operations for the event_epg_groups table.
 """
 
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from sqlite3 import Connection
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -390,7 +393,9 @@ def create_group(
             int(enabled),
         ),
     )
-    return cursor.lastrowid
+    group_id = cursor.lastrowid
+    logger.info("[CREATED] Event group id=%d name=%s", group_id, name)
+    return group_id
 
 
 # =============================================================================
@@ -659,7 +664,10 @@ def update_group(
     values.append(group_id)
     query = f"UPDATE event_epg_groups SET {', '.join(updates)} WHERE id = ?"
     cursor = conn.execute(query, values)
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] Event group id=%d", group_id)
+        return True
+    return False
 
 
 def set_group_enabled(conn: Connection, group_id: int, enabled: bool) -> bool:
@@ -676,7 +684,10 @@ def set_group_enabled(conn: Connection, group_id: int, enabled: bool) -> bool:
     cursor = conn.execute(
         "UPDATE event_epg_groups SET enabled = ? WHERE id = ?", (int(enabled), group_id)
     )
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] Event group id=%d enabled=%s", group_id, enabled)
+        return True
+    return False
 
 
 def update_group_stats(
@@ -828,7 +839,10 @@ def delete_group(conn: Connection, group_id: int) -> bool:
 
     # Delete the group itself
     cursor = conn.execute("DELETE FROM event_epg_groups WHERE id = ?", (group_id,))
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[DELETED] Event group id=%d", group_id)
+        return True
+    return False
 
 
 # =============================================================================
@@ -998,6 +1012,7 @@ def store_group_xmltv(conn: Connection, group_id: int, xmltv_content: str) -> No
         (group_id, xmltv_content),
     )
     conn.commit()
+    logger.debug("[STORED] XMLTV for group id=%d size=%d", group_id, len(xmltv_content))
 
 
 def delete_group_xmltv(conn: Connection, group_id: int) -> bool:
@@ -1012,4 +1027,7 @@ def delete_group_xmltv(conn: Connection, group_id: int) -> bool:
     """
     cursor = conn.execute("DELETE FROM event_epg_xmltv WHERE group_id = ?", (group_id,))
     conn.commit()
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.debug("[DELETED] XMLTV for group id=%d", group_id)
+        return True
+    return False

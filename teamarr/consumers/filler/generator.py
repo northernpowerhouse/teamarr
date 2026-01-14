@@ -14,7 +14,6 @@ Design principles:
 - Respects midnight crossover mode from settings
 """
 
-import logging
 from datetime import date as date_type
 from datetime import datetime, timedelta
 
@@ -23,6 +22,7 @@ from teamarr.services import SportsDataService
 from teamarr.templates.context import GameContext, TeamChannelContext, TemplateContext
 from teamarr.templates.context_builder import ContextBuilder
 from teamarr.templates.resolver import TemplateResolver
+import logging
 from teamarr.utilities.sports import get_sport_duration, get_sport_from_league
 from teamarr.utilities.time_blocks import create_filler_chunks, crosses_midnight
 from teamarr.utilities.tz import now_user, to_user_tz
@@ -123,6 +123,13 @@ class FillerGenerator:
         current_date = epg_start.date()
         end_date = epg_end.date()
 
+        logger.debug(
+            "[STARTED] Filler generation for %s: %d events, %d days",
+            team_name,
+            len(sorted_events),
+            (end_date - current_date).days + 1,
+        )
+
         while current_date <= end_date:
             day_fillers = self._generate_day_fillers(
                 date=current_date,
@@ -137,6 +144,12 @@ class FillerGenerator:
             )
             fillers.extend(day_fillers)
             current_date += timedelta(days=1)
+
+        logger.debug(
+            "[COMPLETED] Filler generation for %s: %d programmes",
+            team_name,
+            len(fillers),
+        )
 
         return fillers
 

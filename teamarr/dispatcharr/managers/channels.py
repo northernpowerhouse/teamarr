@@ -145,7 +145,7 @@ class ChannelManager:
         """Clear channel cache. Call at start of each EPG generation cycle."""
         with self._lock:
             self._cache.clear()
-            logger.debug("ChannelManager cache cleared")
+            logger.debug("[CHANNEL_CACHE] Cleared")
 
     def _ensure_cache(self) -> list[DispatcharrChannel]:
         """Ensure cache is populated. Returns cached channels list."""
@@ -156,7 +156,7 @@ class ChannelManager:
             )
             channels = [DispatcharrChannel.from_api(c) for c in raw_channels]
             self._cache.populate(channels)
-            logger.debug(f"Cached {len(channels)} channels")
+            logger.debug("[CHANNEL_CACHE] Populated %d channels", len(channels))
         return self._cache.get_all()
 
     def get_channels(self, use_cache: bool = True) -> list[DispatcharrChannel]:
@@ -253,7 +253,7 @@ class ChannelManager:
         if channel_profile_ids is not None:
             payload["channel_profile_ids"] = channel_profile_ids
 
-        logger.debug(f"Creating channel with payload: {payload}")
+        logger.debug("[CHANNEL] Creating: %s", payload)
         response = self._client.post("/api/channels/channels/", payload)
 
         if response is None:
@@ -329,29 +329,29 @@ class ChannelManager:
         Returns:
             OperationResult with success status
         """
-        logger.debug(f"Deleting channel {channel_id} from Dispatcharr")
+        logger.debug("[CHANNEL] Deleting %d", channel_id)
         response = self._client.delete(f"/api/channels/channels/{channel_id}/")
 
         if response is None:
-            logger.warning(f"Delete channel {channel_id}: No response from Dispatcharr")
+            logger.warning("[CHANNEL] Delete %d: No response", channel_id)
             return OperationResult(
                 success=False,
                 error=self._client.parse_api_error(response),
             )
 
         if response.status_code in (200, 204):
-            logger.debug(f"Delete channel {channel_id}: Success")
+            logger.debug("[CHANNEL] Delete %d: Success", channel_id)
             with self._lock:
                 self._cache.invalidate(channel_id)
             return OperationResult(success=True)
 
         if response.status_code == 404:
-            logger.debug(f"Delete channel {channel_id}: Not found (already deleted?)")
+            logger.debug("[CHANNEL] Delete %d: Not found", channel_id)
             with self._lock:
                 self._cache.invalidate(channel_id)
             return OperationResult(success=False, error="Channel not found")
 
-        logger.warning(f"Delete channel {channel_id}: Failed (status {response.status_code})")
+        logger.warning("[CHANNEL] Delete %d: Failed (status %d)", channel_id, response.status_code)
         return OperationResult(
             success=False,
             error=self._client.parse_api_error(response),
@@ -452,7 +452,7 @@ class ChannelManager:
 
         if response is None or response.status_code != 200:
             status = response.status_code if response else "No response"
-            logger.error(f"Failed to list channel profiles: {status}")
+            logger.error("[CHANNEL] Failed to list profiles: %s", status)
             return []
 
         return [DispatcharrChannelProfile.from_api(p) for p in response.json()]

@@ -191,10 +191,10 @@ class ChannelLifecycleService:
                         )
                     else:
                         stats["errors"].append(f"Profile {profile_id}: {result.error}")
-                        logger.warning(f"Bulk profile update failed for profile {profile_id}: {result.error}")
+                        logger.warning("[LIFECYCLE] Bulk profile update failed for profile %d: %s", profile_id, result.error)
                 except Exception as e:
                     stats["errors"].append(f"Profile {profile_id}: {e}")
-                    logger.warning(f"Bulk profile update error for profile {profile_id}: {e}")
+                    logger.warning("[LIFECYCLE] Bulk profile update error for profile %d: %s", profile_id, e)
 
         # Clear pending changes after applying
         self._pending_profile_changes = {}
@@ -470,8 +470,8 @@ class ChannelLifecycleService:
             # Still try to apply pending profile changes even on error
             try:
                 self._apply_pending_profile_changes()
-            except Exception:
-                pass
+            except Exception as profile_err:
+                logger.debug("[LIFECYCLE] Failed to apply pending profile changes after error: %s", profile_err)
 
         return result
 
@@ -950,7 +950,7 @@ class ChannelLifecycleService:
 
         except Exception as e:
             # DB insert failed - clean up the Dispatcharr channel to prevent orphans
-            logger.error(f"DB insert failed for channel '{channel_name}': {e}")
+            logger.error("[LIFECYCLE] DB insert failed for channel '%s': %s", channel_name, e)
             if dispatcharr_channel_id and self._channel_manager:
                 try:
                     with self._dispatcharr_lock:
@@ -959,7 +959,7 @@ class ChannelLifecycleService:
                         f"Cleaned up Dispatcharr channel {dispatcharr_channel_id} after DB failure"
                     )
                 except Exception as cleanup_err:
-                    logger.warning(f"Failed to cleanup Dispatcharr channel: {cleanup_err}")
+                    logger.warning("[LIFECYCLE] Failed to cleanup Dispatcharr channel: %s", cleanup_err)
 
             return ChannelCreationResult(
                 success=False,
@@ -1092,7 +1092,7 @@ class ChannelLifecycleService:
 
         next_num = get_next_channel_number(conn, group_id, auto_assign=True)
         if next_num is None:
-            logger.warning(f"Could not allocate channel number for group {group_id}")
+            logger.warning("[LIFECYCLE] Could not allocate channel number for group %d", group_id)
             return None
         return next_num
 
@@ -1385,7 +1385,7 @@ class ChannelLifecycleService:
                 )
 
         except Exception as e:
-            logger.debug(f"Error syncing settings for channel {existing.channel_name}: {e}")
+            logger.debug("[LIFECYCLE] Error syncing settings for channel %s: %s", existing.channel_name, e)
 
         return result
 
@@ -1458,7 +1458,7 @@ class ChannelLifecycleService:
                 with self._dispatcharr_lock:
                     self._logo_manager.delete(logo_id)
             except Exception as e:
-                logger.debug(f"Failed to delete logo {logo_id}: {e}")
+                logger.debug("[LIFECYCLE] Failed to delete logo %s: %s", logo_id, e)
 
         # Delete channel from Dispatcharr
         if self._channel_manager and channel.dispatcharr_channel_id:
@@ -1482,7 +1482,7 @@ class ChannelLifecycleService:
             notes=f"Deleted: {reason}",
         )
 
-        logger.info(f"Deleted channel '{channel.channel_name}' ({reason})")
+        logger.info("[LIFECYCLE] Deleted channel '%s' (%s)", channel.channel_name, reason)
         return True
 
     def process_scheduled_deletions(self) -> StreamProcessResult:
@@ -1538,7 +1538,7 @@ class ChannelLifecycleService:
             result.errors.append({"error": str(e)})
 
         if result.deleted:
-            logger.info(f"Deleted {len(result.deleted)} expired channels")
+            logger.info("[LIFECYCLE] Deleted %d expired channels", len(result.deleted))
 
         return result
 
@@ -1618,11 +1618,11 @@ class ChannelLifecycleService:
                     )
 
             except Exception as e:
-                logger.debug(f"Error recalculating delete time for channel {channel.id}: {e}")
+                logger.debug("[LIFECYCLE] Error recalculating delete time for channel %d: %s", channel.id, e)
                 continue
 
         if updated_count > 0:
-            logger.info(f"Recalculated scheduled_delete_at for {updated_count} channels")
+            logger.info("[LIFECYCLE] Recalculated scheduled_delete_at for %d channels", updated_count)
 
         return updated_count
 
@@ -1679,11 +1679,11 @@ class ChannelLifecycleService:
                         )
                     result["associated"] += 1
                 except Exception as e:
-                    logger.debug(f"Failed to associate EPG for channel {channel.channel_name}: {e}")
+                    logger.debug("[LIFECYCLE] Failed to associate EPG for channel %s: %s", channel.channel_name, e)
                     result["errors"] += 1
 
         if result["associated"]:
-            logger.info(f"Associated EPG data with {result['associated']} channels")
+            logger.info("[LIFECYCLE] Associated EPG data with %d channels", result['associated'])
 
         return result
 
@@ -1863,7 +1863,7 @@ class ChannelLifecycleService:
             result.errors.append({"error": str(e)})
 
         if result.deleted:
-            logger.info(f"Deleted {len(result.deleted)} channels with missing/changed streams")
+            logger.info("[LIFECYCLE] Deleted %d channels with missing/changed streams", len(result.deleted))
 
         return result
 
@@ -1979,7 +1979,7 @@ class ChannelLifecycleService:
             result["errors"].append({"error": str(e)})
 
         if result["reassigned"]:
-            logger.info(f"Reassigned {len(result['reassigned'])} channels in group {group_id}")
+            logger.info("[LIFECYCLE] Reassigned %d channels in group %d", len(result['reassigned']), group_id)
 
         return result
 
@@ -2168,7 +2168,7 @@ class ChannelLifecycleService:
                 if not orphans:
                     return result
 
-                logger.info(f"Found {len(orphans)} orphan Dispatcharr channel(s) to clean up")
+                logger.info("[LIFECYCLE] Found %d orphan Dispatcharr channel(s) to clean up", len(orphans))
 
                 for orphan in orphans:
                     try:
@@ -2204,7 +2204,7 @@ class ChannelLifecycleService:
             result["errors"].append({"error": str(e)})
 
         if result["deleted"] > 0:
-            logger.info(f"Cleaned up {result['deleted']} orphan Dispatcharr channels")
+            logger.info("[LIFECYCLE] Cleaned up %d orphan Dispatcharr channels", result['deleted'])
 
         return result
 

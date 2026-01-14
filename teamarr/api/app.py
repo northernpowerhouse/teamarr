@@ -45,7 +45,7 @@ def _cleanup_orphaned_xmltv(conn) -> None:
             WHERE team_id IN (SELECT id FROM teams WHERE active = 0)
         """)
         if cursor.rowcount > 0:
-            logger.info(f"Cleaned up XMLTV for {cursor.rowcount} disabled teams")
+            logger.info("[STARTUP] Cleaned up XMLTV for %d disabled teams", cursor.rowcount)
 
         # Delete XMLTV for disabled groups
         cursor = conn.execute("""
@@ -53,7 +53,7 @@ def _cleanup_orphaned_xmltv(conn) -> None:
             WHERE group_id IN (SELECT id FROM event_epg_groups WHERE enabled = 0)
         """)
         if cursor.rowcount > 0:
-            logger.info(f"Cleaned up XMLTV for {cursor.rowcount} disabled groups")
+            logger.info("[STARTUP] Cleaned up XMLTV for %d disabled groups", cursor.rowcount)
 
         # Delete orphaned XMLTV (team/group no longer exists)
         cursor = conn.execute("""
@@ -61,17 +61,17 @@ def _cleanup_orphaned_xmltv(conn) -> None:
             WHERE team_id NOT IN (SELECT id FROM teams)
         """)
         if cursor.rowcount > 0:
-            logger.info(f"Cleaned up {cursor.rowcount} orphaned team XMLTV entries")
+            logger.info("[STARTUP] Cleaned up %d orphaned team XMLTV entries", cursor.rowcount)
 
         cursor = conn.execute("""
             DELETE FROM event_epg_xmltv
             WHERE group_id NOT IN (SELECT id FROM event_epg_groups)
         """)
         if cursor.rowcount > 0:
-            logger.info(f"Cleaned up {cursor.rowcount} orphaned group XMLTV entries")
+            logger.info("[STARTUP] Cleaned up %d orphaned group XMLTV entries", cursor.rowcount)
     except Exception as e:
         # Log actual error for diagnosis, but don't crash startup
-        logger.warning(f"XMLTV cleanup failed: {e}")
+        logger.warning("[STARTUP] XMLTV cleanup failed: %s", e)
 
 
 def _run_startup_tasks():
@@ -93,14 +93,14 @@ def _run_startup_tasks():
         startup_state.set_phase(StartupPhase.INITIALIZING)
         league_mapping_service = init_league_mapping_service(get_db)
         ProviderRegistry.initialize(league_mapping_service)
-        logger.info("League mapping service and providers initialized")
+        logger.info("[STARTUP] League mapping service and providers initialized")
 
         # Refresh team/league cache (this takes time)
         startup_state.set_phase(StartupPhase.REFRESHING_CACHE)
         cache_service = create_cache_service(get_db)
-        logger.info("Refreshing team/league cache on startup...")
+        logger.info("[STARTUP] Refreshing team/league cache on startup...")
         cache_service.refresh()
-        logger.info("Team/league cache refreshed")
+        logger.info("[STARTUP] Team/league cache refreshed")
 
         # Reload league mapping service to pick up new league names from cache
         league_mapping_service.reload()
@@ -124,18 +124,18 @@ def _run_startup_tasks():
                 xmltv_generator_name=display.xmltv_generator_name,
                 xmltv_generator_url=display.xmltv_generator_url,
             )
-        logger.info("Display settings loaded into config cache")
+        logger.info("[STARTUP] Display settings loaded into config cache")
 
         # Initialize Dispatcharr factory (lazy connection)
         startup_state.set_phase(StartupPhase.CONNECTING_DISPATCHARR)
         try:
             factory = get_factory(get_db)
             if factory.is_configured:
-                logger.info("Dispatcharr configured, connection will be established on first use")
+                logger.info("[STARTUP] Dispatcharr configured, connection will be established on first use")
             else:
-                logger.info("Dispatcharr not configured")
+                logger.info("[STARTUP] Dispatcharr not configured")
         except Exception as e:
-            logger.warning(f"Failed to initialize Dispatcharr factory: {e}")
+            logger.warning("[STARTUP] Failed to initialize Dispatcharr factory: %s", e)
 
         # Start background scheduler if enabled
         startup_state.set_phase(StartupPhase.STARTING_SCHEDULER)
@@ -154,26 +154,26 @@ def _run_startup_tasks():
                 try:
                     factory = get_factory()
                     connection = factory.get_connection()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("[STARTUP] Dispatcharr connection unavailable for scheduler: %s", e)
 
                 scheduler_service = create_scheduler_service(get_db, connection)
                 cron_expr = epg_settings.cron_expression or "0 * * * *"
                 started = scheduler_service.start(cron_expression=cron_expr)
                 if started:
-                    logger.info(f"Background scheduler started (cron: {cron_expr})")
+                    logger.info("[STARTUP] Background scheduler started (cron: %s)", cron_expr)
                 # Store scheduler service reference for shutdown
                 _app_state["scheduler_service"] = scheduler_service
             except Exception as e:
-                logger.warning(f"Failed to start scheduler: {e}")
+                logger.warning("[STARTUP] Failed to start scheduler: %s", e)
         else:
-            logger.info("Background scheduler disabled")
+            logger.info("[STARTUP] Background scheduler disabled")
 
         startup_state.set_phase(StartupPhase.READY)
-        logger.info("Teamarr V2 ready")
+        logger.info("[STARTUP] Teamarr V2 ready")
 
     except Exception as e:
-        logger.exception(f"Startup failed: {e}")
+        logger.exception("[STARTUP] Failed: %s", e)
         startup_state.set_error(str(e))
 
 
@@ -190,16 +190,16 @@ async def lifespan(app: FastAPI):
 
     # Startup - minimal blocking, then background tasks
     setup_logging()
-    logger.info("Starting Teamarr V2...")
+    logger.info("[STARTUP] Starting Teamarr V2...")
 
     # Initialize database (fast) - this also detects V1 databases
     init_db()
 
     # If V1 database detected, skip V2 initialization - only serve migration endpoints
     if is_v1_database_detected():
-        logger.warning("V1 database detected - running in migration mode only")
+        logger.warning("[STARTUP] V1 database detected - running in migration mode only")
         yield
-        logger.info("Teamarr V2 stopped (migration mode)")
+        logger.info("[SHUTDOWN] Teamarr V2 stopped (migration mode)")
         return
 
     # Normal V2 startup continues...
@@ -219,7 +219,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    logger.info("Shutting down Teamarr V2...")
+    logger.info("[SHUTDOWN] Shutting down Teamarr V2...")
 
     # Stop scheduler
     scheduler_service = _app_state.get("scheduler_service")
@@ -229,7 +229,7 @@ async def lifespan(app: FastAPI):
     # Close Dispatcharr connection
     close_dispatcharr()
 
-    logger.info("Teamarr V2 stopped")
+    logger.info("[SHUTDOWN] Teamarr V2 stopped")
 
 
 def create_app() -> FastAPI:
@@ -307,9 +307,9 @@ def create_app() -> FastAPI:
             # Fall back to index.html for SPA routing
             return FileResponse(frontend_dist / "index.html")
 
-        logger.info(f"Serving React UI from {frontend_dist}")
+        logger.info("[STARTUP] Serving React UI from %s", frontend_dist)
     else:
-        logger.warning(f"Frontend dist not found at {frontend_dist} - UI not available")
+        logger.warning("[STARTUP] Frontend dist not found at %s - UI not available", frontend_dist)
 
     return app
 

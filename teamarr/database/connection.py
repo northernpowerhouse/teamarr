@@ -98,7 +98,7 @@ def init_db(db_path: Path | str | None = None) -> None:
 
             # If V1 database detected, skip schema initialization - only migration endpoints work
             if _v1_database_detected:
-                logger.info("Skipping V2 schema initialization for V1 database")
+                logger.info("[MIGRATE] Skipping V2 schema initialization for V1 database")
                 return
 
             # Pre-migration: rename league_id_alias -> league_id before schema.sql runs
@@ -215,7 +215,7 @@ def _rename_league_id_column_if_needed(conn: sqlite3.Connection) -> None:
 
     if "league_id_alias" in columns and "league_id" not in columns:
         conn.execute("ALTER TABLE leagues RENAME COLUMN league_id_alias TO league_id")
-        logger.info("Renamed leagues.league_id_alias -> league_id")
+        logger.info("[MIGRATE] Renamed leagues.league_id_alias -> league_id")
 
 
 def _add_league_alias_column_if_needed(conn: sqlite3.Connection) -> None:
@@ -235,7 +235,7 @@ def _add_league_alias_column_if_needed(conn: sqlite3.Connection) -> None:
 
     if "league_alias" not in columns:
         conn.execute("ALTER TABLE leagues ADD COLUMN league_alias TEXT")
-        logger.info("Added leagues.league_alias column")
+        logger.info("[MIGRATE] Added leagues.league_alias column")
 
 
 def _add_gracenote_category_column_if_needed(conn: sqlite3.Connection) -> None:
@@ -255,7 +255,7 @@ def _add_gracenote_category_column_if_needed(conn: sqlite3.Connection) -> None:
 
     if "gracenote_category" not in columns:
         conn.execute("ALTER TABLE leagues ADD COLUMN gracenote_category TEXT")
-        logger.info("Added leagues.gracenote_category column")
+        logger.info("[MIGRATE] Added leagues.gracenote_category column")
 
 
 def _add_logo_url_dark_column_if_needed(conn: sqlite3.Connection) -> None:
@@ -275,7 +275,7 @@ def _add_logo_url_dark_column_if_needed(conn: sqlite3.Connection) -> None:
 
     if "logo_url_dark" not in columns:
         conn.execute("ALTER TABLE leagues ADD COLUMN logo_url_dark TEXT")
-        logger.info("Added leagues.logo_url_dark column")
+        logger.info("[MIGRATE] Added leagues.logo_url_dark column")
 
 
 def _add_series_slug_pattern_column_if_needed(conn: sqlite3.Connection) -> None:
@@ -295,7 +295,7 @@ def _add_series_slug_pattern_column_if_needed(conn: sqlite3.Connection) -> None:
 
     if "series_slug_pattern" not in columns:
         conn.execute("ALTER TABLE leagues ADD COLUMN series_slug_pattern TEXT")
-        logger.info("Added leagues.series_slug_pattern column")
+        logger.info("[MIGRATE] Added leagues.series_slug_pattern column")
 
 
 def _add_fallback_columns_if_needed(conn: sqlite3.Connection) -> None:
@@ -316,11 +316,11 @@ def _add_fallback_columns_if_needed(conn: sqlite3.Connection) -> None:
 
     if "fallback_provider" not in columns:
         conn.execute("ALTER TABLE leagues ADD COLUMN fallback_provider TEXT")
-        logger.info("Added leagues.fallback_provider column")
+        logger.info("[MIGRATE] Added leagues.fallback_provider column")
 
     if "fallback_league_id" not in columns:
         conn.execute("ALTER TABLE leagues ADD COLUMN fallback_league_id TEXT")
-        logger.info("Added leagues.fallback_league_id column")
+        logger.info("[MIGRATE] Added leagues.fallback_league_id column")
 
 
 def _seed_tsdb_cache_if_needed(conn: sqlite3.Connection) -> None:
@@ -390,7 +390,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     if current_version < 3:
         if _migrate_teams_to_leagues_array(conn):
             conn.execute("UPDATE settings SET schema_version = 3 WHERE id = 1")
-            logger.info("Schema upgraded to version 3")
+            logger.info("[MIGRATE] Schema upgraded to version 3")
             current_version = 3
 
     # Version 4: Add new leagues (eng.2, eng.3, nrl) and fix NRL logo
@@ -441,13 +441,13 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         """)
 
         conn.execute("UPDATE settings SET schema_version = 4 WHERE id = 1")
-        logger.info("Schema upgraded to version 4 (added eng.2, eng.3, nrl leagues)")
+        logger.info("[MIGRATE] Schema upgraded to version 4 (added eng.2, eng.3, nrl leagues)")
         current_version = 4
 
     # Version 5: league_id_alias -> league_id (rename done in pre-migration)
     if current_version < 5:
         conn.execute("UPDATE settings SET schema_version = 5 WHERE id = 1")
-        logger.info("Schema upgraded to version 5")
+        logger.info("[MIGRATE] Schema upgraded to version 5")
         current_version = 5
 
     # Version 6: Add league_alias column + fix managed_channels UNIQUE constraint
@@ -460,14 +460,14 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         _recreate_managed_channels_without_unique_constraint(conn)
 
         conn.execute("UPDATE settings SET schema_version = 6 WHERE id = 1")
-        logger.info("Schema upgraded to version 6 (league_alias, managed_channels fix)")
+        logger.info("[MIGRATE] Schema upgraded to version 6 (league_alias, managed_channels fix)")
         current_version = 6
 
     # Version 7: gracenote_category column (handled in pre-migration)
     if current_version < 7:
         # Column is added by _add_gracenote_category_column_if_needed before schema.sql
         conn.execute("UPDATE settings SET schema_version = 7 WHERE id = 1")
-        logger.info("Schema upgraded to version 7 (gracenote_category)")
+        logger.info("[MIGRATE] Schema upgraded to version 7 (gracenote_category)")
         current_version = 7
 
     # Version 8: Add custom_regex_date/time columns to event_epg_groups
@@ -481,7 +481,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             conn, "event_epg_groups", "custom_regex_time_enabled", "BOOLEAN DEFAULT 0"
         )
         conn.execute("UPDATE settings SET schema_version = 8 WHERE id = 1")
-        logger.info("Schema upgraded to version 8 (custom_regex_date/time)")
+        logger.info("[MIGRATE] Schema upgraded to version 8 (custom_regex_date/time)")
         current_version = 8
 
     # Version 9: Add 'keyword_ordering' to change_source CHECK constraint
@@ -521,7 +521,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             ON managed_channel_history(change_type);
         """)
         conn.execute("UPDATE settings SET schema_version = 9 WHERE id = 1")
-        logger.info("Schema upgraded to version 9 (keyword_ordering change_source)")
+        logger.info("[MIGRATE] Schema upgraded to version 9 (keyword_ordering change_source)")
         current_version = 9
 
     # Version 10: Update channel timing CHECK constraints
@@ -530,7 +530,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     if current_version < 10:
         _update_channel_timing_constraints(conn)
         conn.execute("UPDATE settings SET schema_version = 10 WHERE id = 1")
-        logger.info("Schema upgraded to version 10 (channel timing constraints)")
+        logger.info("[MIGRATE] Schema upgraded to version 10 (channel timing constraints)")
         current_version = 10
 
     # Version 11: Remove UNIQUE constraint from tvg_id
@@ -538,7 +538,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     if current_version < 11:
         _remove_tvg_id_unique_constraint(conn)
         conn.execute("UPDATE settings SET schema_version = 11 WHERE id = 1")
-        logger.info("Schema upgraded to version 11 (removed tvg_id UNIQUE constraint)")
+        logger.info("[MIGRATE] Schema upgraded to version 11 (removed tvg_id UNIQUE constraint)")
         current_version = 11
 
     # Version 12: Remove per-group timing settings
@@ -546,7 +546,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     if current_version < 12:
         _remove_group_timing_columns(conn)
         conn.execute("UPDATE settings SET schema_version = 12 WHERE id = 1")
-        logger.info("Schema upgraded to version 12 (removed per-group timing settings)")
+        logger.info("[MIGRATE] Schema upgraded to version 12 (removed per-group timing settings)")
         current_version = 12
 
     # Version 13: Add display_name column to event_epg_groups
@@ -554,7 +554,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     if current_version < 13:
         _add_column_if_not_exists(conn, "event_epg_groups", "display_name", "TEXT")
         conn.execute("UPDATE settings SET schema_version = 13 WHERE id = 1")
-        logger.info("Schema upgraded to version 13 (event_epg_groups.display_name)")
+        logger.info("[MIGRATE] Schema upgraded to version 13 (event_epg_groups.display_name)")
         current_version = 13
 
     # Version 14: Add streams_excluded column to event_epg_groups
@@ -564,7 +564,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             conn, "event_epg_groups", "streams_excluded", "INTEGER DEFAULT 0"
         )
         conn.execute("UPDATE settings SET schema_version = 14 WHERE id = 1")
-        logger.info("Schema upgraded to version 14 (event_epg_groups.streams_excluded)")
+        logger.info("[MIGRATE] Schema upgraded to version 14 (event_epg_groups.streams_excluded)")
         current_version = 14
 
     # Version 15: Rename filtered_no_match -> failed_count for clearer naming
@@ -572,7 +572,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     if current_version < 15:
         _rename_filtered_no_match_to_failed_count(conn)
         conn.execute("UPDATE settings SET schema_version = 15 WHERE id = 1")
-        logger.info("Schema upgraded to version 15 (filtered_no_match -> failed_count)")
+        logger.info("[MIGRATE] Schema upgraded to version 15 (filtered_no_match -> failed_count)")
         current_version = 15
 
     # Version 16: Add excluded reason breakdown columns
@@ -591,7 +591,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             conn, "event_epg_groups", "excluded_league_not_included", "INTEGER DEFAULT 0"
         )
         conn.execute("UPDATE settings SET schema_version = 16 WHERE id = 1")
-        logger.info("Schema upgraded to version 16 (excluded breakdown columns)")
+        logger.info("[MIGRATE] Schema upgraded to version 16 (excluded breakdown columns)")
         current_version = 16
 
     # Version 17: Add event_match_days_back to settings
@@ -601,7 +601,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             conn, "settings", "event_match_days_back", "INTEGER DEFAULT 7"
         )
         conn.execute("UPDATE settings SET schema_version = 17 WHERE id = 1")
-        logger.info("Schema upgraded to version 17 (settings.event_match_days_back)")
+        logger.info("[MIGRATE] Schema upgraded to version 17 (settings.event_match_days_back)")
         current_version = 17
 
     # Version 18: Add duration_volleyball to settings
@@ -611,7 +611,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             conn, "settings", "duration_volleyball", "REAL DEFAULT 2.5"
         )
         conn.execute("UPDATE settings SET schema_version = 18 WHERE id = 1")
-        logger.info("Schema upgraded to version 18 (settings.duration_volleyball)")
+        logger.info("[MIGRATE] Schema upgraded to version 18 (settings.duration_volleyball)")
         current_version = 18
 
     # Version 19: Add xmltv_video to templates
@@ -624,7 +624,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             """JSON DEFAULT '{"enabled": false, "quality": "HDTV"}'""",
         )
         conn.execute("UPDATE settings SET schema_version = 19 WHERE id = 1")
-        logger.info("Schema upgraded to version 19 (templates.xmltv_video)")
+        logger.info("[MIGRATE] Schema upgraded to version 19 (templates.xmltv_video)")
         current_version = 19
 
     # Version 20: Add group_mode to event_epg_groups
@@ -646,7 +646,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             WHERE group_mode IS NULL OR group_mode = 'single'
         """)
         conn.execute("UPDATE settings SET schema_version = 20 WHERE id = 1")
-        logger.info("Schema upgraded to version 20 (event_epg_groups.group_mode)")
+        logger.info("[MIGRATE] Schema upgraded to version 20 (event_epg_groups.group_mode)")
         current_version = 20
 
     # Version 21: Add team filtering columns to event_epg_groups
@@ -664,7 +664,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             conn, "event_epg_groups", "filtered_team", "INTEGER DEFAULT 0"
         )
         conn.execute("UPDATE settings SET schema_version = 21 WHERE id = 1")
-        logger.info("Schema upgraded to version 21 (team filtering columns)")
+        logger.info("[MIGRATE] Schema upgraded to version 21 (team filtering columns)")
         current_version = 21
 
     # Version 22: Add default team filter columns to settings
@@ -679,7 +679,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             "TEXT DEFAULT 'include'",
         )
         conn.execute("UPDATE settings SET schema_version = 22 WHERE id = 1")
-        logger.info("Schema upgraded to version 22 (default team filter settings)")
+        logger.info("[MIGRATE] Schema upgraded to version 22 (default team filter settings)")
         current_version = 22
 
     # Version 23: Add default_channel_profile_ids to settings
@@ -689,7 +689,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             conn, "settings", "default_channel_profile_ids", "JSON"
         )
         conn.execute("UPDATE settings SET schema_version = 23 WHERE id = 1")
-        logger.info("Schema upgraded to version 23 (default_channel_profile_ids)")
+        logger.info("[MIGRATE] Schema upgraded to version 23 (default_channel_profile_ids)")
         current_version = 23
 
     # Version 24: Add excluded and exclusion_reason to epg_matched_streams
@@ -702,7 +702,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             conn, "epg_matched_streams", "exclusion_reason", "TEXT"
         )
         conn.execute("UPDATE settings SET schema_version = 24 WHERE id = 1")
-        logger.info("Schema upgraded to version 24 (epg_matched_streams excluded columns)")
+        logger.info("[MIGRATE] Schema upgraded to version 24 (epg_matched_streams excluded columns)")
         current_version = 24
 
     # Version 25: Change event_epg_groups name unique constraint from global to per-account
@@ -710,14 +710,14 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     if current_version < 25:
         _migrate_event_groups_name_unique(conn)
         conn.execute("UPDATE settings SET schema_version = 25 WHERE id = 1")
-        logger.info("Schema upgraded to version 25 (per-account group name uniqueness)")
+        logger.info("[MIGRATE] Schema upgraded to version 25 (per-account group name uniqueness)")
         current_version = 25
 
     # Version 26: Remove stream_profile_id column (not used)
     if current_version < 26:
         _drop_stream_profile_columns(conn)
         conn.execute("UPDATE settings SET schema_version = 26 WHERE id = 1")
-        logger.info("Schema upgraded to version 26 (removed stream_profile_id)")
+        logger.info("[MIGRATE] Schema upgraded to version 26 (removed stream_profile_id)")
         current_version = 26
 
     # Version 27: Add filtered_stale column to event_epg_groups
@@ -727,7 +727,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             conn, "event_epg_groups", "filtered_stale", "INTEGER DEFAULT 0"
         )
         conn.execute("UPDATE settings SET schema_version = 27 WHERE id = 1")
-        logger.info("Schema upgraded to version 27 (event_epg_groups.filtered_stale)")
+        logger.info("[MIGRATE] Schema upgraded to version 27 (event_epg_groups.filtered_stale)")
         current_version = 27
 
     # Version 28: Move XMLTV output to data/ directory for Docker volume access
@@ -740,7 +740,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             WHERE id = 1 AND epg_output_path = './teamarr.xml'
         """)
         conn.execute("UPDATE settings SET schema_version = 28 WHERE id = 1")
-        logger.info("Schema upgraded to version 28 (epg_output_path -> ./data/)")
+        logger.info("[MIGRATE] Schema upgraded to version 28 (epg_output_path -> ./data/)")
         current_version = 28
 
 
@@ -759,10 +759,10 @@ def _drop_stream_profile_columns(conn: sqlite3.Connection) -> None:
 
         try:
             conn.execute(f"ALTER TABLE {table} DROP COLUMN stream_profile_id")
-            logger.info(f"Dropped stream_profile_id from {table}")
+            logger.info("[MIGRATE] Dropped stream_profile_id from %s", table)
         except Exception as e:
             # SQLite < 3.35 doesn't support DROP COLUMN
-            logger.debug(f"Could not drop stream_profile_id from {table}: {e}")
+            logger.debug("[MIGRATE] Could not drop stream_profile_id from %s: %s", table, e)
 
 
 def _migrate_event_groups_name_unique(conn: sqlite3.Connection) -> None:
@@ -778,13 +778,13 @@ def _migrate_event_groups_name_unique(conn: sqlite3.Connection) -> None:
     """)
     row = cursor.fetchone()
     if not row:
-        logger.debug("event_epg_groups table not found, skipping migration")
+        logger.debug("[MIGRATE] event_epg_groups table not found, skipping migration")
         return
 
     table_sql = row[0] or ""
     # Check for inline UNIQUE on name (not the composite index we want)
     if "name TEXT NOT NULL UNIQUE" not in table_sql and "name TEXT NOT NULL," in table_sql:
-        logger.debug("Global name UNIQUE constraint not present, skipping migration")
+        logger.debug("[MIGRATE] Global name UNIQUE constraint not present, skipping migration")
         # Just ensure the new index exists
         conn.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS idx_event_epg_groups_name_account
@@ -792,7 +792,7 @@ def _migrate_event_groups_name_unique(conn: sqlite3.Connection) -> None:
         """)
         return
 
-    logger.info("Migrating event_epg_groups: changing name uniqueness to per-account")
+    logger.info("[MIGRATE] Migrating event_epg_groups: changing name uniqueness to per-account")
 
     # Disable foreign keys for table recreation
     conn.execute("PRAGMA foreign_keys = OFF")
@@ -911,7 +911,7 @@ def _migrate_event_groups_name_unique(conn: sqlite3.Connection) -> None:
         """)
 
         conn.commit()
-        logger.info("Successfully migrated event_epg_groups to per-account name uniqueness")
+        logger.info("[MIGRATE] Successfully migrated event_epg_groups to per-account name uniqueness")
 
     finally:
         # Re-enable foreign keys
@@ -937,7 +937,7 @@ def _rename_filtered_no_match_to_failed_count(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "ALTER TABLE event_epg_groups ADD COLUMN failed_count INTEGER DEFAULT 0"
             )
-            logger.info("Added event_epg_groups.failed_count column")
+            logger.info("[MIGRATE] Added event_epg_groups.failed_count column")
         return
 
     # SQLite doesn't support RENAME COLUMN in older versions, so we use the full approach
@@ -952,7 +952,7 @@ def _rename_filtered_no_match_to_failed_count(conn: sqlite3.Connection) -> None:
     conn.execute(
         "UPDATE event_epg_groups SET failed_count = filtered_no_match WHERE failed_count = 0"
     )
-    logger.info("Migrated filtered_no_match -> failed_count")
+    logger.info("[MIGRATE] Migrated filtered_no_match -> failed_count")
 
 
 def _remove_tvg_id_unique_constraint(conn: sqlite3.Connection) -> None:
@@ -969,10 +969,10 @@ def _remove_tvg_id_unique_constraint(conn: sqlite3.Connection) -> None:
     """)
     row = cursor.fetchone()
     if not row or "tvg_id TEXT NOT NULL UNIQUE" not in (row[0] or ""):
-        logger.debug("tvg_id UNIQUE constraint not present, skipping migration")
+        logger.debug("[MIGRATE] tvg_id UNIQUE constraint not present, skipping migration")
         return
 
-    logger.info("Removing UNIQUE constraint from managed_channels.tvg_id")
+    logger.info("[MIGRATE] Removing UNIQUE constraint from managed_channels.tvg_id")
 
     # Disable foreign keys for table recreation
     conn.execute("PRAGMA foreign_keys = OFF")
@@ -1081,7 +1081,7 @@ def _remove_tvg_id_unique_constraint(conn: sqlite3.Connection) -> None:
         """)
 
         conn.commit()
-        logger.info("Successfully removed UNIQUE constraint from tvg_id")
+        logger.info("[MIGRATE] Successfully removed UNIQUE constraint from tvg_id")
 
     finally:
         # Re-enable foreign keys
@@ -1107,7 +1107,7 @@ def _migrate_teams_to_leagues_array(conn: sqlite3.Connection) -> bool:
         # Already migrated or fresh database
         return False
 
-    logger.info("Migrating teams table: league -> leagues array")
+    logger.info("[MIGRATE] Migrating teams table: league -> leagues array")
 
     # Get all existing teams grouped by (provider, provider_team_id, sport)
     cursor = conn.execute("""
@@ -1202,7 +1202,7 @@ def _migrate_teams_to_leagues_array(conn: sqlite3.Connection) -> bool:
         END
     """)
 
-    logger.info(f"Migrated {len(rows)} teams with leagues arrays")
+    logger.info("[MIGRATE] Converted %d teams to leagues arrays", len(rows))
     return True
 
 
@@ -1248,7 +1248,7 @@ def _recreate_managed_channels_without_unique_constraint(
         # Constraint already removed
         return
 
-    logger.info("Recreating managed_channels table to remove UNIQUE constraint...")
+    logger.info("[MIGRATE] Recreating managed_channels table to remove UNIQUE constraint...")
 
     conn.executescript("""
         PRAGMA foreign_keys = OFF;
@@ -1320,7 +1320,7 @@ def _recreate_managed_channels_without_unique_constraint(
         PRAGMA foreign_keys = ON;
     """)
 
-    logger.info("managed_channels table recreated without UNIQUE constraint")
+    logger.info("[MIGRATE] managed_channels table recreated without UNIQUE constraint")
 
 
 def _update_channel_timing_constraints(conn: sqlite3.Connection) -> None:
@@ -1364,10 +1364,10 @@ def _update_channel_timing_constraints(conn: sqlite3.Connection) -> None:
             "UPDATE settings SET channel_delete_timing = '6_hours_after' WHERE 1=0"
         )
         # If this succeeds (even with 0 rows), constraint allows the value
-        logger.info("Channel timing constraints already updated")
+        logger.info("[MIGRATE] Channel timing constraints already updated")
         return
-    except Exception:
-        pass  # Need to migrate
+    except Exception as e:
+        logger.debug("[MIGRATE] Channel timing constraint check failed, migration needed: %s", e)
 
     # Get current CREATE TABLE statement
     cursor = conn.execute(
@@ -1375,7 +1375,7 @@ def _update_channel_timing_constraints(conn: sqlite3.Connection) -> None:
     )
     row = cursor.fetchone()
     if not row or not row["sql"]:
-        logger.info("Settings table not found, skipping constraint migration")
+        logger.info("[MIGRATE] Settings table not found, skipping constraint migration")
         return
 
     import re
@@ -1411,7 +1411,7 @@ def _update_channel_timing_constraints(conn: sqlite3.Connection) -> None:
         PRAGMA foreign_keys = ON;
     """)
 
-    logger.info("Updated settings table CHECK constraints for channel timing")
+    logger.info("[MIGRATE] Updated settings table CHECK constraints for channel timing")
 
 
 def _remove_group_timing_columns(conn: sqlite3.Connection) -> None:
@@ -1428,19 +1428,19 @@ def _remove_group_timing_columns(conn: sqlite3.Connection) -> None:
     columns_present = columns_to_drop & columns
 
     if not columns_present:
-        logger.debug("Per-group timing columns already removed, skipping migration")
+        logger.debug("[MIGRATE] Per-group timing columns already removed, skipping migration")
         return
 
-    logger.info(f"Removing per-group timing columns: {columns_present}")
+    logger.info("[MIGRATE] Removing per-group timing columns: %s", columns_present)
 
     # SQLite 3.35.0+ supports DROP COLUMN
     # Use try/except in case of older SQLite versions
     try:
         for col in columns_present:
             conn.execute(f"ALTER TABLE event_epg_groups DROP COLUMN {col}")
-        logger.info("Successfully dropped timing columns using ALTER TABLE DROP COLUMN")
+        logger.info("[MIGRATE] Successfully dropped timing columns using ALTER TABLE DROP COLUMN")
     except sqlite3.OperationalError as e:
-        logger.warning(f"DROP COLUMN not supported ({e}), using table recreation")
+        logger.warning("[MIGRATE] DROP COLUMN not supported (%s), using table recreation", e)
         _remove_group_timing_columns_via_recreation(conn, columns_present)
 
 
@@ -1488,7 +1488,7 @@ def _remove_group_timing_columns_via_recreation(
     finally:
         conn.execute("PRAGMA foreign_keys = ON")
 
-    logger.info("Recreated event_epg_groups table without timing columns")
+    logger.info("[MIGRATE] Recreated event_epg_groups table without timing columns")
 
 
 def reset_db(db_path: Path | str | None = None) -> None:

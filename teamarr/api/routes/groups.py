@@ -11,6 +11,9 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from teamarr.database import get_db
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -520,6 +523,8 @@ def create_group(request: GroupCreate):
 
         group = get_group(conn, group_id)
 
+    logger.info("[CREATED] Event group id=%d name=%s", group_id, request.name)
+
     return GroupResponse(
         id=group.id,
         name=group.name,
@@ -649,6 +654,8 @@ def create_groups_bulk(request: BulkGroupCreateRequest):
                 ))
                 total_failed += 1
 
+    logger.info("[BULK_IMPORT] Event groups: %d created, %d failed", total_created, total_failed)
+
     return BulkGroupCreateResponse(
         created=results,
         total_requested=len(request.groups),
@@ -724,6 +731,8 @@ def update_groups_bulk(request: BulkGroupUpdateRequest):
                     error=str(e),
                 ))
                 total_failed += 1
+
+    logger.info("[BULK_UPDATE] Event groups: %d updated, %d failed", total_updated, total_failed)
 
     return BulkGroupUpdateResponse(
         results=results,
@@ -923,6 +932,8 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
         group = get_group(conn, group_id)
         channel_count = get_group_channel_count(conn, group_id)
 
+    logger.info("[UPDATED] Event group id=%d", group_id)
+
     return GroupResponse(
         id=group.id,
         name=group.name,
@@ -997,6 +1008,8 @@ def delete_group_by_id(group_id: int) -> dict:
 
         channel_count = get_group_channel_count(conn, group_id)
         delete_group(conn, group_id)
+
+    logger.info("[DELETED] Event group id=%d name=%s channels=%d", group_id, group.name, channel_count)
 
     return {
         "success": True,

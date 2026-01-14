@@ -167,6 +167,13 @@ class TeamEPGGenerator:
         """
         options = options or TeamEPGOptions()
 
+        logger.debug(
+            "[STARTED] Team EPG: team=%s league=%s days=%d",
+            team_id,
+            league,
+            options.output_days_ahead,
+        )
+
         # Load template from database if template_id is set and not already pre-loaded
         # Template should be pre-loaded by TeamProcessor to avoid DB access in threads
         if options.template_id and options.template is None:
@@ -329,6 +336,14 @@ class TeamEPGGenerator:
 
         # Sort all programmes by start time
         programmes.sort(key=lambda p: p.start)
+
+        logger.debug(
+            "[COMPLETED] Team EPG: team=%s events=%d programmes=%d filler=%s",
+            team_id,
+            len(included_events),
+            len(programmes),
+            options.filler_enabled,
+        )
 
         return programmes
 
@@ -507,6 +522,6 @@ class TeamEPGGenerator:
                 if template:
                     return template_to_programme_config(template)
         except Exception as e:
-            logger.debug(f"Failed to load programme template {template_id}: {e}")
+            logger.debug("[TEAM_EPG] Failed to load programme template %s: %s", template_id, e)
 
         return None

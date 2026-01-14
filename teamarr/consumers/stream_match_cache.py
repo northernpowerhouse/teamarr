@@ -131,14 +131,13 @@ class StreamMatchCache:
             row = cursor.fetchone()
 
             if row:
-                logger.debug(f"Cache hit for fingerprint={fingerprint} event_id={row['event_id']}")
                 # Skip failed matches unless explicitly requested
                 if row["event_id"] == FAILED_MATCH_EVENT_ID and not include_failed:
                     self._stats["misses"] += 1
                     return None
 
                 self._stats["hits"] += 1
-                logger.debug(f"[CACHE HIT] stream_id={stream_id} -> event_id={row['event_id']}")
+                logger.debug("[STREAM_CACHE_HIT] stream_id=%d event_id=%s", stream_id, row["event_id"])
 
                 # Parse cached_event_data if present
                 cached_data = {}
@@ -246,11 +245,14 @@ class StreamMatchCache:
                 conn.commit()
                 self._stats["sets"] += 1
                 logger.debug(
-                    f"[CACHE SET] stream_id={stream_id} -> event_id={event_id} ({match_method})"
+                    "[STREAM_CACHE_SET] stream_id=%d event_id=%s method=%s",
+                    stream_id,
+                    event_id,
+                    match_method,
                 )
                 return True
         except sqlite3.Error as e:
-            logger.error(f"Database error caching stream match: {e}")
+            logger.error("[STREAM_CACHE_ERROR] Set failed: %s", e)
             return False
 
     def set_failed(
@@ -304,10 +306,10 @@ class StreamMatchCache:
                 )
                 conn.commit()
                 self._stats["failed_cached"] += 1
-                logger.debug(f"[CACHE FAILED] stream_id={stream_id} (no match)")
+                logger.debug("[STREAM_CACHE_FAILED] stream_id=%d (no match)", stream_id)
                 return True
         except sqlite3.Error as e:
-            logger.error(f"Database error caching failed match: {e}")
+            logger.error("[STREAM_CACHE_ERROR] Set failed match: %s", e)
             return False
 
     def set_user_correction(
@@ -368,10 +370,10 @@ class StreamMatchCache:
                 )
                 conn.commit()
                 self._stats["user_corrections"] += 1
-                logger.info(f"[CACHE USER] stream_id={stream_id} corrected to event_id={event_id}")
+                logger.info("[STREAM_CACHE_CORRECTED] stream_id=%d event_id=%s", stream_id, event_id)
                 return True
         except sqlite3.Error as e:
-            logger.error(f"Database error setting user correction: {e}")
+            logger.error("[STREAM_CACHE_ERROR] Set user correction: %s", e)
             return False
 
     def remove_user_correction(
@@ -399,7 +401,7 @@ class StreamMatchCache:
                 conn.commit()
                 return cursor.rowcount > 0
         except sqlite3.Error as e:
-            logger.warning(f"Failed to remove user correction: {e}")
+            logger.warning("[STREAM_CACHE_ERROR] Remove user correction: %s", e)
             return False
 
     def touch(
@@ -437,7 +439,7 @@ class StreamMatchCache:
                 conn.commit()
                 return cursor.rowcount > 0
         except sqlite3.Error as e:
-            logger.warning(f"[CACHE] touch failed: {e}")
+            logger.warning("[STREAM_CACHE_ERROR] Touch failed: %s", e)
             return False
 
     def purge_stale(self, current_generation: int) -> int:
@@ -469,7 +471,7 @@ class StreamMatchCache:
                     )
                     failed_purged = cursor.rowcount
                     if failed_purged > 0:
-                        logger.debug(f"[CACHE PURGE] Removed {failed_purged} stale failed matches")
+                        logger.debug("[STREAM_CACHE_PURGE] Removed %d stale failed", failed_purged)
                     purged_total += failed_purged
 
                 # Purge stale successful matches (normal TTL)
@@ -485,20 +487,18 @@ class StreamMatchCache:
                     )
                     success_purged = cursor.rowcount
                     if success_purged > 0:
-                        logger.debug(
-                            f"[CACHE PURGE] Removed {success_purged} stale successful matches"
-                        )
+                        logger.debug("[STREAM_CACHE_PURGE] Removed %d stale successful", success_purged)
                     purged_total += success_purged
 
                 conn.commit()
 
                 if purged_total > 0:
                     self._stats["purged"] += purged_total
-                    logger.info(f"[CACHE PURGE] Removed {purged_total} total stale entries")
+                    logger.info("[STREAM_CACHE_PURGE] Removed %d total stale entries", purged_total)
 
                 return purged_total
         except sqlite3.Error as e:
-            logger.warning(f"[CACHE] purge_stale failed: {e}")
+            logger.warning("[STREAM_CACHE_ERROR] Purge failed: %s", e)
             return 0
 
     def delete(
@@ -530,10 +530,10 @@ class StreamMatchCache:
                 conn.commit()
                 deleted = cursor.rowcount > 0
                 if deleted:
-                    logger.debug(f"[CACHE DELETE] Invalidated entry for stream_id={stream_id}")
+                    logger.debug("[STREAM_CACHE_DELETE] stream_id=%d", stream_id)
                 return deleted
         except sqlite3.Error as e:
-            logger.warning(f"[CACHE] delete failed: {e}")
+            logger.warning("[STREAM_CACHE_ERROR] Delete failed: %s", e)
             return False
 
     def clear_group(self, group_id: int) -> int:
@@ -555,10 +555,10 @@ class StreamMatchCache:
                 )
                 cleared = cursor.rowcount
                 conn.commit()
-                logger.info(f"[CACHE CLEAR] Cleared {cleared} entries for group {group_id}")
+                logger.info("[STREAM_CACHE_CLEAR] group=%d entries=%d", group_id, cleared)
                 return cleared
         except sqlite3.Error as e:
-            logger.warning(f"[CACHE] clear_group failed: {e}")
+            logger.warning("[STREAM_CACHE_ERROR] Clear group failed: %s", e)
             return 0
 
     def clear_all(self) -> int:
@@ -572,10 +572,10 @@ class StreamMatchCache:
                 cursor = conn.execute("DELETE FROM stream_match_cache")
                 cleared = cursor.rowcount
                 conn.commit()
-                logger.info(f"[CACHE CLEAR] Cleared entire cache ({cleared} entries)")
+                logger.info("[STREAM_CACHE_CLEAR] All entries cleared: %d", cleared)
                 return cleared
         except sqlite3.Error as e:
-            logger.warning(f"[CACHE] clear_all failed: {e}")
+            logger.warning("[STREAM_CACHE_ERROR] Clear all failed: %s", e)
             return 0
 
     def get_stats(self) -> dict[str, int]:
@@ -621,7 +621,7 @@ def increment_generation_counter(get_connection: Callable) -> int:
             row = cursor.fetchone()
             new_value = row["epg_generation_counter"] if row else 1
             conn.commit()
-            logger.debug(f"EPG generation counter: {new_value}")
+            logger.debug("[GENERATION] Counter incremented to %d", new_value)
             return new_value
         except Exception:
             conn.rollback()

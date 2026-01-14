@@ -25,7 +25,7 @@ def load_tsdb_seed() -> dict | None:
         Dict with 'leagues' and 'teams' lists, or None if unavailable
     """
     if not SEED_FILE.exists():
-        logger.debug(f"TSDB seed file not found: {SEED_FILE}")
+        logger.debug("[SEED] TSDB seed file not found: %s", SEED_FILE)
         return None
 
     try:
@@ -37,7 +37,7 @@ def load_tsdb_seed() -> dict | None:
                 team["provider"] = "tsdb"
         return data
     except (json.JSONDecodeError, IOError) as e:
-        logger.error(f"Failed to read TSDB seed file: {e}")
+        logger.error("[SEED] Failed to read TSDB seed file: %s", e)
         return None
 
 
@@ -51,14 +51,14 @@ def seed_tsdb_cache(conn) -> dict:
         Dict with seeding results
     """
     if not SEED_FILE.exists():
-        logger.warning(f"TSDB seed file not found: {SEED_FILE}")
+        logger.warning("[SEED] TSDB seed file not found: %s", SEED_FILE)
         return {"seeded": False, "reason": "seed_file_missing"}
 
     try:
         with open(SEED_FILE) as f:
             seed_data = json.load(f)
     except (json.JSONDecodeError, IOError) as e:
-        logger.error(f"Failed to read TSDB seed file: {e}")
+        logger.error("[SEED] Failed to read TSDB seed file: %s", e)
         return {"seeded": False, "reason": "seed_file_error", "error": str(e)}
 
     cursor = conn.cursor()
@@ -121,8 +121,8 @@ def seed_tsdb_cache(conn) -> dict:
     )
 
     logger.info(
-        f"TSDB cache seeded: {leagues_added} leagues, {teams_added} teams "
-        f"(from {seed_data.get('generated_at', 'unknown')})"
+        "[SEED] TSDB cache seeded: %d leagues, %d teams (from %s)",
+        leagues_added, teams_added, seed_data.get('generated_at', 'unknown')
     )
 
     return {
@@ -168,8 +168,8 @@ def should_seed_tsdb_cache(conn) -> bool:
         # (accounts for free tier limitations)
         if current_count < seed_count * 0.8:
             logger.info(
-                f"TSDB cache has {current_count} teams, seed has {seed_count}. "
-                "Recommending re-seed."
+                "[SEED] TSDB cache has %d teams, seed has %d. Recommending re-seed.",
+                current_count, seed_count
             )
             return True
 

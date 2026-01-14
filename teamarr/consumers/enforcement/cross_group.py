@@ -133,7 +133,7 @@ class CrossGroupEnforcer:
                     }
 
                 if not multi_league_groups:
-                    logger.debug("No multi-league groups to check for consolidation")
+                    logger.debug("[CROSS_GROUP] No multi-league groups to check")
                     return result
 
                 # For each multi-league group's channels
@@ -144,8 +144,8 @@ class CrossGroupEnforcer:
                     # create_all mode: keep separate channels, no consolidation
                     if overlap_handling == "create_all":
                         logger.debug(
-                            f"Group '{group.group_name}' has overlap_handling=create_all, "
-                            "skipping consolidation"
+                            "[CROSS_GROUP] Group '%s' has overlap_handling=create_all, skipping",
+                            group.group_name,
                         )
                         continue
 
@@ -258,23 +258,26 @@ class CrossGroupEnforcer:
                             }
                         )
 
-                        action_log = "Deleted" if overlap_handling == "skip" else "Consolidated"
                         logger.info(
-                            f"{action_log} multi-league channel #{channel.channel_number} "
-                            f"into single-league #{target_channel.channel_number} "
-                            f"(event: {event_id}, mode: {overlap_handling})"
+                            "[CROSS_GROUP] %s #%s -> #%s (event=%s mode=%s)",
+                            "Deleted" if overlap_handling == "skip" else "Consolidated",
+                            channel.channel_number,
+                            target_channel.channel_number,
+                            event_id,
+                            overlap_handling,
                         )
 
                 conn.commit()
 
         except Exception as e:
-            logger.exception("Error during cross-group consolidation")
+            logger.exception("[CROSS_GROUP_ERROR] %s", e)
             result.errors.append({"error": str(e)})
 
         if result.deleted_count > 0:
             logger.info(
-                f"Cross-group consolidation: deleted {result.deleted_count} channels, "
-                f"moved {result.moved_count} streams"
+                "[CROSS_GROUP] Deleted %d channels, moved %d streams",
+                result.deleted_count,
+                result.moved_count,
             )
 
         return result
@@ -313,7 +316,7 @@ class CrossGroupEnforcer:
                     self._channel_manager.update_channel(to_channel_id, {"streams": new_streams})
 
         except Exception as e:
-            logger.warning(f"Failed to sync streams to Dispatcharr: {e}")
+            logger.warning("[CROSS_GROUP] Failed to sync streams to Dispatcharr: %s", e)
 
     def _delete_channel_in_dispatcharr(self, channel_id: int) -> None:
         """Delete channel in Dispatcharr.
@@ -328,4 +331,4 @@ class CrossGroupEnforcer:
             with self._dispatcharr_lock:
                 self._channel_manager.delete_channel(channel_id)
         except Exception as e:
-            logger.warning(f"Failed to delete channel in Dispatcharr: {e}")
+            logger.warning("[CROSS_GROUP] Failed to delete channel in Dispatcharr: %s", e)

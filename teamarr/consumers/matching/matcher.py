@@ -20,7 +20,6 @@ Usage:
     matcher.purge_stale()
 """
 
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -50,6 +49,7 @@ from teamarr.core import Event
 from teamarr.database.leagues import get_league
 from teamarr.services import SportsDataService
 from teamarr.utilities.event_status import is_event_final
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +221,13 @@ class StreamMatcher:
         Returns:
             BatchMatchResult with all results
         """
+        logger.debug(
+            "[STARTED] Stream matching: %d streams, %d leagues, date=%s",
+            len(streams),
+            len(self._search_leagues),
+            target_date,
+        )
+
         # Only increment generation if not provided from parent run
         # (When called as part of full EPG generation, generation is shared across groups)
         if not self._generation_provided:
@@ -264,6 +271,14 @@ class StreamMatcher:
             # Report per-stream progress
             if progress_callback:
                 progress_callback(idx, total_streams, stream_name, match_result.matched)
+
+        logger.info(
+            "[COMPLETED] Stream matching: %d/%d matched (%d included), cache_hit_rate=%.1f%%",
+            result.matched_count,
+            result.total,
+            result.included_count,
+            result.cache_hit_rate * 100,
+        )
 
         return result
 

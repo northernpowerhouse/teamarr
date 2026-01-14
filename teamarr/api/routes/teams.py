@@ -7,6 +7,9 @@ from pydantic import BaseModel
 
 from teamarr.api.models import TeamCreate, TeamResponse, TeamUpdate
 from teamarr.database import get_db
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -159,6 +162,7 @@ def create_team(team: TeamCreate):
                 ),
             )
             team_id = cursor.lastrowid
+            logger.info("[CREATED] Team id=%d name=%s", team_id, team.team_name)
             cursor = conn.execute("SELECT * FROM teams WHERE id = ?", (team_id,))
             return _row_to_response(cursor.fetchone())
         except Exception as e:
@@ -205,6 +209,7 @@ def update_team(team_id: int, team: TeamUpdate):
         if updates.get("active") is False:
             conn.execute("DELETE FROM team_epg_xmltv WHERE team_id = ?", (team_id,))
 
+        logger.info("[UPDATED] Team id=%d fields=%s", team_id, list(updates.keys()))
         cursor = conn.execute("SELECT * FROM teams WHERE id = ?", (team_id,))
         return _row_to_response(cursor.fetchone())
 
@@ -218,6 +223,7 @@ def delete_team(team_id: int):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
         # Clean up orphaned XMLTV content
         conn.execute("DELETE FROM team_epg_xmltv WHERE team_id = ?", (team_id,))
+        logger.info("[DELETED] Team id=%d", team_id)
 
 
 @router.post("/teams/bulk-import", response_model=BulkImportResponse)
@@ -343,6 +349,7 @@ def bulk_import_teams(request: BulkImportRequest):
                 existing[key] = [(team_id, all_leagues)]
                 imported += 1
 
+    logger.info("[BULK_IMPORT] Teams: %d imported, %d updated, %d skipped", imported, updated, skipped)
     return BulkImportResponse(imported=imported, updated=updated, skipped=skipped)
 
 

@@ -167,7 +167,7 @@ class EPGManager:
 
             current = self.get_source(epg_id)
             if not current:
-                logger.debug(f"EPG refresh poll: could not get source {epg_id}")
+                logger.debug("[EPG] Refresh poll: could not get source %d", epg_id)
                 continue
 
             current_status = current.status
@@ -180,8 +180,10 @@ class EPGManager:
             if current_status != last_logged_status:
                 elapsed = time.time() - start_time
                 logger.debug(
-                    f"EPG refresh poll: status={current_status}, "
-                    f"message='{current_message}', elapsed={elapsed:.1f}s"
+                    "[EPG] Refresh poll: status=%s message='%s' elapsed=%.1fs",
+                    current_status,
+                    current_message,
+                    elapsed,
                 )
                 last_logged_status = current_status
 
@@ -198,7 +200,7 @@ class EPGManager:
             # but updated_at doesn't change, so we'd wait full timeout otherwise
             elif current_status == "success" and "no channels" in (current_message or "").lower():
                 duration = time.time() - start_time
-                logger.info(f"EPG refresh: no channels mapped yet (completed in {duration:.1f}s)")
+                logger.info("[EPG] Refresh: no channels mapped (%.1fs)", duration)
                 return RefreshResult(
                     success=True,
                     message=current_message or "EPG refresh completed (no channels mapped)",

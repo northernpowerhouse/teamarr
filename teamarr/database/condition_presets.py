@@ -5,10 +5,13 @@ Condition presets store reusable condition configurations for template descripti
 """
 
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from sqlite3 import Connection
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -123,7 +126,9 @@ def create_preset(
         (name, description, json.dumps(conditions)),
     )
     conn.commit()
-    return cursor.lastrowid
+    preset_id = cursor.lastrowid
+    logger.info("[CREATED] Condition preset id=%d name=%s", preset_id, name)
+    return preset_id
 
 
 # =============================================================================
@@ -178,7 +183,10 @@ def update_preset(
     query = f"UPDATE condition_presets SET {', '.join(updates)} WHERE id = ?"
     cursor = conn.execute(query, values)
     conn.commit()
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] Condition preset id=%d", preset_id)
+        return True
+    return False
 
 
 # =============================================================================
@@ -198,4 +206,7 @@ def delete_preset(conn: Connection, preset_id: int) -> bool:
     """
     cursor = conn.execute("DELETE FROM condition_presets WHERE id = ?", (preset_id,))
     conn.commit()
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[DELETED] Condition preset id=%d", preset_id)
+        return True
+    return False

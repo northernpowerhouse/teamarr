@@ -48,7 +48,7 @@ class LogoManager:
     def clear_cache(self) -> None:
         """Clear logo cache."""
         self._cache.clear()
-        logger.debug("LogoManager cache cleared")
+        logger.debug("[LOGO_CACHE] Cleared")
 
     def _ensure_cache(self) -> None:
         """Ensure cache is populated."""
@@ -61,7 +61,7 @@ class LogoManager:
                 logo = DispatcharrLogo.from_api(logo_data)
                 if logo.url:
                     self._cache[logo.url] = logo
-            logger.debug(f"Cached {len(self._cache)} logos")
+            logger.debug("[LOGO_CACHE] Populated %d logos", len(self._cache))
 
     def list_logos(self) -> list[DispatcharrLogo]:
         """List all logos in Dispatcharr.

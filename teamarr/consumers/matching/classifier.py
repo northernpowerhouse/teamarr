@@ -77,7 +77,7 @@ class CustomRegexConfig:
             try:
                 self._compiled = re.compile(self.teams_pattern, re.IGNORECASE)
             except re.error as e:
-                logger.warning(f"Invalid custom regex pattern: {e}")
+                logger.warning("[CLASSIFY] Invalid custom regex pattern: %s", e)
                 return None
 
         return self._compiled
@@ -460,77 +460,92 @@ def classify_stream(
     """
     # Step 1: Normalize
     normalized = normalize_stream(stream_name)
+    result: ClassifiedStream | None = None
 
     # Early exit for empty streams
     if not normalized.normalized:
-        return ClassifiedStream(
+        result = ClassifiedStream(
             category=StreamCategory.PLACEHOLDER,
             normalized=normalized,
         )
+    else:
+        text = normalized.normalized
 
-    text = normalized.normalized
-
-    # Step 2: Check placeholder patterns
-    if is_placeholder(text):
-        return ClassifiedStream(
-            category=StreamCategory.PLACEHOLDER,
-            normalized=normalized,
-        )
-
-    # Detect league and sport hints (useful for all categories)
-    league_hint = detect_league_hint(text)
-    sport_hint = detect_sport_hint(text)
-
-    # Step 3: Check for event card
-    if is_event_card(text, league_event_type):
-        event_hint = extract_event_card_hint(text)
-        return ClassifiedStream(
-            category=StreamCategory.EVENT_CARD,
-            normalized=normalized,
-            event_hint=event_hint,
-            league_hint=league_hint,
-            sport_hint=sport_hint,
-        )
-
-    # Step 4: Try custom regex for team extraction (if configured)
-    if custom_regex and custom_regex.teams_enabled:
-        team1, team2, success = extract_teams_with_custom_regex(text, custom_regex)
-        if success:
-            return ClassifiedStream(
-                category=StreamCategory.TEAM_VS_TEAM,
+        # Step 2: Check placeholder patterns
+        if is_placeholder(text):
+            result = ClassifiedStream(
+                category=StreamCategory.PLACEHOLDER,
                 normalized=normalized,
-                team1=team1,
-                team2=team2,
-                separator_found="custom_regex",
-                league_hint=league_hint,
-                sport_hint=sport_hint,
-                custom_regex_used=True,
             )
+        else:
+            # Detect league and sport hints (useful for all categories)
+            league_hint = detect_league_hint(text)
+            sport_hint = detect_sport_hint(text)
 
-    # Step 5: Check for game separator (builtin fallback)
-    separator, sep_position = find_game_separator(text)
-    if separator:
-        team1, team2 = extract_teams_from_separator(text, separator, sep_position)
+            # Step 3: Check for event card
+            if is_event_card(text, league_event_type):
+                event_hint = extract_event_card_hint(text)
+                result = ClassifiedStream(
+                    category=StreamCategory.EVENT_CARD,
+                    normalized=normalized,
+                    event_hint=event_hint,
+                    league_hint=league_hint,
+                    sport_hint=sport_hint,
+                )
 
-        # Only classify as TEAM_VS_TEAM if we got at least one team
-        if team1 or team2:
-            return ClassifiedStream(
-                category=StreamCategory.TEAM_VS_TEAM,
-                normalized=normalized,
-                team1=team1,
-                team2=team2,
-                separator_found=separator,
-                league_hint=league_hint,
-                sport_hint=sport_hint,
-            )
+            # Step 4: Try custom regex for team extraction (if configured)
+            elif custom_regex and custom_regex.teams_enabled:
+                team1, team2, success = extract_teams_with_custom_regex(text, custom_regex)
+                if success:
+                    result = ClassifiedStream(
+                        category=StreamCategory.TEAM_VS_TEAM,
+                        normalized=normalized,
+                        team1=team1,
+                        team2=team2,
+                        separator_found="custom_regex",
+                        league_hint=league_hint,
+                        sport_hint=sport_hint,
+                        custom_regex_used=True,
+                    )
 
-    # Step 6: Default to placeholder if we can't classify
-    return ClassifiedStream(
-        category=StreamCategory.PLACEHOLDER,
-        normalized=normalized,
-        league_hint=league_hint,
-        sport_hint=sport_hint,
+            # Step 5: Check for game separator (builtin fallback)
+            if result is None:
+                separator, sep_position = find_game_separator(text)
+                if separator:
+                    team1, team2 = extract_teams_from_separator(text, separator, sep_position)
+
+                    # Only classify as TEAM_VS_TEAM if we got at least one team
+                    if team1 or team2:
+                        result = ClassifiedStream(
+                            category=StreamCategory.TEAM_VS_TEAM,
+                            normalized=normalized,
+                            team1=team1,
+                            team2=team2,
+                            separator_found=separator,
+                            league_hint=league_hint,
+                            sport_hint=sport_hint,
+                        )
+
+            # Step 6: Default to placeholder if we can't classify
+            if result is None:
+                result = ClassifiedStream(
+                    category=StreamCategory.PLACEHOLDER,
+                    normalized=normalized,
+                    league_hint=league_hint,
+                    sport_hint=sport_hint,
+                )
+
+    logger.debug(
+        "[CLASSIFY] '%s' -> %s (league=%s, sport=%s, teams=%s/%s)",
+        stream_name[:50],
+        result.category.value,
+        result.league_hint,
+        result.sport_hint,
+        result.team1,
+        result.team2,
     )
+
+    return result
 
 
 def classify_streams(

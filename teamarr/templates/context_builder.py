@@ -4,8 +4,6 @@ Assembles TemplateContext from Event/Team data using SportsDataService.
 This is the bridge between the data layer and the template engine.
 """
 
-import logging
-
 from teamarr.core import Event, TeamStats
 from teamarr.services.sports_data import SportsDataService
 from teamarr.templates.context import (
@@ -14,6 +12,7 @@ from teamarr.templates.context import (
     TeamChannelContext,
     TemplateContext,
 )
+import logging
 from teamarr.utilities.sports import get_sport_from_league
 
 logger = logging.getLogger(__name__)
@@ -191,7 +190,7 @@ class ContextBuilder:
             try:
                 self._stats_cache[cache_key] = self._service.get_team_stats(team_id, league)
             except Exception as e:
-                logger.warning(f"Failed to fetch stats for team {team_id}: {e}")
+                logger.warning("[CONTEXT] Failed to fetch stats for team %s: %s", team_id, e)
                 self._stats_cache[cache_key] = None
         return self._stats_cache[cache_key]
 

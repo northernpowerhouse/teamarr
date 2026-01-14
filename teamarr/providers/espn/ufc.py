@@ -33,7 +33,7 @@ class UFCParserMixin:
         try:
             ufc_events = data["sports"][0]["leagues"][0]["events"]
         except (KeyError, IndexError):
-            logger.warning("Unexpected UFC events response structure")
+            logger.warning("[ESPN_UFC] Unexpected events response structure")
             return []
 
         events = []
@@ -118,7 +118,7 @@ class UFCParserMixin:
                 main_card_start=main_card_start,
             )
         except Exception as e:
-            logger.warning(f"Failed to parse UFC event {data.get('id', 'unknown')}: {e}")
+            logger.warning("[ESPN_UFC] Failed to parse event %s: %s", data.get('id', 'unknown'), e)
             return None
 
     def _parse_fighter_as_team(self, competitor: dict) -> Team:

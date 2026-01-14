@@ -3,7 +3,10 @@
 CRUD operations for managed_channel_history table.
 """
 
+import logging
 from sqlite3 import Connection
+
+logger = logging.getLogger(__name__)
 
 
 def log_channel_history(
@@ -37,6 +40,7 @@ def log_channel_history(
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (managed_channel_id, change_type, change_source, field_name, old_value, new_value, notes),
     )
+    logger.debug("[HISTORY] channel_id=%d type=%s source=%s", managed_channel_id, change_type, change_source)
     return cursor.lastrowid
 
 
@@ -80,4 +84,6 @@ def cleanup_old_history(conn: Connection, retention_days: int = 90) -> int:
            WHERE changed_at < datetime('now', ? || ' days')""",
         (f"-{retention_days}",),
     )
+    if cursor.rowcount > 0:
+        logger.info("[CLEANUP] Deleted %d history records older than %d days", cursor.rowcount, retention_days)
     return cursor.rowcount

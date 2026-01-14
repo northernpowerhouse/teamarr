@@ -70,7 +70,7 @@ def get_next_channel_number(
     if assignment_mode == "auto":
         channel_start = _calculate_auto_channel_start(conn, group_id, group["sort_order"])
         if not channel_start:
-            logger.warning(f"Could not calculate auto channel_start for group {group_id}")
+            logger.warning("[CHANNEL_NUM] Could not calculate auto channel_start for group %d", group_id)
             return None
         # Calculate block_end by finding where the next group starts
         # This allows dynamic expansion as a group adds more channels
@@ -85,9 +85,9 @@ def get_next_channel_number(
                 (channel_start, group_id),
             )
             conn.commit()
-            logger.info(f"Auto-assigned channel_start {channel_start} to MANUAL group {group_id}")
+            logger.info("[CHANNEL_NUM] Auto-assigned channel_start %d to MANUAL group %d", channel_start, group_id)
         else:
-            logger.warning(f"Could not auto-assign channel_start for group {group_id}")
+            logger.warning("[CHANNEL_NUM] Could not auto-assign channel_start for group %d", group_id)
 
     if not channel_start:
         return None
@@ -115,12 +115,12 @@ def get_next_channel_number(
 
     # For AUTO mode, enforce block_end limit
     if block_end and next_num > block_end:
-        logger.warning(f"Group {group_id} AUTO range exhausted ({channel_start}-{block_end})")
+        logger.warning("[CHANNEL_NUM] Group %d AUTO range exhausted (%d-%d)", group_id, channel_start, block_end)
         return None
 
     # Check global max
     if next_num > MAX_CHANNEL:
-        logger.warning(f"Channel number {next_num} exceeds max {MAX_CHANNEL}")
+        logger.warning("[CHANNEL_NUM] Channel number %d exceeds max %d", next_num, MAX_CHANNEL)
         return None
 
     return next_num
@@ -291,8 +291,8 @@ def _calculate_auto_channel_start(
 
             if current_start > effective_end:
                 logger.warning(
-                    f"AUTO group {group_id} would start at {current_start}, "
-                    f"exceeds range end {effective_end}"
+                    "[CHANNEL_NUM] AUTO group %d would start at %d, exceeds range end %d",
+                    group_id, current_start, effective_end
                 )
                 return None
             return current_start
@@ -353,7 +353,7 @@ def _get_next_available_range_start(conn: Connection) -> int | None:
             next_ten += 10
 
     if next_ten > effective_end:
-        logger.warning(f"No available channel range (would start at {next_ten})")
+        logger.warning("[CHANNEL_NUM] No available channel range (would start at %d)", next_ten)
         return None
 
     return next_ten
@@ -445,7 +445,7 @@ def reassign_out_of_range_channel(
     """
     new_number = get_next_channel_number(conn, group_id)
     if not new_number:
-        logger.warning(f"Could not reassign channel {channel_id} - no available numbers")
+        logger.warning("[CHANNEL_NUM] Could not reassign channel %d - no available numbers", channel_id)
         return None
 
     conn.execute(
@@ -456,8 +456,8 @@ def reassign_out_of_range_channel(
 
     range_start, range_end = get_group_channel_range(conn, group_id)
     logger.info(
-        f"Reassigned channel {channel_id}: {current_number} -> {new_number} "
-        f"(group range {range_start}-{range_end})"
+        "[CHANNEL_NUM] Reassigned channel %d: %d -> %d (group range %s-%s)",
+        channel_id, current_number, new_number, range_start, range_end
     )
 
     return new_number

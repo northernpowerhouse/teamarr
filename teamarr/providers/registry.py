@@ -100,7 +100,7 @@ class ProviderRegistry:
             priority: Lower = higher priority (tried first)
         """
         if name in cls._providers:
-            logger.warning(f"Provider '{name}' already registered, overwriting")
+            logger.warning("[REGISTRY] Provider '%s' already registered, overwriting", name)
 
         cls._providers[name] = ProviderConfig(
             name=name,
@@ -110,7 +110,7 @@ class ProviderRegistry:
             enabled=enabled,
             priority=priority,
         )
-        logger.debug(f"Registered provider: {name} (priority={priority})")
+        logger.debug("[REGISTRY] Registered provider: %s (priority=%d)", name, priority)
 
     @classmethod
     def get(cls, name: str) -> "SportsProvider | None":
@@ -193,7 +193,7 @@ class ProviderRegistry:
         # Reset cached instances so they get recreated with dependencies
         cls.reset_instances()
         cls._initialized = True
-        logger.info("Provider registry initialized with dependencies")
+        logger.info("[REGISTRY] Provider registry initialized with dependencies")
 
     @classmethod
     def is_initialized(cls) -> bool:

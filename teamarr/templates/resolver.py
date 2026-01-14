@@ -13,6 +13,9 @@ from typing import Any
 from teamarr.templates.conditions import get_condition_selector
 from teamarr.templates.context import GameContext, TemplateContext
 from teamarr.templates.variables import SuffixRules, get_registry
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Pattern matches: {variable} or {variable.next} or {variable.last}
 # Note: @ is allowed to support {vs_@} variable
@@ -52,15 +55,23 @@ class TemplateResolver:
         # Build all variables (base + suffixed)
         variables = self._build_all_variables(context)
 
+        unreplaced = []
+
         def replace(match: re.Match) -> str:
             var_name = match.group(1).lower()
             # Keep unknown variables literal (helps users identify typos)
             # Known variables with empty values still get replaced with ""
             if var_name not in variables:
+                unreplaced.append(var_name)
                 return match.group(0)  # Return original {variable} unchanged
             return variables[var_name]
 
-        return VARIABLE_PATTERN.sub(replace, template)
+        result = VARIABLE_PATTERN.sub(replace, template)
+
+        if unreplaced:
+            logger.debug("[UNREPLACED] Template variables: %s", unreplaced)
+
+        return result
 
     def _build_all_variables(self, ctx: TemplateContext) -> dict[str, str]:
         """Build complete variable dict with all suffixes.
@@ -134,6 +145,7 @@ class TemplateResolver:
         template = self._condition_selector.select(description_options, context, game_ctx)
 
         if not template:
+            logger.debug("[CONDITION] No matching template found")
             return ""
 
         # Resolve variables in the selected template

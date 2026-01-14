@@ -101,7 +101,7 @@ class KeywordEnforcer:
                 exception_keywords = get_exception_keywords(conn)
 
                 if not exception_keywords:
-                    logger.debug("No exception keywords configured, skipping enforcement")
+                    logger.debug("[KEYWORD] No exception keywords configured, skipping")
                     return result
 
                 # Get all active channels
@@ -240,13 +240,14 @@ class KeywordEnforcer:
                 conn.commit()
 
         except Exception as e:
-            logger.exception("Error during keyword enforcement")
+            logger.exception("[KEYWORD_ERROR] %s", e)
             result.errors.append({"error": str(e)})
 
         if result.moved_count > 0:
             logger.info(
-                f"Keyword enforcement: moved {result.moved_count} streams, "
-                f"{result.streams_correct} correct"
+                "[KEYWORD] Moved %d streams, %d correct",
+                result.moved_count,
+                result.streams_correct,
             )
 
         return result
@@ -288,4 +289,4 @@ class KeywordEnforcer:
                             )
 
         except Exception as e:
-            logger.warning(f"Failed to move stream in Dispatcharr: {e}")
+            logger.warning("[KEYWORD] Failed to move stream in Dispatcharr: %s", e)

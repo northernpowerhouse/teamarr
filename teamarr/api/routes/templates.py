@@ -12,6 +12,9 @@ from teamarr.api.models import (
     TemplateUpdate,
 )
 from teamarr.database import get_db
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -130,6 +133,7 @@ def create_template(template: TemplateCreate):
                 ),
             )
             template_id = cursor.lastrowid
+            logger.info("[CREATED] Template id=%d name=%s", template_id, template.name)
             cursor = conn.execute("SELECT * FROM templates WHERE id = ?", (template_id,))
             return dict(cursor.fetchone())
         except Exception as e:
@@ -195,6 +199,7 @@ def update_template(template_id: int, template: TemplateUpdate):
         cursor = conn.execute(f"UPDATE templates SET {set_clause} WHERE id = ?", values)
         if cursor.rowcount == 0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
+        logger.info("[UPDATED] Template id=%d fields=%s", template_id, list(updates.keys()))
         cursor = conn.execute("SELECT * FROM templates WHERE id = ?", (template_id,))
         return dict(cursor.fetchone())
 
@@ -206,3 +211,4 @@ def delete_template(template_id: int):
         cursor = conn.execute("DELETE FROM templates WHERE id = ?", (template_id,))
         if cursor.rowcount == 0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
+        logger.info("[DELETED] Template id=%d", template_id)

@@ -1,7 +1,6 @@
 """EPG generation endpoints."""
 
 import json
-import logging
 import queue
 import threading
 from datetime import date, datetime
@@ -37,6 +36,7 @@ from teamarr.services import (
     SportsDataService,
     create_epg_service,
 )
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,7 @@ def generate_epg(
         dispatcharr_client = get_dispatcharr_connection(get_db)
 
     # Run unified generation
+    logger.info("[STARTED] EPG generation via API")
     result = run_full_generation(
         db_factory=get_db,
         dispatcharr_client=dispatcharr_client,
@@ -86,10 +87,18 @@ def generate_epg(
     )
 
     if not result.success:
+        logger.error("[FAILED] EPG generation: %s", result.error)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=result.error or "Generation failed",
         )
+
+    logger.info(
+        "[COMPLETED] EPG generation: %d programmes, %d teams, %.1fs",
+        result.programmes_total,
+        result.teams_processed,
+        result.duration_seconds,
+    )
 
     return EPGGenerateResponse(
         programmes_count=result.programmes_total,
@@ -828,6 +837,14 @@ def correct_stream_match(
 
     fingerprint = compute_fingerprint(request.group_id, request.stream_id, request.stream_name)
 
+    if success:
+        logger.info(
+            "[CORRECTED] Stream match: group=%d, stream_id=%d, event=%s",
+            request.group_id,
+            request.stream_id,
+            request.correct_event_id,
+        )
+
     return MatchCorrectionResponse(
         success=success,
         fingerprint=fingerprint,
@@ -871,6 +888,13 @@ def remove_stream_correction(
 
     fingerprint = compute_fingerprint(group_id, stream_id, stream_name)
 
+    if success:
+        logger.info(
+            "[DELETED] Stream correction: group=%d, stream_id=%d",
+            group_id,
+            stream_id,
+        )
+
     return {
         "success": success,
         "fingerprint": fingerprint,
@@ -910,7 +934,8 @@ def search_events(
     for lg in leagues_to_search:
         try:
             events = service.get_events(lg, target)
-        except Exception:
+        except Exception as e:
+            logger.debug("[EPG] Event search failed for league=%s: %s", lg, e)
             continue
 
         for event in events:

@@ -121,7 +121,7 @@ class CricbuzzClient:
         with self._health_lock:
             self._health.parse_errors += 1
             self._health.last_error = error
-        logger.error(f"Cricbuzz parse error: {error}")
+        logger.warning("[CRICBUZZ] Parse error: %s", error)
 
     def _record_structure_warning(self, missing_field: str) -> None:
         """Record structure warning (field not found)."""
@@ -129,7 +129,7 @@ class CricbuzzClient:
             self._health.structure_warnings += 1
             if missing_field not in self._health.missing_fields:
                 self._health.missing_fields.append(missing_field)
-        logger.warning(f"Cricbuzz structure warning: missing field '{missing_field}'")
+        logger.warning("[CRICBUZZ] Structure warning: missing field '%s'", missing_field)
 
     def supports_league(self, league: str) -> bool:
         """Check if we support this league.
@@ -163,7 +163,7 @@ class CricbuzzClient:
             parts = league.split("/", 1)
             series_id = parts[0]
             slug = parts[1]
-            logger.debug(f"Using direct series ID path: {series_id}/{slug}")
+            logger.debug("[CRICBUZZ] Using direct series ID path: %s/%s", series_id, slug)
             return (series_id, slug)
 
         # Normal path: lookup from leagues table
@@ -376,7 +376,7 @@ class CricbuzzClient:
             return None
 
         except Exception as e:
-            logger.debug("Failed to parse match info for %s: %s", match_id, e)
+            logger.debug("[CRICBUZZ] Failed to parse match info for %s: %s", match_id, e)
             return None
 
     def get_live_matches(self) -> list[dict]:
@@ -388,7 +388,7 @@ class CricbuzzClient:
         cache_key = make_cache_key("cricbuzz", "live")
         cached = self._cache.get(cache_key)
         if cached is not None:
-            logger.debug("Cricbuzz cache hit: live")
+            logger.debug("[CRICBUZZ] Cache hit: live")
             return cached
 
         url = f"{CRICBUZZ_BASE_URL}/cricket-match/live-scores"
@@ -403,7 +403,7 @@ class CricbuzzClient:
         matches = data.get("matches", [])
         if matches:
             self._cache.set(cache_key, matches, CACHE_TTL_LIVE)
-            logger.debug(f"Cricbuzz cached {len(matches)} live matches")
+            logger.debug("[CRICBUZZ] Cached %d live matches", len(matches))
 
         return matches
 
@@ -420,7 +420,7 @@ class CricbuzzClient:
         cache_key = make_cache_key("cricbuzz", "schedule", series_id)
         cached = self._cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"Cricbuzz cache hit: schedule {series_id}")
+            logger.debug("[CRICBUZZ] Cache hit: schedule %s", series_id)
             return cached
 
         url = f"{CRICBUZZ_BASE_URL}/cricket-series/{series_id}/{series_slug}/matches"
@@ -438,7 +438,7 @@ class CricbuzzClient:
 
         if matches:
             self._cache.set(cache_key, matches, CACHE_TTL_SCHEDULE)
-            logger.debug(f"Cricbuzz cached {len(matches)} matches for series {series_id}")
+            logger.debug("[CRICBUZZ] Cached %d matches for series %s", len(matches), series_id)
 
         return matches
 
@@ -453,7 +453,7 @@ class CricbuzzClient:
         cache_key = make_cache_key("cricbuzz", "teams", series_id)
         cached = self._cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"Cricbuzz cache hit: teams {series_id}")
+            logger.debug("[CRICBUZZ] Cache hit: teams %s", series_id)
             return cached
 
         # Get schedule and extract unique teams
@@ -472,7 +472,7 @@ class CricbuzzClient:
         teams = list(teams_map.values())
         if teams:
             self._cache.set(cache_key, teams, CACHE_TTL_TEAMS)
-            logger.debug(f"Cricbuzz cached {len(teams)} teams for series {series_id}")
+            logger.debug("[CRICBUZZ] Cached %d teams for series %s", len(teams), series_id)
 
         return teams
 
@@ -488,7 +488,7 @@ class CricbuzzClient:
         """
         config = self.get_league_config(league)
         if not config:
-            logger.warning(f"Unknown Cricbuzz league: {league}")
+            logger.warning("[CRICBUZZ] Unknown league: %s", league)
             return []
 
         series_id, series_slug = config
@@ -613,7 +613,7 @@ class CricbuzzClient:
             message = (
                 f"Structure warnings ({self._health.structure_warnings}) - some fields missing"
             )
-            logger.warning(f"Cricbuzz health: DEGRADED - {message}")
+            logger.warning("[CRICBUZZ] Health: DEGRADED - %s", message)
         elif self._health.requests_failed > self._health.requests_success:
             status = "degraded"
             message = "More failures than successes"
@@ -650,7 +650,7 @@ class CricbuzzClient:
         url = f"{CRICBUZZ_BASE_URL}/cricket-series"
         html = self._fetch_page(url)
         if not html:
-            logger.warning("Failed to fetch Cricbuzz league listing for auto-discovery")
+            logger.warning("[CRICBUZZ] Failed to fetch league listing for auto-discovery")
             return {}
 
         # Extract all series paths from the page
@@ -677,7 +677,7 @@ class CricbuzzClient:
                 if int(series_id) > existing_id:
                     series_map[base_slug] = full_path
 
-        logger.info(f"Cricbuzz auto-discovery found {len(series_map)} active series")
+        logger.info("[CRICBUZZ] Auto-discovery found %d active series", len(series_map))
         return series_map
 
     def close(self) -> None:

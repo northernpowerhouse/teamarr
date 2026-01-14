@@ -63,7 +63,7 @@ class CricketHybridProvider(SportsProvider):
         # Get Cricbuzz league ID from fallback config
         cricbuzz_league_id = self._get_cricbuzz_league_id(league)
         if not cricbuzz_league_id:
-            logger.warning(f"No Cricbuzz fallback configured for {league}")
+            logger.warning("[CRICKET_HYBRID] No Cricbuzz fallback configured for %s", league)
             return []
 
         # Get events from Cricbuzz
@@ -75,7 +75,7 @@ class CricketHybridProvider(SportsProvider):
             try:
                 enriched.append(self._enrich_event(event, league))
             except Exception as e:
-                logger.warning(f"Failed to enrich event {event.id}: {e}")
+                logger.warning("[CRICKET_HYBRID] Failed to enrich event %s: %s", event.id, e)
                 enriched.append(event)  # Use original if enrichment fails
 
         return enriched
@@ -195,7 +195,8 @@ class CricketHybridProvider(SportsProvider):
                 # Check for significant overlap
                 if self._names_match(team_name_lower, cached_name_lower):
                     logger.debug(
-                        f"Fuzzy matched team '{team_name}' -> '{row['team_name']}'"
+                        "[CRICKET_HYBRID] Fuzzy matched team '%s' -> '%s'",
+                        team_name, row['team_name']
                     )
                     return row["logo_url"]
 

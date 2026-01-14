@@ -7,10 +7,13 @@ Templates control EPG title/description formatting and filler content.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from sqlite3 import Connection, Row
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from teamarr.core import TemplateConfig
@@ -322,7 +325,9 @@ def create_template(
 
     cursor = conn.execute(f"INSERT INTO templates ({column_str}) VALUES ({placeholders})", values)
     conn.commit()
-    return cursor.lastrowid
+    template_id = cursor.lastrowid
+    logger.info("[CREATED] Template id=%d name=%s type=%s", template_id, name, template_type)
+    return template_id
 
 
 # =============================================================================
@@ -374,7 +379,10 @@ def update_template(conn: Connection, template_id: int, **kwargs) -> bool:
 
     cursor = conn.execute(f"UPDATE templates SET {set_str} WHERE id = ?", values)
     conn.commit()
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] Template id=%d", template_id)
+        return True
+    return False
 
 
 # =============================================================================
@@ -394,7 +402,10 @@ def delete_template(conn: Connection, template_id: int) -> bool:
     """
     cursor = conn.execute("DELETE FROM templates WHERE id = ?", (template_id,))
     conn.commit()
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[DELETED] Template id=%d", template_id)
+        return True
+    return False
 
 
 # =============================================================================

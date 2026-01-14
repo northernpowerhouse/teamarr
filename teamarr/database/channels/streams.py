@@ -3,7 +3,10 @@
 CRUD operations for managed_channel_streams table.
 """
 
+import logging
 from sqlite3 import Connection
+
+logger = logging.getLogger(__name__)
 
 from .types import ManagedChannelStream
 
@@ -56,7 +59,9 @@ def add_stream_to_channel(
         f"INSERT INTO managed_channel_streams ({column_str}) VALUES ({placeholders})",
         values,
     )
-    return cursor.lastrowid
+    stream_id = cursor.lastrowid
+    logger.debug("[ATTACHED] Stream %d to channel %d priority=%d", dispatcharr_stream_id, managed_channel_id, priority)
+    return stream_id
 
 
 def remove_stream_from_channel(
@@ -85,7 +90,10 @@ def remove_stream_from_channel(
              AND removed_at IS NULL""",
         (reason, managed_channel_id, dispatcharr_stream_id),
     )
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.debug("[DETACHED] Stream %d from channel %d reason=%s", dispatcharr_stream_id, managed_channel_id, reason)
+        return True
+    return False
 
 
 def get_channel_streams(

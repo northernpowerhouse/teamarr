@@ -185,8 +185,9 @@ class ChildStreamProcessor:
                         )
                         if parent_channel:
                             logger.debug(
-                                f"Keyword channel not found for '{matched_keyword}', "
-                                f"using main channel for event {event_id}"
+                                "[CHILD] Keyword channel not found for '%s', using main for %s",
+                                matched_keyword,
+                                event_id,
                             )
 
                     if not parent_channel:
@@ -254,13 +255,16 @@ class ChildStreamProcessor:
                 conn.commit()
 
         except Exception as e:
-            logger.exception(f"Error processing child streams for group {child_group_name}")
+            logger.exception("[CHILD_ERROR] %s: %s", child_group_name, e)
             result.errors.append({"error": str(e)})
 
         logger.info(
-            f"Child group '{child_group_name}': "
-            f"{result.added_count} added, {result.skipped_count} skipped, "
-            f"{len(result.streams_existing)} existing, {result.error_count} errors"
+            "[CHILD] %s: added=%d skipped=%d existing=%d errors=%d",
+            child_group_name,
+            result.added_count,
+            result.skipped_count,
+            len(result.streams_existing),
+            result.error_count,
         )
 
         return result
@@ -286,7 +290,7 @@ class ChildStreamProcessor:
             with self._dispatcharr_lock:
                 channel = self._channel_manager.get_channel(dispatcharr_channel_id)
                 if not channel:
-                    logger.warning(f"Channel {dispatcharr_channel_id} not found in Dispatcharr")
+                    logger.warning("[CHILD] Channel %d not found in Dispatcharr", dispatcharr_channel_id)
                     return False
 
                 current_streams = list(channel.streams) if channel.streams else []
@@ -303,5 +307,5 @@ class ChildStreamProcessor:
                 return result.success if hasattr(result, "success") else bool(result)
 
         except Exception as e:
-            logger.warning(f"Failed to sync stream to Dispatcharr: {e}")
+            logger.warning("[CHILD] Failed to sync stream to Dispatcharr: %s", e)
             return False

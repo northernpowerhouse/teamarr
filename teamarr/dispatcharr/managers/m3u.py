@@ -80,7 +80,7 @@ class M3UManager:
         response = self._client.get("/api/m3u/accounts/")
         if response is None or response.status_code != 200:
             status = response.status_code if response else "No response"
-            logger.error(f"Failed to list M3U accounts: {status}")
+            logger.error("[M3U] Failed to list accounts: %s", status)
             return []
         accounts = [DispatcharrM3UAccount.from_api(a) for a in response.json()]
         if not include_custom:
@@ -118,7 +118,7 @@ class M3UManager:
         response = self._client.get("/api/channels/groups/")
         if response is None or response.status_code != 200:
             status = response.status_code if response else "No response"
-            logger.error(f"Failed to list channel groups: {status}")
+            logger.error("[M3U] Failed to list channel groups: %s", status)
             return []
 
         groups = [DispatcharrChannelGroup.from_api(g) for g in response.json()]
@@ -224,7 +224,7 @@ class M3UManager:
             response = self._client.get(url)
             if response is None or response.status_code != 200:
                 status = response.status_code if response else "No response"
-                logger.error(f"Failed to list streams: {status}")
+                logger.error("[M3U] Failed to list streams: %s", status)
                 return []
 
             data = response.json()

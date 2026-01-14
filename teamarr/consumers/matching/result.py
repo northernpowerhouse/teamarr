@@ -481,8 +481,8 @@ def log_result(
         if outcome.event:
             event_name = outcome.event.short_name or outcome.event.name
 
-        conf = f" ({outcome.confidence:.0%})" if outcome.confidence < 1.0 else ""
-        logger.info(f"[{method.upper()}{conf}] {display_name} -> {league} | {event_name}")
+        conf = " (%.0f%%)" % (outcome.confidence * 100) if outcome.confidence < 1.0 else ""
+        logger.info("[%s%s] %s -> %s | %s", method.upper(), conf, display_name, league, event_name)
 
     elif outcome.is_excluded:
         reason = outcome.excluded_reason.value if outcome.excluded_reason else "unknown"
@@ -492,21 +492,21 @@ def log_result(
         if outcome.event:
             event_name = outcome.event.short_name or outcome.event.name
 
-        logger.info(f"[EXCLUDED:{reason}] {display_name} -> {league} | {event_name} (via {method})")
+        logger.info("[EXCLUDED:%s] %s -> %s | %s (via %s)", reason, display_name, league, event_name, method)
 
     elif outcome.is_failed:
         reason = outcome.failed_reason.value if outcome.failed_reason else "unknown"
         detail = outcome.detail or ""
 
         if detail:
-            logger.info(f"[FAILED:{reason}] {display_name} | {detail}")
+            logger.info("[FAILED:%s] %s | %s", reason, display_name, detail)
         else:
-            logger.info(f"[FAILED:{reason}] {display_name}")
+            logger.info("[FAILED:%s] %s", reason, display_name)
 
     elif outcome.is_filtered:
         reason = outcome.filtered_reason.value if outcome.filtered_reason else "unknown"
         # All filtered reasons are debug-level (expected high volume, pre-match)
-        logger.debug(f"[FILTERED:{reason}] {display_name}")
+        logger.debug("[FILTERED:%s] %s", reason, display_name)
 
 
 def format_result_summary(
@@ -565,7 +565,7 @@ class ResultAggregator:
         agg = ResultAggregator()
         for outcome in outcomes:
             agg.add(outcome)
-        print(agg.summary())
+        logger.info(agg.summary())
     """
 
     matched: int = 0

@@ -20,7 +20,10 @@ from teamarr.database.templates import EventTemplateConfig
 from teamarr.services import SportsDataService
 from teamarr.templates.context_builder import ContextBuilder
 from teamarr.templates.resolver import TemplateResolver
+import logging
 from teamarr.utilities.sports import get_sport_duration
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -77,6 +80,12 @@ class EventEPGGenerator:
         """
         options = options or EventEPGOptions()
 
+        logger.debug(
+            "[STARTED] Event EPG for %d leagues, date=%s",
+            len(leagues),
+            target_date,
+        )
+
         all_events: list[Event] = []
         for league in leagues:
             # TSDB leagues use cache-only (no API calls during generation)
@@ -118,6 +127,13 @@ class EventEPGGenerator:
 
             programme = self._event_to_programme(event, context, channel_id, options)
             programmes.append(programme)
+
+        logger.info(
+            "[COMPLETED] Event EPG: %d events -> %d programmes, %d channels",
+            len(all_events),
+            len(programmes),
+            len(channels),
+        )
 
         return programmes, channels
 
@@ -295,6 +311,11 @@ class EventEPGGenerator:
         """
         options = options or EventEPGOptions()
 
+        logger.debug(
+            "[STARTED] Event EPG for %d matched streams",
+            len(matched_streams),
+        )
+
         programmes = []
         channels = []
 
@@ -343,5 +364,11 @@ class EventEPGGenerator:
                 event, context, tvg_id, options, stream_name=stream_name
             )
             programmes.append(programme)
+
+        logger.info(
+            "[COMPLETED] Event EPG for matched streams: %d programmes, %d channels",
+            len(programmes),
+            len(channels),
+        )
 
         return programmes, channels

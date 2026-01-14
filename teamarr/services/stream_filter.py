@@ -5,7 +5,10 @@ Uses the 'regex' module if available for advanced patterns,
 otherwise falls back to standard 're' module.
 """
 
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 from dataclasses import dataclass, field
 from re import Pattern
 
@@ -147,7 +150,8 @@ def compile_pattern(pattern: str | None, ignore_case: bool = True) -> Pattern | 
 
     try:
         return REGEX_MODULE.compile(pattern.strip(), flags)
-    except Exception:
+    except Exception as e:
+        logger.debug("[FILTER] Failed to compile regex pattern '%s': %s", pattern, e)
         return None
 
 

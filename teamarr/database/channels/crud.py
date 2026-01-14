@@ -91,7 +91,9 @@ def create_managed_channel(
         f"INSERT INTO managed_channels ({column_str}) VALUES ({placeholders})",
         values,
     )
-    return cursor.lastrowid
+    channel_id = cursor.lastrowid
+    logger.info("[CREATED] Managed channel id=%d name=%s event=%s", channel_id, channel_name, event_id)
+    return channel_id
 
 
 def get_managed_channel(conn: Connection, channel_id: int) -> ManagedChannel | None:
@@ -316,7 +318,10 @@ def update_managed_channel(conn: Connection, channel_id: int, data: dict) -> boo
         f"UPDATE managed_channels SET {set_clause} WHERE id = ?",
         values,
     )
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.debug("[UPDATED] Managed channel id=%d fields=%s", channel_id, list(data.keys()))
+        return True
+    return False
 
 
 def mark_channel_deleted(
@@ -341,7 +346,10 @@ def mark_channel_deleted(
            WHERE id = ?""",
         (reason, channel_id),
     )
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[DELETED] Managed channel id=%d reason=%s", channel_id, reason)
+        return True
+    return False
 
 
 def find_existing_channel(

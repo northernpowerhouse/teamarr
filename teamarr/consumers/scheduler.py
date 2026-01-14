@@ -97,14 +97,14 @@ class CronScheduler:
             True if started, False if already running
         """
         if self.is_running:
-            logger.warning("Scheduler already running")
+            logger.warning("[CRON] Scheduler already running")
             return False
 
         # Validate cron expression
         try:
             croniter(self._cron_expression)
         except (KeyError, ValueError) as e:
-            logger.error(f"Invalid cron expression '{self._cron_expression}': {e}")
+            logger.error("[CRON] Invalid expression '%s': %s", self._cron_expression, e)
             return False
 
         self._stop_event.clear()
@@ -115,7 +115,7 @@ class CronScheduler:
             daemon=True,
         )
         self._thread.start()
-        logger.info(f"Cron scheduler started (expression: {self._cron_expression})")
+        logger.info("[CRON] Scheduler started: %s", self._cron_expression)
         return True
 
     def stop(self, timeout: float = 30.0) -> bool:
@@ -130,17 +130,17 @@ class CronScheduler:
         if not self.is_running:
             return True
 
-        logger.info("Stopping cron scheduler...")
+        logger.debug("[CRON] Stopping scheduler...")
         self._stop_event.set()
         self._running = False
 
         if self._thread:
             self._thread.join(timeout=timeout)
             if self._thread.is_alive():
-                logger.warning("Scheduler thread did not stop in time")
+                logger.warning("[CRON] Scheduler thread did not stop in time")
                 return False
 
-        logger.info("Cron scheduler stopped")
+        logger.info("[CRON] Scheduler stopped")
         return True
 
     def run_once(self) -> dict:
@@ -156,10 +156,10 @@ class CronScheduler:
         # Run immediately on startup if configured
         if self._run_on_start:
             try:
-                logger.info("Running initial scheduled tasks...")
+                logger.info("[CRON] Running initial scheduled tasks")
                 self._run_tasks()
             except Exception as e:
-                logger.exception(f"Error in initial scheduler run: {e}")
+                logger.exception("[CRON] Error in initial run: %s", e)
 
         while not self._stop_event.is_set():
             # Calculate next run time
@@ -167,8 +167,10 @@ class CronScheduler:
             self._next_run = cron.get_next(datetime)
 
             wait_seconds = (self._next_run - datetime.now()).total_seconds()
-            logger.info(
-                f"Next scheduled run at {self._next_run.strftime('%Y-%m-%d %H:%M:%S')} ({wait_seconds:.0f}s)"
+            logger.debug(
+                "[CRON] Next run: %s (%.0fs)",
+                self._next_run.strftime("%Y-%m-%d %H:%M:%S"),
+                wait_seconds,
             )
 
             # Wait until next run time (checking stop event every second)
@@ -182,9 +184,10 @@ class CronScheduler:
 
             # Run tasks
             try:
+                logger.info("[CRON] Scheduled run triggered")
                 self._run_tasks()
             except Exception as e:
-                logger.exception(f"Error in scheduler run: {e}")
+                logger.exception("[CRON] Error in scheduled run: %s", e)
 
     def _run_tasks(self) -> dict:
         """Run all scheduled tasks.
@@ -209,14 +212,14 @@ class CronScheduler:
         try:
             results["cache_refresh"] = self._task_refresh_cache()
         except Exception as e:
-            logger.warning(f"Cache refresh task failed: {e}")
+            logger.warning("[CRON] Cache refresh task failed: %s", e)
             results["cache_refresh"] = {"error": str(e)}
 
         try:
             # Single unified generation call - does everything
             results["epg_generation"] = self._task_generate_epg()
         except Exception as e:
-            logger.warning(f"EPG generation task failed: {e}")
+            logger.warning("[CRON] EPG generation task failed: %s", e)
             results["epg_generation"] = {"error": str(e)}
 
         results["completed_at"] = datetime.now().isoformat()
@@ -234,14 +237,19 @@ class CronScheduler:
         refreshed = cache_service.refresh_if_needed(max_age_days=7)
 
         if refreshed:
-            logger.info("Weekly cache refresh completed")
             stats = cache_service.get_stats()
+            logger.info(
+                "[CRON] Weekly cache refresh: %d leagues, %d teams",
+                stats.leagues_count,
+                stats.teams_count,
+            )
             return {
                 "refreshed": True,
                 "leagues_count": stats.leagues_count,
                 "teams_count": stats.teams_count,
             }
         else:
+            logger.debug("[CRON] Cache refresh skipped: not stale")
             return {"refreshed": False, "reason": "Cache not stale yet"}
 
     def _task_generate_epg(self) -> dict:
@@ -267,7 +275,7 @@ class CronScheduler:
 
         # Mark generation as started (enables UI polling)
         if not start_generation():
-            logger.warning("Generation already in progress, skipping scheduled run")
+            logger.warning("[CRON] EPG generation skipped: already in progress")
             return {"success": False, "error": "Generation already in progress"}
 
         def progress_callback(
@@ -373,14 +381,14 @@ def start_lifecycle_scheduler(
         epg_settings = get_epg_settings(conn)
 
     if not scheduler_settings.enabled:
-        logger.info("Scheduler disabled in settings")
+        logger.info("[CRON] Scheduler disabled in settings")
         return False
 
     # Use provided cron expression or fall back to settings
     cron = cron_expression or epg_settings.cron_expression or "0 * * * *"
 
     if _scheduler and _scheduler.is_running:
-        logger.warning("Scheduler already running")
+        logger.warning("[CRON] Scheduler already running")
         return False
 
     _scheduler = CronScheduler(

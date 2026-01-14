@@ -16,10 +16,13 @@ from teamarr.core import Event, Programme, TeamStats
 from teamarr.services.sports_data import SportsDataService
 from teamarr.templates.context import GameContext, Odds, TeamChannelContext, TemplateContext
 from teamarr.templates.resolver import TemplateResolver
+import logging
 from teamarr.utilities.sports import get_sport_duration
 from teamarr.utilities.time_blocks import create_filler_chunks
 
 from .types import ConditionalFillerTemplate, FillerTemplate
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -151,6 +154,11 @@ class EventFillerGenerator:
                 filler_type="pregame",
             )
             programmes.extend(pregame_programmes)
+            logger.debug(
+                "[FILLER] event=%s: %d pregame programmes",
+                event.id,
+                len(pregame_programmes),
+            )
 
         # Generate postgame filler
         if config.postgame_enabled and event_end < epg_end:
@@ -168,6 +176,11 @@ class EventFillerGenerator:
                 filler_type="postgame",
             )
             programmes.extend(postgame_programmes)
+            logger.debug(
+                "[FILLER] event=%s: %d postgame programmes",
+                event.id,
+                len(postgame_programmes),
+            )
 
         return programmes
 
@@ -378,11 +391,7 @@ class EventFillerGenerator:
             try:
                 self._stats_cache[cache_key] = self._service.get_team_stats(team_id, league)
             except Exception as e:
-                import logging
-
-                logging.getLogger(__name__).warning(
-                    f"Failed to fetch stats for team {team_id}: {e}"
-                )
+                logger.warning("[STATS] Failed to fetch stats for team %s: %s", team_id, e)
                 self._stats_cache[cache_key] = None
         return self._stats_cache[cache_key]
 

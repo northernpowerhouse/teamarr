@@ -83,12 +83,12 @@ class CacheRefresher:
         start_time = time.time()
 
         def report(msg: str, pct: int) -> None:
-            logger.info(f"Cache refresh: {msg}")
             if progress_callback:
                 progress_callback(msg, pct)
 
         try:
             self._set_refresh_in_progress(True)
+            logger.info("[STARTED] Cache refresh")
             report("Starting cache refresh...", 5)
 
             # Collect all teams and leagues
@@ -100,7 +100,7 @@ class CacheRefresher:
             num_providers = len(providers)
 
             if num_providers == 0:
-                logger.warning("No providers registered!")
+                logger.warning("[CACHE_REFRESH] No providers registered!")
                 return {
                     "success": False,
                     "leagues_count": 0,
@@ -165,6 +165,12 @@ class CacheRefresher:
             self._update_meta(len(all_leagues), len(all_teams), duration, None)
             self._set_refresh_in_progress(False)
 
+            logger.info(
+                "[COMPLETED] Cache refresh: %d leagues, %d teams, %.1fs",
+                len(all_leagues),
+                len(all_teams),
+                duration,
+            )
             report(f"Cache refresh complete in {duration:.1f}s", 100)
 
             return {
@@ -176,7 +182,7 @@ class CacheRefresher:
             }
 
         except Exception as e:
-            logger.error(f"Cache refresh failed: {e}")
+            logger.error("[FAILED] Cache refresh: %s", e)
             self._update_meta(0, 0, time.time() - start_time, str(e))
             self._set_refresh_in_progress(False)
             return {
@@ -200,7 +206,7 @@ class CacheRefresher:
         stats = cache.get_cache_stats()
 
         if stats.is_stale or cache.is_cache_empty():
-            logger.info("Cache is stale or empty, refreshing...")
+            logger.info("[CACHE_REFRESH] Cache is stale or empty, refreshing...")
             result = self.refresh()
             return result["success"]
 
@@ -241,7 +247,7 @@ class CacheRefresher:
                     supported_leagues.append(slug)
 
         if not supported_leagues:
-            logger.info(f"No leagues found for provider {provider_name}")
+            logger.info("[CACHE_REFRESH] No leagues found for provider %s", provider_name)
             return [], []
 
         # Build league list with sport info
@@ -277,7 +283,7 @@ class CacheRefresher:
                             if not league_name:
                                 league_name = league_info_api.get("name")
                     except Exception as e:
-                        logger.debug(f"Could not fetch league info for {league_slug}: {e}")
+                        logger.debug("[CACHE_REFRESH] Could not fetch league info for %s: %s", league_slug, e)
 
                 league_info = {
                     "league_slug": league_slug,
@@ -305,7 +311,7 @@ class CacheRefresher:
 
                 return league_info, team_entries
             except Exception as e:
-                logger.warning(f"Failed to fetch {provider_name} teams for {league_slug}: {e}")
+                logger.warning("[CACHE_REFRESH] Failed to fetch %s teams for %s: %s", provider_name, league_slug, e)
                 db_metadata = self._get_league_metadata(league_slug)
                 return {
                     "league_slug": league_slug,
@@ -336,9 +342,14 @@ class CacheRefresher:
                     teams.extend(team_entries)
                 except Exception as e:
                     slug, sport = futures[future]
-                    logger.warning(f"Error processing {provider_name} {slug}: {e}")
+                    logger.warning("[CACHE_REFRESH] Error processing %s %s: %s", provider_name, slug, e)
 
-        logger.info(f"{provider_name} discovery: {len(leagues)} leagues, {len(teams)} teams")
+        logger.debug(
+            "[DISCOVERY] %s: %d leagues, %d teams",
+            provider_name,
+            len(leagues),
+            len(teams),
+        )
         return leagues, teams
 
     def _infer_sport_from_league(self, league_slug: str) -> str:
@@ -401,7 +412,7 @@ class CacheRefresher:
                         if resp.status_code == 200:
                             return resp.json().get("slug")
                 except (httpx.RequestError, httpx.HTTPStatusError) as e:
-                    logger.debug(f"Failed to fetch league slug from {ref_url}: {e}")
+                    logger.debug("[CACHE_REFRESH] Failed to fetch league slug from %s: %s", ref_url, e)
                 return None
 
             # Fetch slugs in parallel
@@ -425,11 +436,11 @@ class CacheRefresher:
                     if slug and self._should_include_soccer_league(slug):
                         slugs.append(slug)
 
-            logger.info(f"Found {len(slugs)} ESPN soccer leagues")
+            logger.info("[CACHE_REFRESH] Found %d ESPN soccer leagues", len(slugs))
             return slugs
 
         except Exception as e:
-            logger.error(f"Failed to fetch ESPN soccer leagues: {e}")
+            logger.error("[CACHE_REFRESH] Failed to fetch ESPN soccer leagues: %s", e)
             return []
 
     def _should_include_soccer_league(self, slug: str) -> bool:
@@ -519,7 +530,11 @@ class CacheRefresher:
             # Update cached_team_count in the leagues table for configured leagues
             self._update_leagues_team_counts(cursor, leagues)
 
-            logger.info(f"Saved {len(leagues)} leagues and {len(unique_teams)} teams to cache")
+            logger.debug(
+                "[SAVED] Cache: %d leagues, %d teams",
+                len(leagues),
+                len(unique_teams),
+            )
 
     def _update_leagues_team_counts(self, cursor, leagues: list[dict]) -> None:
         """Update cached_team_count in the leagues table.
@@ -660,7 +675,7 @@ class CacheRefresher:
 
         added_from_seed = len(merged_teams) - len(api_teams)
         if added_from_seed > 0:
-            logger.info(f"Merged {added_from_seed} teams from TSDB seed")
+            logger.info("[CACHE_REFRESH] Merged %d teams from TSDB seed", added_from_seed)
 
         return merged_teams, merged_leagues
 
@@ -706,7 +721,7 @@ class CacheRefresher:
         discovered = client.discover_active_series()
 
         if not discovered:
-            logger.warning("Cricbuzz auto-discovery returned no series")
+            logger.warning("[CRICBUZZ] Auto-discovery returned no series")
             return 0
 
         # Update leagues with discovered series IDs
@@ -732,8 +747,8 @@ class CacheRefresher:
                             (new_id, league_code),
                         )
                         logger.info(
-                            f"Cricbuzz auto-update (fallback): {league_code} "
-                            f"{current_id} -> {new_id}"
+                            "[CRICBUZZ] Auto-update (fallback): %s %s -> %s",
+                            league_code, current_id, new_id,
                         )
                         updated += 1
                 elif row["provider"] == "cricbuzz":
@@ -745,13 +760,13 @@ class CacheRefresher:
                             (new_id, league_code),
                         )
                         logger.info(
-                            f"Cricbuzz auto-update: {league_code} "
-                            f"{current_id} -> {new_id}"
+                            "[CRICBUZZ] Auto-update: %s %s -> %s",
+                            league_code, current_id, new_id,
                         )
                         updated += 1
 
         if updated > 0:
-            logger.info(f"Updated {updated} Cricbuzz series ID(s)")
+            logger.info("[CRICBUZZ] Updated %d series ID(s)", updated)
 
         return updated
 
@@ -804,11 +819,11 @@ class CacheRefresher:
                     )
                     updated += 1
                     logger.debug(
-                        f"Updated soccer team {team_id}: "
-                        f"{len(current_leagues)} -> {len(all_leagues)} leagues"
+                        "[CACHE_REFRESH] Updated soccer team %d: %d -> %d leagues",
+                        team_id, len(current_leagues), len(all_leagues),
                     )
 
             if updated > 0:
-                logger.info(f"Updated leagues for {updated} soccer teams")
+                logger.info("[CACHE_REFRESH] Updated leagues for %d soccer teams", updated)
 
         return updated

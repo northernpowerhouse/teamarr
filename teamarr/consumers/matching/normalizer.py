@@ -15,6 +15,9 @@ from datetime import date, time
 from unidecode import unidecode
 
 from teamarr.utilities.constants import CITY_TRANSLATIONS, PROVIDER_PREFIXES
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -80,6 +83,9 @@ def fix_mojibake(text: str) -> str:
     result = text
     for pattern, replacement in MOJIBAKE_PATTERNS:
         result = result.replace(pattern, replacement)
+
+    if result != text:
+        logger.debug("[MOJIBAKE] Fixed: '%s' -> '%s'", text[:40], result[:40])
 
     return result
 
@@ -358,6 +364,15 @@ def normalize_stream(stream_name: str) -> NormalizedStream:
     # Step 5: Clean whitespace and normalize
     text = " ".join(text.split())
     text = text.strip()
+
+    logger.debug(
+        "[NORMALIZE] '%s' -> '%s' (date=%s, time=%s, prefix=%s)",
+        original[:60],
+        text[:60],
+        extracted_date,
+        extracted_time,
+        provider_prefix,
+    )
 
     return NormalizedStream(
         original=original,

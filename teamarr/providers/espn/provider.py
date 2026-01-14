@@ -4,7 +4,6 @@ Fetches data from ESPN API and normalizes into our dataclass format.
 Pure fetch + normalize - no caching (caching is in service layer).
 """
 
-import logging
 from datetime import date, datetime, timedelta
 
 from teamarr.core import (
@@ -20,6 +19,7 @@ from teamarr.providers.espn.client import ESPNClient
 from teamarr.providers.espn.constants import STATUS_MAP, TOURNAMENT_SPORTS
 from teamarr.providers.espn.tournament import TournamentParserMixin
 from teamarr.providers.espn.ufc import UFCParserMixin
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -414,7 +414,7 @@ class ESPNProvider(UFCParserMixin, TournamentParserMixin, SportsProvider):
                 odds_data=odds_data,
             )
         except Exception as e:
-            logger.warning(f"Failed to parse event {data.get('id', 'unknown')}: {e}")
+            logger.warning("[ESPN] Failed to parse event %s: %s", data.get('id', 'unknown'), e)
             return None
 
     def _parse_team(self, competitor: dict, league: str, sport: str) -> Team:
@@ -573,7 +573,7 @@ class ESPNProvider(UFCParserMixin, TournamentParserMixin, SportsProvider):
                 "away_moneyline": away_ml,
             }
         except Exception as e:
-            logger.debug(f"Failed to parse odds: {e}")
+            logger.debug("[ESPN] Failed to parse odds: %s", e)
             return None
 
     def get_league_teams(self, league: str) -> list[Team]:
@@ -605,7 +605,7 @@ class ESPNProvider(UFCParserMixin, TournamentParserMixin, SportsProvider):
             try:
                 team_list = data["sports"][0]["leagues"][0]["teams"]
             except (KeyError, IndexError):
-                logger.warning(f"Unexpected teams response structure for {league}")
+                logger.warning("[ESPN] Unexpected teams response structure for %s", league)
                 return []
 
         for entry in team_list:

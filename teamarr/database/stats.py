@@ -930,5 +930,5 @@ def cleanup_stuck_runs(conn: Connection) -> int:
     conn.commit()
     count = cursor.rowcount
     if count > 0:
-        logger.info(f"Cleaned up {count} stuck processing run(s)")
+        logger.info("[STATS] Cleaned up %d stuck processing run(s)", count)
     return count

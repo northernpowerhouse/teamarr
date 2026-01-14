@@ -126,7 +126,7 @@ class ChannelReconciler:
                 channel_manager=ChannelManager(client),
             )
             result = reconciler.reconcile(auto_fix=True)
-            print(f"Found {result.summary['total']} issues, fixed {result.summary['fixed']}")
+            logger.info(f"Found {result.summary['total']} issues, fixed {result.summary['fixed']}")
     """
 
     def __init__(
@@ -275,12 +275,12 @@ class ChannelReconciler:
                         {"dispatcharr_uuid": dispatcharr_channel.uuid},
                     )
                     logger.debug(
-                        f"Backfilled UUID for channel '{channel.channel_name}': "
-                        f"{dispatcharr_channel.uuid}"
+                        "[RECONCILE] Backfilled UUID for channel '%s': %s",
+                        channel.channel_name, dispatcharr_channel.uuid,
                     )
 
         if issues:
-            logger.info(f"Found {len(issues)} Teamarr orphan(s)")
+            logger.info("[ORPHAN_TEAMARR] Found %d orphan(s)", len(issues))
 
         return issues
 
@@ -346,7 +346,7 @@ class ChannelReconciler:
                 )
 
         if issues:
-            logger.info(f"Found {len(issues)} Dispatcharr orphan(s)")
+            logger.info("[ORPHAN_DISPATCHARR] Found %d orphan(s)", len(issues))
 
         return issues
 
@@ -419,7 +419,7 @@ class ChannelReconciler:
             )
 
         if issues:
-            logger.info(f"Found {len(issues)} duplicate event(s)")
+            logger.info("[DUPLICATE] Found %d duplicate event(s)", len(issues))
 
         return issues
 
@@ -520,7 +520,7 @@ class ChannelReconciler:
                 )
 
         if issues:
-            logger.info(f"Found {len(issues)} channel(s) with drift")
+            logger.info("[DRIFT] Found %d channel(s) with drift", len(issues))
 
         return issues
 
@@ -569,7 +569,7 @@ class ChannelReconciler:
                                 "action": "marked_deleted",
                             }
                         )
-                        logger.info(f"Marked orphan channel as deleted: {issue.channel_name}")
+                        logger.info("[FIXED] Marked orphan deleted: %s", issue.channel_name)
 
                 elif issue.issue_type == "orphan_dispatcharr":
                     # Delete from Dispatcharr
@@ -586,7 +586,7 @@ class ChannelReconciler:
                                     "action": "deleted_from_dispatcharr",
                                 }
                             )
-                            logger.info(f"Deleted orphan Dispatcharr channel: {issue.channel_name}")
+                            logger.info("[FIXED] Deleted orphan from Dispatcharr: %s", issue.channel_name)
                         else:
                             result.errors.append(
                                 f"Failed to delete orphan channel: {delete_result.error}"
@@ -616,7 +616,7 @@ class ChannelReconciler:
                                     "fields": list(update_data.keys()),
                                 }
                             )
-                            logger.info(f"Synced drift for channel: {issue.channel_name}")
+                            logger.info("[FIXED] Synced drift: %s", issue.channel_name)
 
                 elif issue.issue_type == "duplicate":
                     # Duplicate fix is more complex - skip for now
@@ -632,7 +632,7 @@ class ChannelReconciler:
                 result.errors.append(
                     f"Failed to fix {issue.issue_type} for {issue.channel_name}: {e}"
                 )
-                logger.warning(f"Failed to fix issue: {e}")
+                logger.warning("[FIX_ERROR] %s: %s", issue.channel_name, e)
 
     def verify_channel(
         self,

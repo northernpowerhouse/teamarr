@@ -137,10 +137,9 @@ class LeagueMappingService:
                     self._league_cache_names[slug] = row["league_name"]
 
         logger.info(
-            f"Loaded {len(self._mappings)} league mappings into memory "
-            f"({len(self._provider_leagues)} providers, "
-            f"{len(self._league_aliases)} aliases, "
-            f"{len(self._league_ids)} league_ids)"
+            "[LEAGUE_MAPPING] Loaded %d mappings (%d providers, %d aliases, %d league_ids)",
+            len(self._mappings), len(self._provider_leagues),
+            len(self._league_aliases), len(self._league_ids)
         )
 
     def reload(self) -> None:
@@ -329,9 +328,9 @@ class LeagueMappingService:
             # Primary provider is limited, check for fallback
             if mapping.fallback_provider and mapping.fallback_league_id:
                 logger.debug(
-                    f"Using fallback for {league_code}: "
-                    f"{mapping.fallback_provider}/{mapping.fallback_league_id} "
-                    f"(primary {mapping.provider} not premium)"
+                    "[LEAGUE_MAPPING] Using fallback for %s: %s/%s (primary %s not premium)",
+                    league_code, mapping.fallback_provider, mapping.fallback_league_id,
+                    mapping.provider
                 )
                 return (mapping.fallback_provider, mapping.fallback_league_id)
 

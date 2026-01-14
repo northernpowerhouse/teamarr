@@ -279,15 +279,15 @@ class PersistentTTLCache:
                     else:
                         expired += 1
                 except (json.JSONDecodeError, ValueError) as e:
-                    logger.warning(f"Failed to load cache entry: {e}")
+                    logger.warning("[CACHE] Failed to load cache entry: %s", e)
 
             if loaded > 0 or expired > 0:
                 logger.info(
-                    f"Loaded {loaded} cache entries from SQLite "
-                    f"(skipped {expired} expired)"
+                    "[CACHE] Loaded %d entries from SQLite (skipped %d expired)",
+                    loaded, expired
                 )
         except Exception as e:
-            logger.warning(f"Failed to load cache from SQLite: {e}")
+            logger.warning("[CACHE] Failed to load cache from SQLite: %s", e)
 
     def _schedule_flush(self) -> None:
         """Schedule the next background flush."""
@@ -307,7 +307,7 @@ class PersistentTTLCache:
         try:
             self.flush()
         except Exception as e:
-            logger.error(f"Background cache flush failed: {e}")
+            logger.error("[CACHE] Background flush failed: %s", e)
         finally:
             self._schedule_flush()
 
@@ -320,7 +320,7 @@ class PersistentTTLCache:
         try:
             self.flush()
         except Exception as e:
-            logger.error(f"Shutdown cache flush failed: {e}")
+            logger.error("[CACHE] Shutdown flush failed: %s", e)
 
     def get(self, key: str) -> Any | None:
         """Get value if exists and not expired."""
@@ -358,9 +358,9 @@ class PersistentTTLCache:
         try:
             with get_db() as conn:
                 conn.execute("DELETE FROM service_cache")
-            logger.debug("Cleared service cache")
+            logger.debug("[CACHE] Cleared service cache")
         except Exception as e:
-            logger.error(f"Failed to clear SQLite cache: {e}")
+            logger.error("[CACHE] Failed to clear SQLite cache: %s", e)
 
     def cleanup_expired(self) -> int:
         """Remove expired entries from memory and SQLite."""
@@ -378,7 +378,7 @@ class PersistentTTLCache:
                 )
                 removed += cursor.rowcount
         except Exception as e:
-            logger.error(f"Failed to cleanup SQLite expired entries: {e}")
+            logger.error("[CACHE] Failed to cleanup SQLite expired entries: %s", e)
 
         return removed
 
@@ -431,13 +431,13 @@ class PersistentTTLCache:
                         )
                         written += 1
                     except (TypeError, ValueError) as e:
-                        logger.warning(f"Failed to serialize cache key {key}: {e}")
+                        logger.warning("[CACHE] Failed to serialize key %s: %s", key, e)
 
             if written > 0 or deleted > 0:
-                logger.debug(f"Cache flush: {written} written, {deleted} deleted")
+                logger.debug("[CACHE] Flush: %d written, %d deleted", written, deleted)
 
         except Exception as e:
-            logger.error(f"Cache flush failed: {e}")
+            logger.error("[CACHE] Flush failed: %s", e)
             # Put keys back for retry on next flush
             with self._dirty_lock:
                 self._dirty_keys.update(dirty_keys)

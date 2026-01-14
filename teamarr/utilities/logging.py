@@ -4,14 +4,14 @@ Provides structured logging with console and file output.
 Call setup_logging() once at application startup.
 
 Usage:
-    from teamarr.utilities.logging import setup_logging, get_logger
-
-    # At startup (main.py or app.py)
+    # At startup (app.py)
+    from teamarr.utilities.logging import setup_logging
     setup_logging()
 
-    # In any module
-    logger = get_logger(__name__)
-    logger.info("Something happened")
+    # In any module (standard Python pattern)
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("[MODULE] Something happened: %s", value)
 
 Environment variables:
     LOG_LEVEL: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)
@@ -50,10 +50,6 @@ class JSONFormatter(logging.Formatter):
         # Add exception info if present
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
-
-        # Add extra fields if present
-        if hasattr(record, "extra_data"):
-            log_data["data"] = record.extra_data
 
         return json.dumps(log_data)
 
@@ -190,65 +186,10 @@ def setup_logging(
 
     # Log startup info
     logger = logging.getLogger("teamarr")
-    logger.info("=" * 60)
-    logger.info("Teamarr v2 - Dynamic EPG Generator for Sports Channels")
-    logger.info("=" * 60)
-    logger.info(f"Log level: {logging.getLevelName(level)}")
-    logger.info(f"Log directory: {log_path}")
-    logger.info(f"Log format: {'JSON' if use_json else 'text'}")
-    logger.info("=" * 60)
-
-
-def get_logger(name: str) -> logging.Logger:
-    """Get a logger for a module.
-
-    Args:
-        name: Logger name (usually __name__)
-
-    Returns:
-        Configured logger instance
-
-    Example:
-        logger = get_logger(__name__)
-        logger.info("Processing started")
-        logger.debug("Details: %s", data)
-        logger.error("Failed to process", exc_info=True)
-    """
-    return logging.getLogger(name)
-
-
-def log_with_data(
-    logger: logging.Logger,
-    level: int,
-    message: str,
-    data: dict | None = None,
-) -> None:
-    """Log a message with structured data.
-
-    Useful for adding context that appears in JSON logs.
-
-    Args:
-        logger: Logger instance
-        level: Log level (e.g., logging.INFO)
-        message: Log message
-        data: Additional structured data
-
-    Example:
-        log_with_data(logger, logging.INFO, "EPG generated", {
-            "programmes": 150,
-            "duration_ms": 1234,
-            "provider": "espn"
-        })
-    """
-    record = logger.makeRecord(
-        logger.name,
-        level,
-        "(unknown)",
-        0,
-        message,
-        (),
-        None,
-    )
-    if data:
-        record.extra_data = data
-    logger.handle(record)
+    logger.info("[STARTUP] " + "=" * 60)
+    logger.info("[STARTUP] Teamarr v2 - Dynamic EPG Generator for Sports Channels")
+    logger.info("[STARTUP] " + "=" * 60)
+    logger.info("[STARTUP] Log level: %s", logging.getLevelName(level))
+    logger.info("[STARTUP] Log directory: %s", log_path)
+    logger.info("[STARTUP] Log format: %s", "JSON" if use_json else "text")
+    logger.info("[STARTUP] " + "=" * 60)

@@ -12,7 +12,10 @@ from teamarr.consumers.event_epg import EventEPGGenerator, EventEPGOptions
 from teamarr.consumers.team_epg import TeamEPGGenerator, TeamEPGOptions
 from teamarr.core import Programme, TemplateConfig
 from teamarr.services import SportsDataService
+import logging
 from teamarr.utilities.xmltv import programmes_to_xmltv
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -65,6 +68,12 @@ class Orchestrator:
         started_at = datetime.now()
         base_options = options or TeamEPGOptions()
 
+        logger.debug(
+            "[STARTED] Team EPG generation: %d teams, %d days ahead",
+            len(team_configs),
+            base_options.output_days_ahead,
+        )
+
         all_programmes: list[Programme] = []
 
         for config in team_configs:
@@ -98,6 +107,15 @@ class Orchestrator:
             generator_url=options.generator_url if options else None,
         )
 
+        duration_ms = int((datetime.now() - started_at).total_seconds() * 1000)
+        logger.info(
+            "[COMPLETED] Team EPG generation: %d teams, %d programmes, %d bytes, %dms",
+            len(team_configs),
+            len(all_programmes),
+            len(xmltv),
+            duration_ms,
+        )
+
         return GenerationResult(
             programmes=all_programmes,
             xmltv=xmltv,
@@ -122,6 +140,12 @@ class Orchestrator:
         started_at = datetime.now()
         options = options or EventEPGOptions()
 
+        logger.debug(
+            "[STARTED] Event EPG generation: %d leagues, date=%s",
+            len(leagues),
+            target_date,
+        )
+
         programmes, channels = self._event_generator.generate_for_leagues(
             leagues, target_date, channel_prefix, options
         )
@@ -133,6 +157,15 @@ class Orchestrator:
             channel_dicts,
             generator_name=options.generator_name if options.generator_name else "Teamarr",
             generator_url=options.generator_url,
+        )
+
+        duration_ms = int((datetime.now() - started_at).total_seconds() * 1000)
+        logger.info(
+            "[COMPLETED] Event EPG generation: %d leagues, %d events, %d bytes, %dms",
+            len(leagues),
+            len(programmes),
+            len(xmltv),
+            duration_ms,
         )
 
         return GenerationResult(

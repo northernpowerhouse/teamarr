@@ -146,7 +146,7 @@ class TSDBProvider(SportsProvider):
         # First, get team name from league teams
         team_name = self._get_team_name(team_id, league)
         if not team_name:
-            logger.warning(f"Could not find team name for ID {team_id}")
+            logger.debug("[TSDB] Could not find team name for ID %s", team_id)
             return []
 
         events = []
@@ -236,7 +236,7 @@ class TSDBProvider(SportsProvider):
             return team_name
 
         # Team not in seeded cache - this shouldn't happen in normal operation
-        logger.warning(
+        logger.debug(
             f"TSDB team {team_id} not found in seeded cache for league {league}. "
             "Run cache refresh or check tsdb_seed.json."
         )
@@ -450,7 +450,7 @@ class TSDBProvider(SportsProvider):
             )
 
         except Exception as e:
-            logger.warning(f"Failed to parse TSDB event {data.get('idEvent', 'unknown')}: {e}")
+            logger.warning("[TSDB] Failed to parse event %s: %s", data.get('idEvent', 'unknown'), e)
             return None
 
     def _parse_fighters_from_event_name(

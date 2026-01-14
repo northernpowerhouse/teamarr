@@ -226,7 +226,9 @@ class TeamProcessor:
         if espn_teams:
             num_workers = min(MAX_WORKERS, len(espn_teams))
             logger.info(
-                f"Processing {len(espn_teams)} ESPN teams with {num_workers} parallel workers"
+                "[TEAM_BATCH] ESPN: %d teams, %d workers",
+                len(espn_teams),
+                num_workers,
             )
 
             # Track in-progress teams for accurate progress display
@@ -256,7 +258,6 @@ class TeamProcessor:
                 }
 
                 for future in as_completed(future_to_team):
-                    logger.debug(f"Future completed, processing result...")
                     team = future_to_team[future]
                     processed_count += 1
                     try:
@@ -272,7 +273,7 @@ class TeamProcessor:
                                 }
                             )
                     except Exception as e:
-                        logger.exception(f"Error processing team {team.team_name}")
+                        logger.exception("[TEAM_ERROR] %s: %s", team.team_name, e)
                         error_result = TeamProcessingResult(
                             team_id=team.id,
                             team_name=team.team_name,
@@ -294,9 +295,7 @@ class TeamProcessor:
                             msg = f"Finished {team.team_name}"
                         progress_callback(processed_count, total_teams, msg)
 
-            logger.info("ESPN parallel processing loop complete, exiting executor context")
-
-        logger.info("Executor context exited")
+            logger.debug("[TEAM_BATCH] ESPN parallel processing complete")
 
         # Process TSDB teams sequentially (rate limited API)
         if tsdb_teams:
@@ -307,8 +306,9 @@ class TeamProcessor:
                 tsdb_leagues.update(team.leagues)
 
             logger.info(
-                f"Processing {len(tsdb_teams)} TSDB teams from "
-                f"{len(tsdb_leagues)} leagues sequentially"
+                "[TEAM_BATCH] TSDB: %d teams, %d leagues (sequential)",
+                len(tsdb_teams),
+                len(tsdb_leagues),
             )
 
             # Report that we're warming cache (this can take a while)
@@ -342,7 +342,7 @@ class TeamProcessor:
                             }
                         )
                 except Exception as e:
-                    logger.exception(f"Error processing team {team.team_name}")
+                    logger.exception("[TEAM_ERROR] %s: %s", team.team_name, e)
                     error_result = TeamProcessingResult(
                         team_id=team.id,
                         team_name=team.team_name,
@@ -360,7 +360,7 @@ class TeamProcessor:
         # Each team's XMLTV is already stored during _process_team_internal
 
         batch_result.completed_at = datetime.now()
-        logger.info(f"Completed processing {len(teams)} teams")
+        logger.info("[TEAM_BATCH] Completed: %d teams", len(teams))
         return batch_result
 
     def _process_team_parallel(self, team: TeamConfig) -> TeamProcessingResult:
@@ -382,7 +382,7 @@ class TeamProcessor:
 
         # Skip teams without a valid template
         if team.template_id is None:
-            logger.warning(f"Skipping team '{team.team_name}': no template assigned")
+            logger.warning("[TEAM_SKIP] %s: no template assigned", team.team_name)
             result.errors.append("No template assigned - EPG generation requires a template")
             result.completed_at = datetime.now()
             return result
@@ -427,12 +427,14 @@ class TeamProcessor:
                 xmltv_content = programmes_to_xmltv(programmes, [channel_dict])
                 self._store_team_xmltv(conn, team.id, xmltv_content)
 
-            logger.info(
-                f"Processed team '{team.team_name}': {result.programmes_generated} programmes"
+            logger.debug(
+                "[TEAM] %s: %d programmes",
+                team.team_name,
+                result.programmes_generated,
             )
 
         except Exception as e:
-            logger.exception(f"Error processing team {team.team_name}")
+            logger.exception("[TEAM_ERROR] %s: %s", team.team_name, e)
             result.errors.append(str(e))
 
         result.completed_at = datetime.now()
@@ -466,17 +468,15 @@ class TeamProcessor:
             if template:
                 template_config = template_to_programme_config(template)
                 filler_config = template_to_filler_config(template)
-                logger.debug(f"Loaded template {team.template_id} for {team.team_name}")
+                logger.debug("[TEMPLATE] Loaded %d for %s", team.template_id, team.team_name)
             else:
                 logger.warning(
-                    f"Template {team.template_id} not found for {team.team_name} - "
-                    "using hardcoded defaults. Assign a valid template to fix."
+                    "[TEMPLATE] Not found: %d for %s",
+                    team.template_id,
+                    team.team_name,
                 )
         else:
-            logger.warning(
-                f"No template assigned to {team.team_name} - using hardcoded defaults. "
-                "Assign a template in the Teams page to customize filler content."
-            )
+            logger.warning("[TEMPLATE] None assigned: %s", team.team_name)
 
         return TeamEPGOptions(
             schedule_days_ahead=all_settings.epg.team_schedule_days_ahead,
@@ -573,7 +573,7 @@ class TeamProcessor:
             ).fetchone()
             return row["xmltv_content"] if row else None
         except Exception as e:
-            logger.debug(f"Failed to get stored XMLTV for team {team_id}: {e}")
+            logger.debug("[XMLTV] Failed to get for team %d: %s", team_id, e)
             return None
 
     def _generate_all_programmes(
@@ -638,7 +638,7 @@ def get_all_team_xmltv(conn: Connection, team_ids: list[int] | None = None) -> l
 
         return [row["xmltv_content"] for row in cursor.fetchall()]
     except Exception as e:
-        logger.debug(f"Failed to get team XMLTV content: {e}")
+        logger.debug("[XMLTV] Failed to get team content: %s", e)
         return []
 
 

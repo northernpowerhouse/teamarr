@@ -71,7 +71,7 @@ def detect_v1_database() -> bool:
         # V1 has schedule_cache but not leagues table
         return has_schedule_cache and not has_leagues
     except Exception as e:
-        logger.error(f"Error detecting database version: {e}")
+        logger.error("[MIGRATION] Error detecting database version: %s", e)
         return False
 
 
@@ -117,7 +117,7 @@ async def archive_v1_database():
         # Move database to backup location
         shutil.move(str(db_path), str(backup_path))
 
-        logger.info(f"Archived V1 database to {backup_path}")
+        logger.info("[MIGRATION] Archived V1 database to %s", backup_path)
 
         return ArchiveResult(
             success=True,
@@ -125,7 +125,7 @@ async def archive_v1_database():
             backup_path=str(backup_path),
         )
     except Exception as e:
-        logger.error(f"Failed to archive V1 database: {e}")
+        logger.error("[MIGRATION] Failed to archive V1 database: %s", e)
         raise HTTPException(
             status_code=500, detail=f"Failed to archive database: {str(e)}"
         )
@@ -167,11 +167,11 @@ async def clear_v1_backup():
             dest_path = backups_dir / f"teamarr-v1-{timestamp}.db"
 
             shutil.move(str(backup_path), str(dest_path))
-            logger.info(f"V1 backup moved to {dest_path}")
+            logger.info("[MIGRATION] V1 backup moved to %s", dest_path)
 
             return {"success": True, "message": f"Backup moved to {dest_path}"}
         except Exception as e:
-            logger.error(f"Failed to move V1 backup: {e}")
+            logger.error("[MIGRATION] Failed to move V1 backup: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to move backup: {str(e)}")
 
     return {"success": True, "message": "No backup to move"}
@@ -200,16 +200,16 @@ async def trigger_restart():
             dest_path = backups_dir / f"teamarr-v1-{timestamp}.db"
 
             shutil.move(str(backup_path), str(dest_path))
-            logger.info(f"V1 backup moved to {dest_path}")
+            logger.info("[MIGRATION] V1 backup moved to %s", dest_path)
         except Exception as e:
-            logger.warning(f"Failed to move V1 backup: {e}")
+            logger.warning("[MIGRATION] Failed to move V1 backup: %s", e)
 
-    logger.info("Triggering application restart for V2 initialization...")
+    logger.info("[MIGRATION] Triggering application restart for V2 initialization...")
 
     # Schedule exit after response is sent
     async def delayed_exit():
         await asyncio.sleep(0.5)  # Give time for response to be sent
-        logger.info("Exiting for restart...")
+        logger.info("[MIGRATION] Exiting for restart...")
         sys.exit(0)
 
     asyncio.create_task(delayed_exit())

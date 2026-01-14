@@ -34,6 +34,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from teamarr.templates.context import GameContext, TemplateContext
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -316,6 +319,7 @@ class ConditionalDescriptionSelector:
                 priority_groups[opt.priority].append(opt.template)
 
         if not priority_groups:
+            logger.debug("[CONDITION] No matching conditions found")
             return ""
 
         # Get highest priority (lowest number)
@@ -323,7 +327,9 @@ class ConditionalDescriptionSelector:
         matching_templates = priority_groups[highest_priority]
 
         # Random selection from same-priority templates
-        return random.choice(matching_templates)
+        selected = random.choice(matching_templates)
+        logger.debug("[CONDITION] Selected priority=%d from %d options", highest_priority, len(matching_templates))
+        return selected
 
     def _parse_options(
         self, description_options: str | list[dict[str, Any]] | None

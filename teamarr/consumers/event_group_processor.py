@@ -421,7 +421,7 @@ class EventGroupProcessor:
                             "- continuing with potentially stale data"
                         )
                 except Exception as e:
-                    logger.warning(f"Preview: M3U refresh error: {e} - continuing anyway")
+                    logger.warning("[EVENT_EPG] Preview: M3U refresh error: %s - continuing anyway", e)
 
             # Step 1: Fetch streams from M3U group
             try:
@@ -943,9 +943,9 @@ class EventGroupProcessor:
             keyword_enforcer = KeywordEnforcer(self._db_factory, channel_manager)
             keyword_result = keyword_enforcer.enforce()
             if keyword_result.moved_count > 0:
-                logger.info(f"Keyword enforcement moved {keyword_result.moved_count} streams")
+                logger.info("[EVENT_EPG] Keyword enforcement moved %d streams", keyword_result.moved_count)
         except Exception as e:
-            logger.warning(f"Keyword enforcement failed: {e}")
+            logger.warning("[EVENT_EPG] Keyword enforcement failed: %s", e)
 
         # 2. Cross-group consolidation (only if multi-league groups exist)
         if multi_league_ids:
@@ -957,7 +957,7 @@ class EventGroupProcessor:
                         f"Cross-group consolidation: {cross_result.deleted_count} channels merged"
                     )
             except Exception as e:
-                logger.warning(f"Cross-group consolidation failed: {e}")
+                logger.warning("[EVENT_EPG] Cross-group consolidation failed: %s", e)
 
         # 3. Keyword ordering: ensure main channel has lower number than keyword channels
         try:
@@ -968,7 +968,7 @@ class EventGroupProcessor:
                     f"Keyword ordering: reordered {ordering_result.reordered_count} channel pair(s)"
                 )
         except Exception as e:
-            logger.warning(f"Keyword ordering failed: {e}")
+            logger.warning("[EVENT_EPG] Keyword ordering failed: %s", e)
 
         # 4. Orphan cleanup: delete Dispatcharr channels not tracked in DB
         if lifecycle_service:
@@ -979,7 +979,7 @@ class EventGroupProcessor:
                         f"Orphan cleanup: deleted {orphan_result['deleted']} Dispatcharr channels"
                     )
             except Exception as e:
-                logger.warning(f"Orphan cleanup failed: {e}")
+                logger.warning("[EVENT_EPG] Orphan cleanup failed: %s", e)
 
         # 5. Disabled group cleanup: delete channels from disabled groups
         if lifecycle_service:
@@ -991,7 +991,7 @@ class EventGroupProcessor:
                         f"{len(disabled_result['deleted'])} channels"
                     )
             except Exception as e:
-                logger.warning(f"Disabled group cleanup failed: {e}")
+                logger.warning("[EVENT_EPG] Disabled group cleanup failed: %s", e)
 
     def _process_group_internal(
         self,
@@ -1241,7 +1241,7 @@ class EventGroupProcessor:
         Uses group's m3u_group_id to filter streams.
         """
         if not self._dispatcharr_client:
-            logger.warning("Dispatcharr not configured - cannot fetch streams")
+            logger.warning("[EVENT_EPG] Dispatcharr not configured - cannot fetch streams")
             return []
 
         try:
@@ -1273,7 +1273,7 @@ class EventGroupProcessor:
             return stream_dicts
 
         except Exception as e:
-            logger.error(f"Failed to fetch streams: {e}")
+            logger.error("[EVENT_EPG] Failed to fetch streams: %s", e)
             return []
 
     def _filter_streams(
@@ -1369,7 +1369,7 @@ class EventGroupProcessor:
             target_date + timedelta(days=offset)
             for offset in range(-days_back, days_ahead + 1)
         ]
-        logger.debug(f"Fetching events from {dates_to_fetch[0]} to {dates_to_fetch[-1]} ({len(dates_to_fetch)} days)")
+        logger.debug("[EVENT_EPG] Fetching events from %s to %s (%d days)", dates_to_fetch[0], dates_to_fetch[-1], len(dates_to_fetch))
 
         def fetch_league_events(league: str, fetch_date: date) -> tuple[str, date, list[Event]]:
             """Fetch events for a single league/date (for parallel execution)."""
@@ -1380,7 +1380,7 @@ class EventGroupProcessor:
                 events = self._service.get_events(league, fetch_date, cache_only=is_tsdb)
                 return (league, fetch_date, events)
             except Exception as e:
-                logger.warning(f"Failed to fetch events for {league} on {fetch_date}: {e}")
+                logger.warning("[EVENT_EPG] Failed to fetch events for %s on %s: %s", league, fetch_date, e)
                 return (league, fetch_date, [])
 
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
@@ -1397,7 +1397,7 @@ class EventGroupProcessor:
                     all_events.extend(events)
                 except Exception as e:
                     league, fetch_date = futures[future]
-                    logger.warning(f"Failed to fetch events for {league} on {fetch_date}: {e}")
+                    logger.warning("[EVENT_EPG] Failed to fetch events for %s on %s: %s", league, fetch_date, e)
 
         return all_events
 
@@ -1519,7 +1519,7 @@ class EventGroupProcessor:
             else:
                 enriched.append(match)
 
-        logger.debug(f"Enriched {len(enriched)} matched events with fresh status")
+        logger.debug("[EVENT_EPG] Enriched %d matched events with fresh status", len(enriched))
         return enriched
 
     def _filter_by_teams(
@@ -1599,7 +1599,7 @@ class EventGroupProcessor:
                     )
 
         if filtered_count > 0:
-            logger.info(f"Team filter: {filtered_count} streams excluded, {len(filtered)} remaining")
+            logger.info("[EVENT_EPG] Team filter: %d streams excluded, %d remaining", filtered_count, len(filtered))
 
         return filtered, filtered_count
 
@@ -1855,11 +1855,11 @@ class EventGroupProcessor:
         # Save to database
         if matched_list:
             save_matched_streams(conn, matched_list)
-            logger.debug(f"Saved {len(matched_list)} matched streams for group {group_name}")
+            logger.debug("[EVENT_EPG] Saved %d matched streams for group %s", len(matched_list), group_name)
 
         if failed_list:
             save_failed_matches(conn, failed_list)
-            logger.debug(f"Saved {len(failed_list)} failed matches for group {group_name}")
+            logger.debug("[EVENT_EPG] Saved %d failed matches for group %s", len(failed_list), group_name)
 
     def _process_channels(
         self,
@@ -1923,16 +1923,16 @@ class EventGroupProcessor:
                     f"channels across {reassign_result['groups_processed']} groups"
                 )
         except Exception as e:
-            logger.debug(f"Error in global AUTO reassignment: {e}")
+            logger.debug("[EVENT_EPG] Error in global AUTO reassignment: %s", e)
 
         # V1 Parity Step 1: Process scheduled deletions first
         try:
             deletion_result = lifecycle_service.process_scheduled_deletions()
             combined_result.merge(deletion_result)
             if deletion_result.deleted:
-                logger.info(f"Deleted {len(deletion_result.deleted)} expired channels")
+                logger.info("[EVENT_EPG] Deleted %d expired channels", len(deletion_result.deleted))
         except Exception as e:
-            logger.debug(f"Error processing scheduled deletions: {e}")
+            logger.debug("[EVENT_EPG] Error processing scheduled deletions: %s", e)
 
         # V1 Parity Step 2: Cleanup deleted/missing/changed streams
         if current_streams is not None:
@@ -1944,7 +1944,7 @@ class EventGroupProcessor:
                         f"Deleted {len(cleanup_result.deleted)} channels with missing/changed streams"
                     )
             except Exception as e:
-                logger.debug(f"Error cleaning up deleted streams: {e}")
+                logger.debug("[EVENT_EPG] Error cleaning up deleted streams: %s", e)
 
         # V1 Parity Step 3-4: Create new channels and sync existing settings
         process_result = lifecycle_service.process_matched_streams(
@@ -1960,7 +1960,7 @@ class EventGroupProcessor:
                     f"Reassigned {len(reassign_result['reassigned'])} channels in group {group.id}"
                 )
         except Exception as e:
-            logger.debug(f"Error reassigning channel numbers: {e}")
+            logger.debug("[EVENT_EPG] Error reassigning channel numbers: %s", e)
 
         return combined_result
 
@@ -1978,7 +1978,7 @@ class EventGroupProcessor:
 
         template = get_template(conn, template_id)
         if not template:
-            logger.warning(f"Template {template_id} not found")
+            logger.warning("[EVENT_EPG] Template %s not found", template_id)
             return None
 
         return template_to_event_config(template)
@@ -2143,7 +2143,7 @@ class EventGroupProcessor:
                 result.pregame_count += filler_result.pregame_count
                 result.postgame_count += filler_result.postgame_count
             except Exception as e:
-                logger.warning(f"Failed to generate filler for event {event.id}: {e}")
+                logger.warning("[EVENT_EPG] Failed to generate filler for event %s: %s", event.id, e)
 
         return result
 
@@ -2170,7 +2170,7 @@ class EventGroupProcessor:
             (group_id, xmltv_content),
         )
         conn.commit()
-        logger.debug(f"Stored XMLTV for group {group_id}")
+        logger.debug("[EVENT_EPG] Stored XMLTV for group %d", group_id)
 
     def _trigger_epg_refresh(self, group: EventEPGGroup) -> None:
         """Trigger Dispatcharr EPG refresh and associate EPG with channels.
@@ -2194,7 +2194,7 @@ class EventGroupProcessor:
             epg_source_id = row["dispatcharr_epg_id"] if row else None
 
             if not epg_source_id:
-                logger.debug("No Dispatcharr EPG source configured - skipping refresh")
+                logger.debug("[EVENT_EPG] No Dispatcharr EPG source configured - skipping refresh")
                 return
 
             epg_manager = self._dispatcharr_client.epg
@@ -2211,10 +2211,10 @@ class EventGroupProcessor:
                 # Now associate EPG data with managed channels
                 self._associate_epg_with_channels(epg_source_id)
             else:
-                logger.warning(f"EPG refresh failed: {result.message}")
+                logger.warning("[EVENT_EPG] EPG refresh failed: %s", result.message)
 
         except Exception as e:
-            logger.warning(f"Error during EPG refresh: {e}")
+            logger.warning("[EVENT_EPG] Error during EPG refresh: %s", e)
 
     def _associate_epg_with_channels(self, epg_source_id: int) -> None:
         """Associate EPG data with managed channels after EPG refresh.
@@ -2231,14 +2231,14 @@ class EventGroupProcessor:
                 channels = get_all_managed_channels(conn, include_deleted=False)
 
                 if not channels:
-                    logger.debug("No managed channels to associate EPG with")
+                    logger.debug("[EVENT_EPG] No managed channels to associate EPG with")
                     return
 
                 # Build EPG data lookup from Dispatcharr
                 epg_lookup = channel_manager.build_epg_lookup(epg_source_id)
 
                 if not epg_lookup:
-                    logger.debug("No EPG data found in Dispatcharr to associate")
+                    logger.debug("[EVENT_EPG] No EPG data found in Dispatcharr to associate")
                     return
 
                 associated = 0
@@ -2279,12 +2279,12 @@ class EventGroupProcessor:
                         )
 
                 if associated:
-                    logger.info(f"Associated EPG data with {associated} channels")
+                    logger.info("[EVENT_EPG] Associated EPG data with %d channels", associated)
                 if not_found:
-                    logger.debug(f"EPG data not found for {not_found} channels (pending refresh)")
+                    logger.debug("[EVENT_EPG] EPG data not found for %d channels (pending refresh)", not_found)
 
         except Exception as e:
-            logger.warning(f"Error associating EPG with channels: {e}")
+            logger.warning("[EVENT_EPG] Error associating EPG with channels: %s", e)
 
 
 # =============================================================================

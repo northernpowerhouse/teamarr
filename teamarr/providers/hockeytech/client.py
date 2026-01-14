@@ -10,7 +10,6 @@ Layer separation: Uses LeagueMappingSource for league routing (same as TSDB).
 API keys are constants since they're public keys from official league websites.
 """
 
-import logging
 import threading
 from datetime import date
 
@@ -18,6 +17,7 @@ import httpx
 
 from teamarr.core.interfaces import LeagueMappingSource
 from teamarr.utilities.cache import TTLCache, make_cache_key
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ class HockeyTechClient:
         client_code = mapping.provider_league_id
         api_key = API_KEYS.get(client_code)
         if not api_key:
-            logger.warning(f"No API key for HockeyTech client_code: {client_code}")
+            logger.warning("[HOCKEYTECH] No API key for client_code: %s", client_code)
             return None
 
         return (client_code, api_key)
@@ -212,14 +212,14 @@ class HockeyTechClient:
         """
         config = self.get_league_config(league)
         if not config:
-            logger.warning(f"Unknown HockeyTech league: {league}")
+            logger.warning("[HOCKEYTECH] Unknown league: %s", league)
             return []
 
         client_code, api_key = config
         cache_key = make_cache_key("hockeytech", "schedule", league)
         cached = self._cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"HockeyTech cache hit: {cache_key}")
+            logger.debug("[HOCKEYTECH] Cache hit: %s", cache_key)
             return cached
 
         data = self._request(client_code, api_key, "schedule")
@@ -229,7 +229,7 @@ class HockeyTechClient:
         schedule = data.get("SiteKit", {}).get("Schedule", [])
         if schedule:
             self._cache.set(cache_key, schedule, CACHE_TTL_SCHEDULE)
-            logger.debug(f"HockeyTech cached {len(schedule)} games for {league}")
+            logger.debug("[HOCKEYTECH] Cached %d games for %s", len(schedule), league)
 
         return schedule
 
@@ -305,14 +305,14 @@ class HockeyTechClient:
         """
         config = self.get_league_config(league)
         if not config:
-            logger.warning(f"Unknown HockeyTech league: {league}")
+            logger.warning("[HOCKEYTECH] Unknown league: %s", league)
             return []
 
         client_code, api_key = config
         cache_key = make_cache_key("hockeytech", "teams", league)
         cached = self._cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"HockeyTech cache hit: {cache_key}")
+            logger.debug("[HOCKEYTECH] Cache hit: %s", cache_key)
             return cached
 
         data = self._request(client_code, api_key, "teamsbyseason")
@@ -322,7 +322,7 @@ class HockeyTechClient:
         teams = data.get("SiteKit", {}).get("Teamsbyseason", [])
         if teams:
             self._cache.set(cache_key, teams, CACHE_TTL_TEAMS)
-            logger.debug(f"HockeyTech cached {len(teams)} teams for {league}")
+            logger.debug("[HOCKEYTECH] Cached %d teams for %s", len(teams), league)
 
         return teams
 

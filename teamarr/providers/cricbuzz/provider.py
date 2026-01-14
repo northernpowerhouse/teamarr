@@ -171,7 +171,7 @@ class CricbuzzProvider(SportsProvider):
         """
         config = self._client.get_league_config(league)
         if not config:
-            logger.warning(f"Unknown Cricbuzz league: {league}")
+            logger.warning("[CRICBUZZ] Unknown league: %s", league)
             return []
 
         series_id, series_slug = config
@@ -243,7 +243,7 @@ class CricbuzzProvider(SportsProvider):
             away_team = self._parse_team(team2_data, league)
 
             if not home_team or not away_team:
-                logger.warning(f"Could not parse teams for match {match_id}")
+                logger.warning("[CRICBUZZ] Could not parse teams for match %s", match_id)
                 return None
 
             # Parse status
@@ -277,7 +277,7 @@ class CricbuzzProvider(SportsProvider):
             )
 
         except Exception as e:
-            logger.warning(f"Failed to parse Cricbuzz match {data.get('matchId', 'unknown')}: {e}")
+            logger.warning("[CRICBUZZ] Failed to parse match %s: %s", data.get('matchId', 'unknown'), e)
             return None
 
     def _parse_team(self, data: dict, league: str) -> Team | None:

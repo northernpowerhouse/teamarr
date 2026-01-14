@@ -181,8 +181,10 @@ def create_channel_group(name: str) -> dict:
 
     result = conn.m3u.create_channel_group(name)
     if not result.success:
+        logger.warning("[FAILED] Create channel group name=%s error=%s", name, result.error)
         raise HTTPException(status_code=400, detail=result.error)
 
+    logger.info("[CREATED] Channel group in Dispatcharr name=%s", name)
     return result.data
 
 
@@ -223,8 +225,10 @@ def create_channel_profile(name: str) -> dict:
 
     result = conn.channels.create_profile(name)
     if not result.success:
+        logger.warning("[FAILED] Create channel profile name=%s error=%s", name, result.error)
         raise HTTPException(status_code=400, detail=result.error)
 
+    logger.info("[CREATED] Channel profile in Dispatcharr name=%s", name)
     return result.data
 
 
@@ -266,6 +270,10 @@ def refresh_m3u_account(account_id: int) -> dict:
         raise HTTPException(status_code=503, detail="Dispatcharr not configured or unavailable")
 
     result = conn.m3u.refresh_account(account_id)
+    if result.success:
+        logger.info("[REFRESHED] M3U account_id=%d", account_id)
+    else:
+        logger.warning("[FAILED] Refresh M3U account_id=%d error=%s", account_id, result.message)
     return {
         "success": result.success,
         "message": result.message,

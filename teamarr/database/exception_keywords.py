@@ -4,10 +4,13 @@ Provides CRUD operations for the consolidation_exception_keywords table.
 Exception keywords control how duplicate streams are handled during event matching.
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from sqlite3 import Connection
 from typing import Literal
+
+logger = logging.getLogger(__name__)
 
 ExceptionBehavior = Literal["consolidate", "separate", "ignore"]
 
@@ -163,7 +166,9 @@ def create_keyword(
         (keywords, behavior, display_name, int(enabled)),
     )
     conn.commit()
-    return cursor.lastrowid
+    keyword_id = cursor.lastrowid
+    logger.info("[CREATED] Exception keyword id=%d keywords=%s", keyword_id, keywords)
+    return keyword_id
 
 
 # =============================================================================
@@ -224,7 +229,10 @@ def update_keyword(
     query = f"UPDATE consolidation_exception_keywords SET {', '.join(updates)} WHERE id = ?"
     cursor = conn.execute(query, values)
     conn.commit()
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] Exception keyword id=%d", keyword_id)
+        return True
+    return False
 
 
 def set_keyword_enabled(conn: Connection, keyword_id: int, enabled: bool) -> bool:
@@ -243,7 +251,10 @@ def set_keyword_enabled(conn: Connection, keyword_id: int, enabled: bool) -> boo
         (int(enabled), keyword_id),
     )
     conn.commit()
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] Exception keyword id=%d enabled=%s", keyword_id, enabled)
+        return True
+    return False
 
 
 # =============================================================================
@@ -265,4 +276,7 @@ def delete_keyword(conn: Connection, keyword_id: int) -> bool:
         "DELETE FROM consolidation_exception_keywords WHERE id = ?", (keyword_id,)
     )
     conn.commit()
-    return cursor.rowcount > 0
+    if cursor.rowcount > 0:
+        logger.info("[DELETED] Exception keyword id=%d", keyword_id)
+        return True
+    return False

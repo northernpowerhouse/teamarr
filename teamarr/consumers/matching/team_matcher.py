@@ -328,7 +328,7 @@ class TeamMatcher:
         event = self._reconstruct_event(entry.cached_data)
         if not event:
             # Cache entry is invalid
-            logger.debug(f"Cache invalid: failed to reconstruct event for stream={ctx.stream_id}")
+            logger.debug("[MATCH_CACHE] Invalid: failed to reconstruct event for stream=%d", ctx.stream_id)
             self._cache.delete(ctx.group_id, ctx.stream_id, ctx.stream_name)
             return None
 
@@ -338,13 +338,19 @@ class TeamMatcher:
         event_date = event.start_time.astimezone(ctx.user_tz).date()
         if event_date < ctx.target_date:
             # Event is from a previous day - invalidate cache to get fresh status
-            logger.debug(f"Cache stale: event from {event_date} < target {ctx.target_date}")
+            logger.debug("[MATCH_CACHE] Stale: event from %s < target %s", event_date, ctx.target_date)
             return None
 
         # Today's events: use cache (final status handled in _outcome_to_result)
         if event_date != ctx.target_date:
-            logger.debug(f"Cache mismatch: event from {event_date} != target {ctx.target_date}")
+            logger.debug("[MATCH_CACHE] Mismatch: event from %s != target %s", event_date, ctx.target_date)
             return None
+
+        logger.debug(
+            "[CACHE_HIT] stream_id=%d event=%s",
+            ctx.stream_id,
+            event.id,
+        )
         return MatchOutcome.matched(
             MatchMethod.CACHE,
             event,
@@ -430,6 +436,13 @@ class TeamMatcher:
                         ctx.user_tz,
                     )
 
+            logger.debug(
+                "[MATCHED] stream_id=%d method=%s event=%s confidence=%.0f%%",
+                ctx.stream_id,
+                best_method.value,
+                best_match.id,
+                best_confidence,
+            )
             return MatchOutcome.matched(
                 best_method,
                 best_match,
@@ -449,6 +462,13 @@ class TeamMatcher:
         else:
             reason = FailedReason.NO_EVENT_FOUND
 
+        logger.debug(
+            "[FAILED] stream_id=%d reason=%s teams=%s/%s",
+            ctx.stream_id,
+            reason.value,
+            ctx.team1,
+            ctx.team2,
+        )
         return MatchOutcome.failed(
             reason,
             stream_name=ctx.stream_name,
@@ -516,6 +536,14 @@ class TeamMatcher:
                     best_date_distance = date_distance
 
         if best_match and best_league:
+            logger.debug(
+                "[MATCHED] stream_id=%d method=%s event=%s league=%s confidence=%.0f%%",
+                ctx.stream_id,
+                best_method.value,
+                best_match.id,
+                best_league,
+                best_confidence,
+            )
             return MatchOutcome.matched(
                 best_method,
                 best_match,
@@ -535,6 +563,13 @@ class TeamMatcher:
         else:
             reason = FailedReason.NO_EVENT_FOUND
 
+        logger.debug(
+            "[FAILED] stream_id=%d reason=%s teams=%s/%s",
+            ctx.stream_id,
+            reason.value,
+            ctx.team1,
+            ctx.team2,
+        )
         return MatchOutcome.failed(
             reason,
             stream_name=ctx.stream_name,
@@ -749,5 +784,5 @@ class TeamMatcher:
                 broadcasts=broadcasts,
             )
         except Exception as e:
-            logger.warning(f"Failed to reconstruct event from cache: {e}")
+            logger.warning("[MATCH_CACHE] Failed to reconstruct event from cache: %s", e)
             return None

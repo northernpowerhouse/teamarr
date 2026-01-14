@@ -20,11 +20,14 @@ from datetime import datetime, timedelta
 from teamarr.consumers.matching.result import ExcludedReason
 from teamarr.core import Event
 from teamarr.utilities.event_status import is_event_final
+import logging
 from teamarr.utilities.sports import get_sport_duration
 from teamarr.utilities.time_blocks import crosses_midnight
 from teamarr.utilities.tz import now_user, to_user_tz
 
 from .types import CreateTiming, DeleteTiming, LifecycleDecision
+
+logger = logging.getLogger(__name__)
 
 
 class ChannelLifecycleManager:
@@ -80,7 +83,9 @@ class ChannelLifecycleManager:
         """
         if self.create_timing == "stream_available":
             if stream_exists:
+                logger.debug("[CREATED] event=%s: stream available", event.id)
                 return LifecycleDecision(True, "Stream available")
+            logger.debug("[SKIP CREATE] event=%s: waiting for stream", event.id)
             return LifecycleDecision(False, "Waiting for stream")
 
         # Calculate create threshold
@@ -90,6 +95,11 @@ class ChannelLifecycleManager:
         # Check if we're past delete threshold (prevents create-then-delete)
         delete_threshold = self._calculate_delete_threshold(event)
         if delete_threshold and now >= delete_threshold:
+            logger.debug(
+                "[SKIP CREATE] event=%s: past delete threshold (%s)",
+                event.id,
+                delete_threshold.strftime("%m/%d %I:%M %p"),
+            )
             return LifecycleDecision(
                 False,
                 f"Past delete threshold ({delete_threshold.strftime('%m/%d %I:%M %p')})",
@@ -97,12 +107,22 @@ class ChannelLifecycleManager:
             )
 
         if now >= create_threshold:
+            logger.debug(
+                "[CREATED] event=%s: threshold reached (%s)",
+                event.id,
+                create_threshold.strftime("%m/%d %I:%M %p"),
+            )
             return LifecycleDecision(
                 True,
                 f"Create threshold reached ({create_threshold.strftime('%m/%d %I:%M %p')})",
                 create_threshold,
             )
 
+        logger.debug(
+            "[SKIP CREATE] event=%s: before threshold (%s)",
+            event.id,
+            create_threshold.strftime("%m/%d %I:%M %p"),
+        )
         return LifecycleDecision(
             False,
             f"Before create threshold ({create_threshold.strftime('%m/%d %I:%M %p')})",
@@ -125,23 +145,36 @@ class ChannelLifecycleManager:
         """
         if self.delete_timing == "stream_removed":
             if not stream_exists:
+                logger.debug("[DELETED] event=%s: stream removed", event.id)
                 return LifecycleDecision(True, "Stream removed")
+            logger.debug("[SKIP DELETE] event=%s: stream still exists", event.id)
             return LifecycleDecision(False, "Stream still exists")
 
         # Calculate delete threshold
         delete_threshold = self._calculate_delete_threshold(event)
         if not delete_threshold:
+            logger.debug("[SKIP DELETE] event=%s: could not calculate delete time", event.id)
             return LifecycleDecision(False, "Could not calculate delete time")
 
         now = now_user()
 
         if now >= delete_threshold:
+            logger.debug(
+                "[DELETED] event=%s: threshold reached (%s)",
+                event.id,
+                delete_threshold.strftime("%m/%d %I:%M %p"),
+            )
             return LifecycleDecision(
                 True,
                 f"Delete threshold reached ({delete_threshold.strftime('%m/%d %I:%M %p')})",
                 delete_threshold,
             )
 
+        logger.debug(
+            "[SKIP DELETE] event=%s: before threshold (%s)",
+            event.id,
+            delete_threshold.strftime("%m/%d %I:%M %p"),
+        )
         return LifecycleDecision(
             False,
             f"Before delete threshold ({delete_threshold.strftime('%m/%d %I:%M %p')})",
@@ -241,10 +274,12 @@ class ChannelLifecycleManager:
 
         # Check if we're past delete threshold (event lifecycle is over)
         if delete_threshold and now >= delete_threshold:
+            logger.debug("[EXCLUDED] event=%s: past lifecycle window (EVENT_PAST)", event.id)
             return ExcludedReason.EVENT_PAST
 
         # Check if we're before create threshold (too early)
         if create_threshold and now < create_threshold:
+            logger.debug("[EXCLUDED] event=%s: before lifecycle window (BEFORE_WINDOW)", event.id)
             return ExcludedReason.BEFORE_WINDOW
 
         # At this point, we're within the lifecycle window (create <= now < delete)
@@ -263,7 +298,9 @@ class ChannelLifecycleManager:
 
         # Final events within lifecycle window → honor include_final_events setting
         if final and not self.include_final_events:
+            logger.debug("[EXCLUDED] event=%s: event is final (EVENT_FINAL)", event.id)
             return ExcludedReason.EVENT_FINAL
 
         # Event is within lifecycle window and passes all checks
+        logger.debug("[INCLUDED] event=%s: within lifecycle window, eligible", event.id)
         return None

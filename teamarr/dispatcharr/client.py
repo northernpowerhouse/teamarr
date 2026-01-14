@@ -130,7 +130,7 @@ class DispatcharrClient:
         """
         token = self._auth.get_token()
         if not token:
-            logger.error("Failed to obtain authentication token")
+            logger.error("[DISPATCHARR] Failed to obtain authentication token")
             return None
 
         headers = {
@@ -153,12 +153,12 @@ class DispatcharrClient:
                 elif method.upper() == "DELETE":
                     response = client.delete(full_url, headers=headers)
                 else:
-                    logger.error(f"Unsupported HTTP method: {method}")
+                    logger.error("[DISPATCHARR] Unsupported HTTP method: %s", method)
                     return None
 
                 # Handle 401 with re-authentication (not counted as retry)
                 if response.status_code == 401 and retry_on_401:
-                    logger.info("Received 401, clearing session and retrying...")
+                    logger.debug("[DISPATCHARR] Received 401, clearing session and retrying...")
                     self._auth.clear()
                     return self.request(method, endpoint, data, retry_on_401=False)
 
@@ -167,15 +167,15 @@ class DispatcharrClient:
                     if attempt < self._max_retries:
                         delay = _calculate_backoff(attempt)
                         logger.warning(
-                            f"Retryable HTTP {response.status_code} for {method} {endpoint}, "
-                            f"retry {attempt + 1}/{self._max_retries} after {delay:.1f}s"
+                            "[DISPATCHARR] Retryable HTTP %d for %s %s, retry %d/%d after %.1fs",
+                            response.status_code, method, endpoint, attempt + 1, self._max_retries, delay,
                         )
                         time.sleep(delay)
                         continue
                     else:
                         logger.error(
-                            f"Max retries exceeded for {method} {endpoint} "
-                            f"(HTTP {response.status_code})"
+                            "[DISPATCHARR] Max retries exceeded for %s %s (HTTP %d)",
+                            method, endpoint, response.status_code,
                         )
 
                 return response
@@ -186,21 +186,21 @@ class DispatcharrClient:
                 if attempt < self._max_retries:
                     delay = _calculate_backoff(attempt)
                     logger.warning(
-                        f"Retryable error for {method} {endpoint}: {type(e).__name__}, "
-                        f"retry {attempt + 1}/{self._max_retries} after {delay:.1f}s"
+                        "[DISPATCHARR] Retryable error for %s %s: %s, retry %d/%d after %.1fs",
+                        method, endpoint, type(e).__name__, attempt + 1, self._max_retries, delay,
                     )
                     time.sleep(delay)
                 else:
-                    logger.error(f"Max retries exceeded for {method} {endpoint}: {e}")
+                    logger.error("[DISPATCHARR] Max retries exceeded for %s %s: %s", method, endpoint, e)
 
             except httpx.RequestError as e:
                 # Non-retryable request exception
-                logger.error(f"Request failed (non-retryable): {e}")
+                logger.error("[DISPATCHARR] Request failed (non-retryable): %s", e)
                 return None
 
         # All retries exhausted
         if last_exception:
-            logger.error(f"Request failed after {self._max_retries} retries: {last_exception}")
+            logger.error("[DISPATCHARR] Request failed after %d retries: %s", self._max_retries, last_exception)
         return None
 
     def get(self, endpoint: str) -> httpx.Response | None:
@@ -244,7 +244,7 @@ class DispatcharrClient:
             response = self.get(next_page)
             if response is None or response.status_code != 200:
                 status = response.status_code if response else "No response"
-                logger.error(f"Failed to get {error_context}: {status}")
+                logger.error("[DISPATCHARR] Failed to get %s: %s", error_context, status)
                 break
 
             data = response.json()

@@ -134,14 +134,14 @@ class TokenManager:
                 self._session["token_expiry"] = datetime.now() + timedelta(
                     minutes=self.TOKEN_VALIDITY_MINUTES - self.TOKEN_REFRESH_BUFFER_MINUTES
                 )
-                logger.debug("Dispatcharr token refreshed successfully")
+                logger.debug("[AUTH] Token refreshed")
                 return True
 
-            logger.warning(f"Token refresh failed: {response.status_code}")
+            logger.warning("[AUTH] Token refresh failed: %d", response.status_code)
             return False
 
         except httpx.RequestError as e:
-            logger.warning(f"Token refresh request failed: {e}")
+            logger.warning("[AUTH] Token refresh request failed: %s", e)
             return False
 
     def _authenticate(self) -> bool:
@@ -151,7 +151,7 @@ class TokenManager:
             True if authentication successful, False otherwise
         """
         try:
-            logger.debug(f"Authenticating to {self._base_url} as {self._username}")
+            logger.debug("[AUTH] Authenticating to %s as %s", self._base_url, self._username)
 
             with httpx.Client(timeout=self._timeout) as client:
                 response = client.post(
@@ -169,22 +169,22 @@ class TokenManager:
                 self._session["token_expiry"] = datetime.now() + timedelta(
                     minutes=self.TOKEN_VALIDITY_MINUTES - self.TOKEN_REFRESH_BUFFER_MINUTES
                 )
-                logger.info("Dispatcharr authentication successful")
+                logger.info("[AUTH] Authentication successful")
                 return True
 
             if response.status_code == 401:
-                logger.error("Authentication failed: Invalid credentials")
+                logger.error("[AUTH] Invalid credentials")
                 return False
 
             if response.status_code == 403:
-                logger.error(f"Authentication failed: Forbidden - {response.text}")
+                logger.error("[AUTH] Forbidden: %s", response.text)
                 return False
 
-            logger.error(f"Authentication failed: {response.status_code} - {response.text}")
+            logger.error("[AUTH] Failed: %d - %s", response.status_code, response.text)
             return False
 
         except httpx.RequestError as e:
-            logger.error(f"Authentication request failed: {e}")
+            logger.error("[AUTH] Request failed: %s", e)
             return False
 
     @classmethod

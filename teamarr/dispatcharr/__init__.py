@@ -21,7 +21,7 @@ Usage:
         )
 
         if result.success:
-            print(f"Created channel: {result.channel}")
+            logger.info("[DISPATCHARR] Created channel: %s", result.channel)
 """
 
 from teamarr.dispatcharr.auth import TokenManager

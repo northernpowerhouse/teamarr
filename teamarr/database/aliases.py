@@ -257,7 +257,7 @@ def bulk_create_aliases(
             )
             created += 1
         except Exception as e:
-            logger.debug("Skipped alias '%s': %s", a.get("alias"), e)
+            logger.debug("[ALIAS] Skipped '%s': %s", a.get("alias"), e)
             skipped += 1
 
     return created, skipped

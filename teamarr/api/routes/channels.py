@@ -14,6 +14,9 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from teamarr.database import get_db
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_isoformat(value: Any) -> str | None:

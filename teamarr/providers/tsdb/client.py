@@ -25,8 +25,6 @@ Dependencies are injected via constructor:
 This client has NO direct database access - all config is injected.
 """
 
-import logging
-import os
 import threading
 import time
 from collections import deque
@@ -37,6 +35,7 @@ import httpx
 
 from teamarr.core import LeagueMappingSource
 from teamarr.utilities.cache import TTLCache, make_cache_key
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +192,7 @@ class RateLimiter:
                 finally:
                     self._lock.acquire()
 
-                logger.info("TSDB cooldown complete, resuming API requests")
+                logger.info("[TSDB] Cooldown complete, resuming API requests")
 
                 # Clear the window after cooldown
                 now = time.time()
@@ -205,10 +204,11 @@ class RateLimiter:
 class TSDBClient:
     """Low-level TheSportsDB API client with rate limiting.
 
-    API key resolution order:
-    1. Explicit api_key parameter
-    2. TSDB_API_KEY environment variable
-    3. Free test key "123"
+    API key resolution:
+    1. Explicit api_key parameter (from database via factory)
+    2. Free test key "123"
+
+    Configure premium key in Settings UI.
 
     Free tier limitations:
     - 30 requests/minute
@@ -244,26 +244,13 @@ class TSDBClient:
 
     @property
     def _api_key(self) -> str:
-        """Resolve API key from available sources.
+        """Resolve API key.
 
-        Priority order:
-        1. Explicit parameter (passed to constructor via factory)
-        2. Environment variable (TSDB_API_KEY)
-        3. Free API key (123)
-
-        Note: Database access is handled by the factory in providers/__init__.py,
-        which passes the API key to the constructor. This maintains layer separation.
+        Uses explicit parameter (from database via factory) or free key.
+        Configure premium key in Settings UI.
         """
-        # 1. Explicit parameter (includes API key from database via factory)
         if self._explicit_key:
             return self._explicit_key
-
-        # 2. Environment variable
-        env_key = os.getenv("TSDB_API_KEY")
-        if env_key:
-            return env_key
-
-        # 3. Fall back to free key
         return self.FREE_API_KEY
 
     @property
@@ -280,7 +267,7 @@ class TSDBClient:
                 is_premium=self.is_premium,
             )
             if self.is_premium:
-                logger.info("TSDB using premium API key - rate limiting disabled")
+                logger.info("[TSDB] Using premium API key - rate limiting disabled")
         return self._rate_limiter
 
     def _get_client(self) -> httpx.Client:
@@ -326,7 +313,7 @@ class TSDBClient:
                 if response.status_code == 429:
                     backoff_attempt += 1
                     if backoff_attempt > self.BACKOFF_MAX_RETRIES:
-                        logger.error(
+                        logger.warning(
                             f"TSDB 429 persisted after {self.BACKOFF_MAX_RETRIES} retries. "
                             "Check API key or try again later."
                         )
@@ -362,7 +349,7 @@ class TSDBClient:
                 return response.json()
 
             except httpx.HTTPStatusError as e:
-                logger.warning(f"HTTP {e.response.status_code} for {url}")
+                logger.warning("[TSDB] HTTP %d for %s", e.response.status_code, url)
                 if attempt < self._retry_count - 1:
                     time.sleep(self._retry_delay * (attempt + 1))
                     continue
@@ -371,7 +358,7 @@ class TSDBClient:
             except (httpx.RequestError, RuntimeError, OSError) as e:
                 # RuntimeError: "Cannot send a request, as the client has been closed"
                 # OSError: "Bad file descriptor" from stale connections
-                logger.warning(f"Request failed for {url}: {e}")
+                logger.warning("[TSDB] Request failed for %s: %s", url, e)
                 # Don't reset client here - causes race conditions in parallel processing
                 # httpx connection pool handles stale connections automatically
                 if attempt < self._retry_count - 1:
@@ -387,8 +374,8 @@ class TSDBClient:
             if self._client:
                 try:
                     self._client.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("[TSDB] Error closing HTTP client: %s", e)
                 self._client = None
 
     def supports_league(self, league: str) -> bool:
@@ -441,7 +428,7 @@ class TSDBClient:
         cache_key = make_cache_key("tsdb", "eventsday", league, date_str)
         cached = self._cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"TSDB cache hit: {cache_key}")
+            logger.debug("[TSDB] Cache hit: %s", cache_key)
             return cached
 
         league_name = self.get_league_name(league)
@@ -455,7 +442,7 @@ class TSDBClient:
             target_date = date.fromisoformat(date_str)
             ttl = get_cache_ttl_for_date(target_date)
             self._cache.set(cache_key, result, ttl)
-            logger.debug(f"TSDB cached {cache_key} for {ttl // 3600}h {(ttl % 3600) // 60}m")
+            logger.debug("[TSDB] Cached %s for %dh %dm", cache_key, ttl // 3600, (ttl % 3600) // 60)
         return result
 
     def get_league_next_events(self, league: str) -> dict | None:
@@ -472,7 +459,7 @@ class TSDBClient:
         cache_key = make_cache_key("tsdb", "nextleague", league)
         cached = self._cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"TSDB cache hit: {cache_key}")
+            logger.debug("[TSDB] Cache hit: %s", cache_key)
             return cached
 
         league_id = self.get_league_id(league)
@@ -511,7 +498,7 @@ class TSDBClient:
         cache_key = make_cache_key("tsdb", "eventsround", league, round_num, season)
         cached = self._cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"TSDB cache hit: {cache_key}")
+            logger.debug("[TSDB] Cache hit: %s", cache_key)
             return cached
 
         result = self._request("eventsround.php", {"id": league_id, "r": round_num, "s": season})
@@ -584,7 +571,7 @@ class TSDBClient:
         cache_key = make_cache_key("tsdb", "searchteam", team_name.lower())
         cached = self._cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"TSDB cache hit: {cache_key}")
+            logger.debug("[TSDB] Cache hit: %s", cache_key)
             return cached
 
         result = self._request("searchteams.php", {"t": team_name})
@@ -651,7 +638,7 @@ class TSDBClient:
         cache_key = make_cache_key("tsdb", "teams", league)
         cached = self._cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"TSDB cache hit: {cache_key}")
+            logger.debug("[TSDB] Cache hit: %s", cache_key)
             return cached
 
         league_name = self.get_league_name(league)
@@ -668,7 +655,7 @@ class TSDBClient:
                 if team_id:
                     teams_by_id[team_id] = team
 
-        logger.debug(f"TSDB search_all_teams for {league}: {len(teams_by_id)} teams")
+        logger.debug("[TSDB] search_all_teams for %s: %d teams", league, len(teams_by_id))
 
         # Phase 2: Extract additional teams from season events
         # This works around the 10-team limit by finding teams in scheduled games

@@ -7,7 +7,6 @@ These don't have team-vs-team format but instead match by:
 - Fighter names (fallback)
 """
 
-import logging
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -24,6 +23,7 @@ from teamarr.consumers.stream_match_cache import StreamMatchCache, event_to_cach
 from teamarr.core.types import Event
 from teamarr.services.sports_data import SportsDataService
 from teamarr.utilities.constants import EVENT_CARD_KEYWORDS
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +112,11 @@ class EventCardMatcher:
         # Check cache first
         cache_result = self._check_cache(ctx)
         if cache_result:
+            logger.debug(
+                "[CACHE HIT] event_card stream=%s matched=%s",
+                ctx.stream_name[:50],
+                cache_result.event.name if cache_result.event else "None",
+            )
             return cache_result
 
         # Get events for this league (TSDB leagues use cache-only)
@@ -200,6 +205,11 @@ class EventCardMatcher:
             if event_num:
                 for event in events:
                     if event_num.lower() in event.name.lower():
+                        logger.debug(
+                            "[MATCHED] event_card stream=%s -> %s (method=event_number)",
+                            ctx.stream_name[:40],
+                            event.name,
+                        )
                         return MatchOutcome.matched(
                             MatchMethod.KEYWORD,
                             event,
@@ -221,6 +231,11 @@ class EventCardMatcher:
         if keyword_matches:
             # For single events on the date, just return it
             if len(events) == 1:
+                logger.debug(
+                    "[MATCHED] event_card stream=%s -> %s (method=keyword, single event)",
+                    ctx.stream_name[:40],
+                    events[0].name,
+                )
                 return MatchOutcome.matched(
                     MatchMethod.KEYWORD,
                     events[0],
@@ -239,6 +254,11 @@ class EventCardMatcher:
                 stream_words = set(stream_lower.split())
                 overlap = event_words & stream_words
                 if len(overlap) >= 2:  # At least 2 matching words
+                    logger.debug(
+                        "[MATCHED] event_card stream=%s -> %s (method=keyword, word overlap)",
+                        ctx.stream_name[:40],
+                        event.name,
+                    )
                     return MatchOutcome.matched(
                         MatchMethod.KEYWORD,
                         event,
@@ -263,6 +283,12 @@ class EventCardMatcher:
                 if len(parts) >= 1:
                     last_name = parts[-1]
                     if len(last_name) >= 4 and last_name in stream_lower:
+                        logger.debug(
+                            "[MATCHED] event_card stream=%s -> %s (method=fighter_name, '%s')",
+                            ctx.stream_name[:40],
+                            event.name,
+                            last_name,
+                        )
                         return MatchOutcome.matched(
                             MatchMethod.FUZZY,
                             event,
@@ -273,6 +299,12 @@ class EventCardMatcher:
                         )
 
         # No match found
+        logger.debug(
+            "[FAILED] event_card stream=%s: no match in %d events for %s",
+            ctx.stream_name[:40],
+            len(events),
+            league,
+        )
         return MatchOutcome.failed(
             FailedReason.NO_EVENT_CARD_MATCH,
             stream_name=ctx.stream_name,

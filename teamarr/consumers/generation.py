@@ -91,7 +91,7 @@ def run_full_generation(
 
     # Prevent concurrent generation runs
     if not _generation_lock.acquire(blocking=False):
-        logger.warning("EPG generation already in progress, skipping duplicate run")
+        logger.warning("[GENERATION] Already in progress, skipping duplicate run")
         result = GenerationResult()
         result.success = False
         result.error = "Generation already in progress"
@@ -99,7 +99,7 @@ def run_full_generation(
 
     if _generation_running:
         _generation_lock.release()
-        logger.warning("EPG generation already in progress (flag check), skipping")
+        logger.warning("[GENERATION] Already in progress (flag check), skipping")
         result = GenerationResult()
         result.success = False
         result.error = "Generation already in progress"
@@ -158,7 +158,7 @@ def run_full_generation(
                 conn.execute("ROLLBACK")
                 _generation_running = False
                 _generation_lock.release()
-                logger.warning(f"EPG generation already in progress (run {recent_running['id']}), skipping")
+                logger.warning("[GENERATION] Already in progress (run %d), skipping", recent_running['id'])
                 result = GenerationResult()
                 result.success = False
                 result.error = "Generation already in progress"
@@ -172,11 +172,11 @@ def run_full_generation(
         except Exception as e:
             try:
                 conn.execute("ROLLBACK")
-            except Exception:
-                pass
+            except Exception as rollback_err:
+                logger.debug("[GENERATION] Rollback failed during lock acquisition: %s", rollback_err)
             _generation_running = False
             _generation_lock.release()
-            logger.error(f"Failed to acquire generation lock: {e}")
+            logger.error("[GENERATION] Failed to acquire lock: %s", e)
             result = GenerationResult()
             result.success = False
             result.error = f"Failed to acquire lock: {e}"
@@ -188,7 +188,7 @@ def run_full_generation(
         from teamarr.consumers.stream_match_cache import increment_generation_counter
 
         current_generation = increment_generation_counter(db_factory)
-        logger.info(f"EPG generation starting with cache generation {current_generation}")
+        logger.info("[GENERATION] Starting with cache generation %d", current_generation)
 
         # Get settings
         with db_factory() as conn:
@@ -226,13 +226,13 @@ def run_full_generation(
         result.teams_programmes = team_result.total_programmes
 
         # Transition message - teams done, starting groups
-        logger.info("Sending transition message: teams -> groups")
+        logger.info("[GENERATION] Sending transition message: teams -> groups")
         update_progress(
             "groups", 50,
             f"Teams complete ({result.teams_processed} processed), loading event groups...",
             0, 1, "Loading event groups..."
         )
-        logger.info("Transition message sent")
+        logger.info("[GENERATION] Transition message sent")
 
         # Step 3: Process all event groups (50-95%) - 45% budget
 
@@ -290,7 +290,7 @@ def run_full_generation(
             result.file_written = True
             result.file_path = str(output_file.absolute())
             result.file_size = len(merged_xmltv)
-            logger.info(f"EPG written to {output_path} ({result.file_size:,} bytes)")
+            logger.info("[GENERATION] EPG written to %s (%s bytes)", output_path, f"{result.file_size:,}")
 
         # Create lifecycle service once for steps 5-6
         sports_service = create_default_service()
@@ -335,9 +335,9 @@ def run_full_generation(
                 "error_count": len(deletion_result.errors),
             }
             if deletion_result.deleted:
-                logger.info(f"Deleted {channels_deleted_count} expired channel(s)")
+                logger.info("[GENERATION] Deleted %d expired channel(s)", channels_deleted_count)
         except Exception as e:
-            logger.warning(f"Scheduled deletions failed: {e}")
+            logger.warning("[GENERATION] Scheduled deletions failed: %s", e)
             result.deletions = {"error": str(e)}
 
         # Step 7: Run reconciliation + cleanup (99-100%)
@@ -350,9 +350,9 @@ def run_full_generation(
                 recon_result = reconciler.reconcile(auto_fix=False)
                 result.reconciliation = recon_result.summary
                 if recon_result.issues_found:
-                    logger.info(f"Reconciliation found {len(recon_result.issues_found)} issue(s)")
+                    logger.info("[RECONCILE] Found %d issue(s)", len(recon_result.issues_found))
         except Exception as e:
-            logger.warning(f"Reconciliation failed: {e}")
+            logger.warning("[RECONCILE] Failed: %s", e)
             result.reconciliation = {"error": str(e)}
 
         # Cleanup old history (part of step 7)
@@ -364,9 +364,9 @@ def run_full_generation(
                 deleted_count = cleanup_old_history(conn, retention_days)
                 result.cleanup = {"deleted_count": deleted_count}
                 if deleted_count > 0:
-                    logger.info(f"Cleaned up {deleted_count} old history record(s)")
+                    logger.info("[CLEANUP] Removed %d old history record(s)", deleted_count)
         except Exception as e:
-            logger.warning(f"History cleanup failed: {e}")
+            logger.warning("[CLEANUP] History cleanup failed: %s", e)
             result.cleanup = {"error": str(e)}
 
         # Update stats run
@@ -393,7 +393,7 @@ def run_full_generation(
         with db_factory() as conn:
             active_channels = get_all_managed_channels(conn, include_deleted=False)
             stats_run.channels_active = len(active_channels)
-            logger.info(f"EPG generation: {len(active_channels)} active managed channels")
+            logger.info("[GENERATION] %d active managed channels", len(active_channels))
 
         stats_run.complete(status="completed")
 
@@ -411,10 +411,10 @@ def run_full_generation(
 
         flushed = flush_shared_cache()
         if flushed > 0:
-            logger.debug(f"Flushed {flushed} cache entries to SQLite")
+            logger.debug("[CACHE] Flushed %d entries to SQLite", flushed)
 
     except Exception as e:
-        logger.exception(f"EPG generation failed: {e}")
+        logger.exception("[GENERATION] Failed: %s", e)
         result.success = False
         result.error = str(e)
         result.completed_at = time.time()
@@ -425,8 +425,8 @@ def run_full_generation(
             stats_run.complete(status="failed", error=str(e))
             with db_factory() as conn:
                 save_run(conn, stats_run)
-        except Exception:
-            pass
+        except Exception as save_err:
+            logger.warning("[GENERATION] Failed to save failed run stats: %s", save_err)
 
     finally:
         # Always release the lock
@@ -479,8 +479,9 @@ def _refresh_m3u_accounts(db_factory: Callable[[], Any], dispatcharr_client: Any
 
     if batch_result.succeeded_count > 0:
         logger.info(
-            f"M3U refresh: {result['refreshed']} refreshed, "
-            f"{result['skipped']} skipped (recently updated)"
+            "[M3U] Refresh: %d refreshed, %d skipped (recently updated)",
+            result['refreshed'],
+            result['skipped'],
         )
 
     return result

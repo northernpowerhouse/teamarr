@@ -53,7 +53,7 @@ class DispatcharrFactory:
         # Test connection
         result = factory.test_connection()
         if result.success:
-            print(f"Connected to {result.version}")
+            logger.info("[DISPATCHARR] Connected to %s", result.version)
 
         # Force reconnect (after settings change)
         factory.reconnect()
@@ -98,7 +98,7 @@ class DispatcharrFactory:
             # Check if settings changed
             current_hash = self._get_settings_hash()
             if self._connection and self._settings_hash != current_hash:
-                logger.info("Dispatcharr settings changed, reconnecting")
+                logger.info("[DISPATCHARR] Settings changed, reconnecting")
                 self._close_connection()
 
             # Create connection if needed
@@ -220,8 +220,8 @@ class DispatcharrFactory:
                     # Filter out "custom" account
                     accounts = [a for a in accounts if a.get("name", "").lower() != "custom"]
                     account_count = len(accounts)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("[DISPATCHARR] Failed to fetch M3U accounts count: %s", e)
 
             # Get channel groups count
             group_count = None
@@ -229,8 +229,8 @@ class DispatcharrFactory:
                 grp_response = client.get("/api/channels/groups/")
                 if grp_response and grp_response.status_code == 200:
                     group_count = len(grp_response.json())
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("[DISPATCHARR] Failed to fetch channel groups count: %s", e)
 
             client.close()
 
@@ -292,11 +292,11 @@ class DispatcharrFactory:
                 logos=LogoManager(client),
             )
 
-            logger.info(f"Connected to Dispatcharr at {settings.url}")
+            logger.info("[DISPATCHARR] Connected at %s", settings.url)
             return connection
 
         except Exception as e:
-            logger.error(f"Failed to connect to Dispatcharr: {e}")
+            logger.error("[DISPATCHARR] Failed to connect: %s", e)
             return None
 
     def _close_connection(self) -> None:
@@ -305,7 +305,7 @@ class DispatcharrFactory:
             try:
                 self._connection.close()
             except Exception as e:
-                logger.warning(f"Error closing Dispatcharr connection: {e}")
+                logger.warning("[DISPATCHARR] Error closing connection: %s", e)
             self._connection = None
 
     def _get_settings_hash(self) -> str:

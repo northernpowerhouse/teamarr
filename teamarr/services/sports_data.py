@@ -49,7 +49,7 @@ def _get_shared_cache() -> PersistentTTLCache:
         with _cache_lock:
             if _shared_cache is None:
                 _shared_cache = PersistentTTLCache()
-                logger.info("Initialized shared service cache")
+                logger.info("[CACHE] Initialized shared service cache")
     return _shared_cache
 
 
@@ -78,7 +78,7 @@ def _ensure_registry_initialized() -> None:
 
     league_mapping_service = init_league_mapping_service(get_db)
     ProviderRegistry.initialize(league_mapping_service)
-    logger.info("Auto-initialized ProviderRegistry with league mappings")
+    logger.info("[STARTUP] Auto-initialized ProviderRegistry with league mappings")
 
 
 def create_default_service() -> "SportsDataService":
@@ -139,11 +139,11 @@ class SportsDataService:
         # Check cache (deserialize from dict)
         cached = self._cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"Cache hit: {cache_key}")
+            logger.debug("[CACHE_HIT] %s", cache_key)
             try:
                 return [dict_to_event(e) for e in cached]
             except (KeyError, TypeError) as e:
-                logger.warning(f"Cache deserialization failed: {e}")
+                logger.warning("[CACHE_ERROR] Deserialization failed: %s", e)
 
         # If cache_only, don't fetch from API
         if cache_only:
@@ -172,11 +172,11 @@ class SportsDataService:
         # Check cache (deserialize from dict)
         cached = self._cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"Cache hit: {cache_key}")
+            logger.debug("[CACHE_HIT] %s", cache_key)
             try:
                 return [dict_to_event(e) for e in cached]
             except (KeyError, TypeError) as e:
-                logger.warning(f"Cache deserialization failed: {e}")
+                logger.warning("[CACHE_ERROR] Deserialization failed: %s", e)
 
         # Fetch from provider
         for provider in self._providers:
@@ -196,11 +196,11 @@ class SportsDataService:
         # Check cache (deserialize from dict)
         cached = self._cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"Cache hit: {cache_key}")
+            logger.debug("[CACHE_HIT] %s", cache_key)
             try:
                 return dict_to_team(cached)
             except (KeyError, TypeError) as e:
-                logger.warning(f"Cache deserialization failed: {e}")
+                logger.warning("[CACHE_ERROR] Deserialization failed: %s", e)
 
         # Fetch from provider
         for provider in self._providers:
@@ -222,11 +222,11 @@ class SportsDataService:
         # Check cache (deserialize from dict)
         cached = self._cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"Cache hit: {cache_key}")
+            logger.debug("[CACHE_HIT] %s", cache_key)
             try:
                 return dict_to_event(cached)
             except (KeyError, TypeError) as e:
-                logger.warning(f"Cache deserialization failed: {e}")
+                logger.warning("[CACHE_ERROR] Deserialization failed: %s", e)
 
         for provider in self._providers:
             if provider.supports_league(league):
@@ -266,7 +266,7 @@ class SportsDataService:
             return fresh_event
 
         # Return original if refresh fails
-        logger.debug(f"Could not refresh event {event.id}, using cached status")
+        logger.debug("[SPORTS_DATA] Could not refresh event %s, using cached status", event.id)
         return event
 
     def get_team_stats(self, team_id: str, league: str) -> TeamStats | None:
@@ -276,11 +276,11 @@ class SportsDataService:
         # Check cache (deserialize from dict)
         cached = self._cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"Cache hit: {cache_key}")
+            logger.debug("[CACHE_HIT] %s", cache_key)
             try:
                 return dict_to_stats(cached)
             except (KeyError, TypeError) as e:
-                logger.warning(f"Cache deserialization failed: {e}")
+                logger.warning("[CACHE_ERROR] Deserialization failed: %s", e)
 
         # Fetch from provider
         for provider in self._providers:
@@ -403,7 +403,7 @@ class SportsDataService:
                 break
 
         if not tsdb_provider:
-            logger.debug("No TSDB provider registered, skipping pre-warm")
+            logger.debug("[PREWARM] No TSDB provider registered, skipping pre-warm")
             return
 
         unique_leagues = list(set(leagues))
@@ -414,8 +414,10 @@ class SportsDataService:
 
         total_calls = len(unique_leagues) * days_ahead  # N days per league
         logger.info(
-            f"Pre-warming TSDB events cache: {len(unique_leagues)} leagues × "
-            f"{days_ahead} days = ~{total_calls} API calls"
+            "[PREWARM] TSDB: %d leagues × %d days = ~%d API calls",
+            len(unique_leagues),
+            days_ahead,
+            total_calls,
         )
 
         for league in unique_leagues:
@@ -429,4 +431,4 @@ class SportsDataService:
                 # Use get_events which goes through provider → client cache
                 tsdb_provider.get_events(league, target_date)
 
-            logger.debug(f"Pre-warmed TSDB events cache for league: {league} ({days_ahead} days)")
+            logger.debug("[PREWARM] TSDB league %s: %d days", league, days_ahead)

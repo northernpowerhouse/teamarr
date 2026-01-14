@@ -4,11 +4,12 @@ Handles raw HTTP requests to ESPN endpoints.
 No data transformation - just fetch and return JSON.
 """
 
-import logging
 import threading
 import time
 
 import httpx
+
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +61,10 @@ class ESPNClient:
                 client = self._get_client()
                 response = client.get(url, params=params)
                 response.raise_for_status()
+                logger.debug("[FETCH] %s", url.split("/sports/")[-1] if "/sports/" in url else url)
                 return response.json()
             except httpx.HTTPStatusError as e:
-                logger.warning(f"HTTP {e.response.status_code} for {url}")
+                logger.warning("[ESPN] HTTP %d for %s", e.response.status_code, url)
                 if attempt < self._retry_count - 1:
                     time.sleep(self._retry_delay * (attempt + 1))
                     continue
@@ -70,7 +72,7 @@ class ESPNClient:
             except (httpx.RequestError, RuntimeError, OSError) as e:
                 # RuntimeError: "Cannot send a request, as the client has been closed"
                 # OSError: "Bad file descriptor" from stale connections
-                logger.warning(f"Request failed for {url}: {e}")
+                logger.warning("[ESPN] Request failed for %s: %s", url, e)
                 # Don't reset client here - causes race conditions in parallel processing
                 # httpx connection pool handles stale connections automatically
                 if attempt < self._retry_count - 1:
@@ -86,8 +88,8 @@ class ESPNClient:
             if self._client:
                 try:
                     self._client.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("[ESPN] Error closing HTTP client: %s", e)
                 self._client = None
 
     def get_sport_league(
@@ -109,7 +111,7 @@ class ESPNClient:
         if "." in league:
             return ("soccer", league)
         # No config provided - log warning and return league as-is
-        logger.warning(f"No database config for league '{league}' - add to leagues table")
+        logger.warning("[ESPN] No database config for league '%s' - add to leagues table", league)
         return ("unknown", league)
 
     def get_scoreboard(

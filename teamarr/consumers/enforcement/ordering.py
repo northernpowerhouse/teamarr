@@ -156,13 +156,15 @@ class KeywordOrderingEnforcer:
                         )
 
                         logger.info(
-                            f"Reordered: main #{keyword_number} <-> "
-                            f"keyword '{keyword_channel['exception_keyword']}' #{main_number} "
-                            f"(event: {main_channel['event_id']})"
+                            "[ORDERING] Swapped main #%d <-> keyword '%s' #%d (event=%s)",
+                            keyword_number,
+                            keyword_channel["exception_keyword"],
+                            main_number,
+                            main_channel["event_id"],
                         )
 
                     except Exception as e:
-                        logger.warning(f"Failed to reorder channels: {e}")
+                        logger.warning("[ORDERING] Failed to reorder: %s", e)
                         result.errors.append(
                             {
                                 "event_id": main_channel["event_id"],
@@ -173,11 +175,11 @@ class KeywordOrderingEnforcer:
                 conn.commit()
 
         except Exception as e:
-            logger.exception("Error during keyword ordering enforcement")
+            logger.exception("[ORDERING_ERROR] %s", e)
             result.errors.append({"error": str(e)})
 
         if result.reordered_count > 0:
-            logger.info(f"Keyword ordering: reordered {result.reordered_count} channel pair(s)")
+            logger.info("[ORDERING] Reordered %d channel pair(s)", result.reordered_count)
 
         return result
 
