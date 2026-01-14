@@ -12,10 +12,25 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 # =============================================================================
-# VERSION - Single source of truth
+# VERSION - Read from pyproject.toml (single source of truth)
 # =============================================================================
 
-BASE_VERSION = "2.0.1"
+
+def _get_base_version() -> str:
+    """Read version from pyproject.toml."""
+    try:
+        import tomllib
+        pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
+        if pyproject_path.exists():
+            with open(pyproject_path, "rb") as f:
+                data = tomllib.load(f)
+                return data.get("project", {}).get("version", "0.0.0")
+    except Exception:
+        pass
+    return "0.0.0"
+
+
+BASE_VERSION = _get_base_version()
 
 
 def _get_version() -> str:

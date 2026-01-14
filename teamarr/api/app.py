@@ -235,12 +235,13 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    from teamarr.config import BASE_VERSION
     from teamarr.database.connection import is_v1_database_detected
 
     app = FastAPI(
         title="Teamarr API",
         description="Sports EPG generation service - V2 Architecture",
-        version="2.0.1",
+        version=BASE_VERSION,
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
