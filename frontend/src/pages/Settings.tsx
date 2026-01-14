@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { toast } from "sonner"
 import cronstrue from "cronstrue"
 import { getSportDisplayName } from "@/lib/utils"
@@ -13,6 +13,8 @@ import {
   Database,
   Plus,
   Trash2,
+  Download,
+  Upload,
 } from "lucide-react"
 import {
   ChannelProfileSelector,
@@ -48,6 +50,7 @@ import {
 } from "@/hooks/useSettings"
 import { TeamPicker } from "@/components/TeamPicker"
 import { getLeagues } from "@/api/teams"
+import { downloadBackup, restoreBackup } from "@/api/backup"
 import { useQuery } from "@tanstack/react-query"
 import { useCacheStatus, useRefreshCache } from "@/hooks/useEPG"
 import type {
@@ -173,6 +176,10 @@ export function Settings() {
 
   // Selected profile IDs for display (converted from API format)
   const [selectedProfileIds, setSelectedProfileIds] = useState<number[]>([])
+
+  // Backup & Restore state
+  const [isRestoring, setIsRestoring] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Initialize local state from settings
   useEffect(() => {
@@ -362,6 +369,38 @@ export function Settings() {
       toast.success("Keyword deleted")
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete keyword")
+    }
+  }
+
+  const handleDownloadBackup = () => {
+    downloadBackup()
+    toast.success("Backup download started")
+  }
+
+  const handleRestoreBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (!file.name.endsWith(".db")) {
+      toast.error("Invalid file type. Please upload a .db file.")
+      return
+    }
+
+    setIsRestoring(true)
+    try {
+      const result = await restoreBackup(file)
+      toast.success(result.message)
+      if (result.backup_path) {
+        toast.info(`Pre-restore backup saved at: ${result.backup_path}`)
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to restore backup")
+    } finally {
+      setIsRestoring(false)
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
     }
   }
 
@@ -1454,6 +1493,61 @@ export function Settings() {
             )}
             Save
           </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Backup & Restore</CardTitle>
+          <CardDescription>Download a backup of your database or restore from a previous backup</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <Label className="text-sm font-medium">Download Backup</Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Download a copy of your current database including all teams, templates, groups, and settings.
+              </p>
+              <Button variant="outline" onClick={handleDownloadBackup}>
+                <Download className="h-4 w-4 mr-2" />
+                Download Backup
+              </Button>
+            </div>
+            <div className="flex-1">
+              <Label className="text-sm font-medium">Restore Backup</Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Upload a .db file to restore. A backup of your current data will be created first.
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".db"
+                onChange={handleRestoreBackup}
+                className="hidden"
+              />
+              <Button
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isRestoring}
+              >
+                {isRestoring ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4 mr-2" />
+                )}
+                {isRestoring ? "Restoring..." : "Restore Backup"}
+              </Button>
+            </div>
+          </div>
+          <div className="rounded-md bg-amber-500/10 border border-amber-500/20 p-3">
+            <div className="flex gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+              <div className="text-sm text-amber-500">
+                <p className="font-medium">Warning</p>
+                <p className="text-xs">Restoring a backup will replace ALL current data. The application will need to be restarted for changes to take effect.</p>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
       </>
