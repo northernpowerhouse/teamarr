@@ -8,4 +8,13 @@ services:
     volumes:
       - ./data:/app/data
     environment:
+      # Timezone for all date/time display and XMLTV output
       - TZ=America/Detroit
+
+      # Console log level: DEBUG, INFO, WARNING, ERROR (default: INFO)
+      # Note: File logging (data/logs/) always captures DEBUG regardless of this setting
+      # - LOG_LEVEL=INFO
+
+      # Log format: "text" or "json" (default: text)
+      # Use "json" for log aggregation systems (ELK, Loki, Splunk)
+      # - LOG_FORMAT=text
