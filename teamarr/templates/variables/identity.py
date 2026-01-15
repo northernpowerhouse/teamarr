@@ -201,10 +201,24 @@ def extract_league_name(ctx: TemplateContext, game_ctx: GameContext | None) -> s
     name="sport",
     category=Category.IDENTITY,
     suffix_rules=SuffixRules.BASE_ONLY,
-    description="Sport name in title case (e.g., 'Football', 'Basketball')",
+    description="Sport display name (e.g., 'Football', 'MMA')",
 )
 def extract_sport(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
-    return ctx.team_config.sport or ""
+    """Return sport display name with proper casing.
+
+    Uses sports table for display names (handles special cases like 'MMA').
+    Falls back to title case if sport not in table.
+
+    THREAD-SAFE: Uses in-memory cache, no DB access.
+    """
+    sport_code = ctx.team_config.sport
+    if not sport_code:
+        return ""
+
+    from teamarr.services.league_mappings import get_league_mapping_service
+
+    service = get_league_mapping_service()
+    return service.get_sport_display_name(sport_code)
 
 
 @register_variable(

@@ -743,6 +743,40 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("[MIGRATE] Schema upgraded to version 28 (epg_output_path -> ./data/)")
         current_version = 28
 
+    # Version 29: Add sports table for proper sport display names
+    # Previously {sport} returned raw lowercase value ('mma'), now uses sports.display_name ('MMA')
+    if current_version < 29:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sports (
+                sport_code TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL
+            )
+        """)
+        # Seed with display names - INSERT OR REPLACE ensures idempotency
+        conn.execute("""
+            INSERT OR REPLACE INTO sports (sport_code, display_name) VALUES
+                ('football', 'Football'),
+                ('basketball', 'Basketball'),
+                ('hockey', 'Hockey'),
+                ('baseball', 'Baseball'),
+                ('softball', 'Softball'),
+                ('soccer', 'Soccer'),
+                ('mma', 'MMA'),
+                ('volleyball', 'Volleyball'),
+                ('lacrosse', 'Lacrosse'),
+                ('cricket', 'Cricket'),
+                ('rugby_league', 'Rugby League'),
+                ('rugby_union', 'Rugby Union'),
+                ('boxing', 'Boxing'),
+                ('tennis', 'Tennis'),
+                ('golf', 'Golf'),
+                ('wrestling', 'Wrestling'),
+                ('racing', 'Racing')
+        """)
+        conn.execute("UPDATE settings SET schema_version = 29 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 29 (sports table)")
+        current_version = 29
+
 
 def _drop_stream_profile_columns(conn: sqlite3.Connection) -> None:
     """Remove stream_profile_id from event_epg_groups and managed_channels.

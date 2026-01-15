@@ -255,7 +255,7 @@ CREATE TABLE IF NOT EXISTS settings (
     stream_filter_exclude_patterns JSON DEFAULT '[]',
 
     -- Schema Version
-    schema_version INTEGER DEFAULT 25
+    schema_version INTEGER DEFAULT 29
 );
 
 -- Insert default settings
@@ -470,6 +470,38 @@ AFTER UPDATE ON managed_channels
 BEGIN
     UPDATE managed_channels SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
+
+
+-- =============================================================================
+-- SPORTS TABLE
+-- Single source of truth for sport display names
+-- Used by {sport} template variable for proper casing (e.g., 'MMA' not 'mma')
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS sports (
+    sport_code TEXT PRIMARY KEY,             -- Lowercase internal code: 'football', 'mma'
+    display_name TEXT NOT NULL               -- Display format: 'Football', 'MMA'
+);
+
+-- Seed sports with proper display names
+INSERT OR REPLACE INTO sports (sport_code, display_name) VALUES
+    ('football', 'Football'),
+    ('basketball', 'Basketball'),
+    ('hockey', 'Hockey'),
+    ('baseball', 'Baseball'),
+    ('softball', 'Softball'),
+    ('soccer', 'Soccer'),
+    ('mma', 'MMA'),
+    ('volleyball', 'Volleyball'),
+    ('lacrosse', 'Lacrosse'),
+    ('cricket', 'Cricket'),
+    ('rugby_league', 'Rugby League'),
+    ('rugby_union', 'Rugby Union'),
+    ('boxing', 'Boxing'),
+    ('tennis', 'Tennis'),
+    ('golf', 'Golf'),
+    ('wrestling', 'Wrestling'),
+    ('racing', 'Racing');
 
 
 -- =============================================================================

@@ -147,4 +147,4 @@ class AllSettings:
     stream_filter: StreamFilterSettings = field(default_factory=StreamFilterSettings)
     team_filter: TeamFilterSettings = field(default_factory=TeamFilterSettings)
     epg_generation_counter: int = 0
-    schema_version: int = 22
+    schema_version: int = 29

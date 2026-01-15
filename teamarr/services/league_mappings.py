@@ -53,6 +53,8 @@ class LeagueMappingService:
         self._league_sports: dict[str, str] = {}
         # Fallback from league_cache for discovered leagues
         self._league_cache_names: dict[str, str] = {}
+        # {sport}: sport display name (e.g., 'mma' -> 'MMA')
+        self._sport_display_names: dict[str, str] = {}
         self._load_all_mappings()
 
     def _load_all_mappings(self) -> None:
@@ -136,10 +138,15 @@ class LeagueMappingService:
                 if slug not in self._league_cache_names:
                     self._league_cache_names[slug] = row["league_name"]
 
+            # Load sport display names from sports table
+            cursor = conn.execute("SELECT sport_code, display_name FROM sports")
+            for row in cursor.fetchall():
+                self._sport_display_names[row["sport_code"].lower()] = row["display_name"]
+
         logger.info(
-            "[LEAGUE_MAPPING] Loaded %d mappings (%d providers, %d aliases, %d league_ids)",
+            "[LEAGUE_MAPPING] Loaded %d mappings (%d providers, %d aliases, %d sports)",
             len(self._mappings), len(self._provider_leagues),
-            len(self._league_aliases), len(self._league_ids)
+            len(self._league_aliases), len(self._sport_display_names)
         )
 
     def reload(self) -> None:
@@ -155,6 +162,7 @@ class LeagueMappingService:
         self._gracenote_categories.clear()
         self._league_sports.clear()
         self._league_cache_names.clear()
+        self._sport_display_names.clear()
         self._load_all_mappings()
 
     def get_league_alias(self, league_code: str) -> str:
@@ -252,15 +260,40 @@ class LeagueMappingService:
         if key in self._gracenote_categories:
             return self._gracenote_categories[key]
 
-        # Auto-generate from display_name + sport
+        # Auto-generate from display_name + sport (with proper sport display name)
         display_name = self.get_league_display_name(league_code)
-        sport = self._league_sports.get(key, "")
+        sport_code = self._league_sports.get(key, "")
 
-        if display_name and sport:
-            return f"{display_name} {sport}"
+        if display_name and sport_code:
+            sport_display = self.get_sport_display_name(sport_code)
+            return f"{display_name} {sport_display}"
 
         # Fallback to just display_name
         return display_name
+
+    def get_sport_display_name(self, sport_code: str) -> str:
+        """Get display name for {sport} variable.
+
+        Fallback chain:
+            1. display_name from sports table (e.g., 'MMA', 'Football')
+            2. Title case of sport_code (e.g., 'mma' -> 'Mma')
+
+        Thread-safe: uses in-memory cache, no DB access.
+
+        Args:
+            sport_code: Lowercase sport code (e.g., 'mma', 'football')
+
+        Returns:
+            Display name (e.g., 'MMA', 'Football')
+        """
+        key = sport_code.lower()
+
+        # Look up in cached sports table
+        if key in self._sport_display_names:
+            return self._sport_display_names[key]
+
+        # Fallback to title case
+        return sport_code.title()
 
     def get_mapping(self, league_code: str, provider: str) -> LeagueMapping | None:
         """Get mapping for a specific league and provider.
