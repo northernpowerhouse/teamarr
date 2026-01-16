@@ -174,6 +174,35 @@ class TeamFilterSettingsUpdate(BaseModel):
 
 
 # =============================================================================
+# CHANNEL NUMBERING SETTINGS
+# =============================================================================
+
+
+class ChannelNumberingSettingsModel(BaseModel):
+    """Channel numbering and sorting settings for AUTO groups."""
+
+    numbering_mode: str = "strict_block"  # 'strict_block', 'rational_block', 'strict_compact'
+    sorting_scope: str = "per_group"  # 'per_group', 'global'
+    sort_by: str = "time"  # 'sport_league_time', 'time', 'stream_order'
+
+
+class ChannelNumberingSettingsUpdate(BaseModel):
+    """Update model for channel numbering settings (all fields optional)."""
+
+    numbering_mode: str | None = None
+    sorting_scope: str | None = None
+    sort_by: str | None = None
+
+
+class GlobalReassignResponse(BaseModel):
+    """Response from global channel reassignment."""
+
+    channels_processed: int
+    channels_moved: int
+    drift_details: list[dict] = []
+
+
+# =============================================================================
 # ALL SETTINGS
 # =============================================================================
 
@@ -189,8 +218,9 @@ class AllSettingsModel(BaseModel):
     durations: DurationSettingsModel
     display: DisplaySettingsModel
     team_filter: TeamFilterSettingsModel | None = None
+    channel_numbering: ChannelNumberingSettingsModel | None = None
     epg_generation_counter: int = 0
-    schema_version: int = 22
+    schema_version: int = 30
 
     # UI timezone info (read-only, from environment or fallback to epg_timezone)
     ui_timezone: str = "America/New_York"

@@ -47,8 +47,11 @@ import {
   useExceptionKeywords,
   useCreateExceptionKeyword,
   useDeleteExceptionKeyword,
+  useChannelNumberingSettings,
+  useUpdateChannelNumberingSettings,
 } from "@/hooks/useSettings"
 import { TeamPicker } from "@/components/TeamPicker"
+import { SortPriorityManager } from "@/components/SortPriorityManager"
 import { getLeagues } from "@/api/teams"
 import { downloadBackup, restoreBackup } from "@/api/backup"
 import { useQuery } from "@tanstack/react-query"
@@ -62,6 +65,7 @@ import type {
   DisplaySettings,
   ReconciliationSettings,
   TeamFilterSettings,
+  ChannelNumberingSettings,
 } from "@/api/settings"
 
 function formatRelativeTime(dateStr: string | null): string {
@@ -104,12 +108,13 @@ function CronPreview({ expression }: { expression: string }) {
   )
 }
 
-type SettingsTab = "general" | "teams" | "events" | "epg" | "integrations" | "advanced"
+type SettingsTab = "general" | "teams" | "events" | "channels" | "epg" | "integrations" | "advanced"
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "teams", label: "Teams" },
   { id: "events", label: "Event Groups" },
+  { id: "channels", label: "Channel Management" },
   { id: "epg", label: "EPG Generation" },
   { id: "integrations", label: "Integrations" },
   { id: "advanced", label: "Advanced" },
@@ -154,6 +159,11 @@ export function Settings() {
   // Team filter settings
   const { data: teamFilterData } = useTeamFilterSettings()
   const updateTeamFilter = useUpdateTeamFilterSettings()
+
+  // Channel numbering settings
+  const { data: channelNumberingData } = useChannelNumberingSettings()
+  const updateChannelNumbering = useUpdateChannelNumberingSettings()
+
   const { data: leaguesData } = useQuery({
     queryKey: ["cache", "leagues"],
     queryFn: () => getLeagues(),
@@ -171,6 +181,11 @@ export function Settings() {
     include_teams: null,
     exclude_teams: null,
     mode: "include",
+  })
+  const [channelNumbering, setChannelNumbering] = useState<ChannelNumberingSettings>({
+    numbering_mode: "strict_block",
+    sorting_scope: "per_group",
+    sort_by: "time",
   })
   const [newKeyword, setNewKeyword] = useState({ keywords: "", behavior: "consolidate" })
 
@@ -211,6 +226,13 @@ export function Settings() {
       setTeamFilter(teamFilterData)
     }
   }, [teamFilterData])
+
+  // Sync channel numbering state when data loads
+  useEffect(() => {
+    if (channelNumberingData) {
+      setChannelNumbering(channelNumberingData)
+    }
+  }, [channelNumberingData])
 
   // Convert API profile IDs to display IDs when profiles are loaded
   useEffect(() => {
@@ -322,20 +344,6 @@ export function Settings() {
     }
   }
 
-  // Combined save for event group settings
-  const handleSaveEventGroupSettings = async () => {
-    try {
-      const promises: Promise<unknown>[] = []
-      if (epg) promises.push(updateEPG.mutateAsync(epg))
-      if (lifecycle) promises.push(updateLifecycle.mutateAsync(lifecycle))
-      if (reconciliation) promises.push(updateReconciliation.mutateAsync(reconciliation))
-      await Promise.all(promises)
-      toast.success("Settings saved")
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save")
-    }
-  }
-
   // Combined save for scheduler settings
   const handleSaveSchedulerSettings = async () => {
     try {
@@ -344,6 +352,15 @@ export function Settings() {
       if (scheduler) promises.push(updateScheduler.mutateAsync(scheduler))
       await Promise.all(promises)
       toast.success("Settings saved")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save")
+    }
+  }
+
+  const handleSaveChannelNumbering = async () => {
+    try {
+      await updateChannelNumbering.mutateAsync(channelNumbering)
+      toast.success("Channel numbering settings saved")
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save")
     }
@@ -651,10 +668,13 @@ export function Settings() {
       </div>
       <Card>
         <CardHeader>
-          <CardTitle>Channel Lifecycle</CardTitle>
+          <CardTitle>Event Matching</CardTitle>
+          <CardDescription>
+            Configure how streams are matched to sporting events
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="event-lookahead">Event Lookahead</Label>
               <Select
@@ -675,44 +695,6 @@ export function Settings() {
               </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="create-timing">Channel Create Timing</Label>
-              <Select
-                id="create-timing"
-                value={lifecycle?.channel_create_timing ?? "same_day"}
-                onChange={(e) =>
-                  lifecycle && setLifecycle({ ...lifecycle, channel_create_timing: e.target.value })
-                }
-              >
-                <option value="stream_available">When stream available</option>
-                <option value="same_day">Same day</option>
-                <option value="day_before">Day before</option>
-                <option value="2_days_before">2 days before</option>
-                <option value="3_days_before">3 days before</option>
-                <option value="1_week_before">1 week before</option>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="delete-timing">Channel Delete Timing</Label>
-              <Select
-                id="delete-timing"
-                value={lifecycle?.channel_delete_timing ?? "day_after"}
-                onChange={(e) =>
-                  lifecycle && setLifecycle({ ...lifecycle, channel_delete_timing: e.target.value })
-                }
-              >
-                <option value="stream_removed">When stream removed</option>
-                <option value="6_hours_after">6 hours after end of event</option>
-                <option value="same_day">Same day</option>
-                <option value="day_after">Day after</option>
-                <option value="2_days_after">2 days after</option>
-                <option value="3_days_after">3 days after</option>
-                <option value="1_week_after">1 week after</option>
-              </Select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
-            <div className="space-y-2">
               <Label htmlFor="duplicate-handling">Duplicate Handling</Label>
               <Select
                 id="duplicate-handling"
@@ -725,47 +707,27 @@ export function Settings() {
                 <option value="separate">Separate</option>
                 <option value="ignore">Ignore</option>
               </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="channel-range-start">Channel Range Start</Label>
-              <Input
-                id="channel-range-start"
-                type="number"
-                min={1}
-                value={lifecycle?.channel_range_start ?? 101}
-                onChange={(e) =>
-                  lifecycle &&
-                  setLifecycle({
-                    ...lifecycle,
-                    channel_range_start: parseInt(e.target.value) || 101,
-                  })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="channel-range-end">Channel Range End</Label>
-              <Input
-                id="channel-range-end"
-                type="number"
-                min={1}
-                value={lifecycle?.channel_range_end ?? ""}
-                onChange={(e) =>
-                  lifecycle &&
-                  setLifecycle({
-                    ...lifecycle,
-                    channel_range_end: e.target.value ? parseInt(e.target.value) : null,
-                  })
-                }
-                placeholder="No limit"
-              />
+              <p className="text-xs text-muted-foreground">
+                How to handle multiple streams for the same event
+              </p>
             </div>
           </div>
 
           <Button
-            onClick={handleSaveEventGroupSettings}
-            disabled={updateEPG.isPending || updateLifecycle.isPending || updateReconciliation.isPending}
+            onClick={async () => {
+              try {
+                const promises: Promise<unknown>[] = []
+                if (epg) promises.push(updateEPG.mutateAsync(epg))
+                if (reconciliation) promises.push(updateReconciliation.mutateAsync(reconciliation))
+                await Promise.all(promises)
+                toast.success("Event matching settings saved")
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Failed to save")
+              }
+            }}
+            disabled={updateEPG.isPending || updateReconciliation.isPending}
           >
-            {(updateEPG.isPending || updateLifecycle.isPending || updateReconciliation.isPending) ? (
+            {(updateEPG.isPending || updateReconciliation.isPending) ? (
               <Loader2 className="h-4 w-4 mr-1 animate-spin" />
             ) : (
               <Save className="h-4 w-4 mr-1" />
@@ -988,6 +950,377 @@ export function Settings() {
               )}
               Save Default Filter
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+      </>
+      )}
+
+      {/* Channel Management Tab */}
+      {activeTab === "channels" && (
+      <>
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold">Channel Management</h2>
+        <p className="text-sm text-muted-foreground">Configure channel lifecycle, numbering, and sorting</p>
+      </div>
+
+      {/* Channel Lifecycle */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Channel Lifecycle</CardTitle>
+          <CardDescription>
+            Configure when channels are created and deleted for event groups
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="ch-create-timing">Channel Create Timing</Label>
+              <Select
+                id="ch-create-timing"
+                value={lifecycle?.channel_create_timing ?? "same_day"}
+                onChange={(e) =>
+                  lifecycle && setLifecycle({ ...lifecycle, channel_create_timing: e.target.value })
+                }
+              >
+                <option value="stream_available">When stream available</option>
+                <option value="same_day">Same day</option>
+                <option value="day_before">Day before</option>
+                <option value="2_days_before">2 days before</option>
+                <option value="3_days_before">3 days before</option>
+                <option value="1_week_before">1 week before</option>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                When to create channels before events
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ch-delete-timing">Channel Delete Timing</Label>
+              <Select
+                id="ch-delete-timing"
+                value={lifecycle?.channel_delete_timing ?? "day_after"}
+                onChange={(e) =>
+                  lifecycle && setLifecycle({ ...lifecycle, channel_delete_timing: e.target.value })
+                }
+              >
+                <option value="stream_removed">When stream removed</option>
+                <option value="6_hours_after">6 hours after end of event</option>
+                <option value="same_day">Same day</option>
+                <option value="day_after">Day after</option>
+                <option value="2_days_after">2 days after</option>
+                <option value="3_days_after">3 days after</option>
+                <option value="1_week_after">1 week after</option>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                When to delete channels after events
+              </p>
+            </div>
+          </div>
+
+          <Button
+            onClick={async () => {
+              if (!lifecycle) return
+              try {
+                await updateLifecycle.mutateAsync(lifecycle)
+                toast.success("Channel lifecycle settings saved")
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Failed to save")
+              }
+            }}
+            disabled={updateLifecycle.isPending}
+          >
+            {updateLifecycle.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-1" />
+            )}
+            Save
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Channel Numbering - Cascading Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Channel Numbering</CardTitle>
+          <CardDescription>
+            Configure how channel numbers are assigned and sorted for Auto groups
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Channel Range */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="ch-range-start-num">Channel Range Start</Label>
+              <Input
+                id="ch-range-start-num"
+                type="number"
+                min={1}
+                value={lifecycle?.channel_range_start ?? 101}
+                onChange={(e) =>
+                  lifecycle &&
+                  setLifecycle({
+                    ...lifecycle,
+                    channel_range_start: parseInt(e.target.value) || 101,
+                  })
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                First channel number for auto-assigned channels
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ch-range-end-num">Channel Range End</Label>
+              <Input
+                id="ch-range-end-num"
+                type="number"
+                min={1}
+                value={lifecycle?.channel_range_end ?? ""}
+                onChange={(e) =>
+                  lifecycle &&
+                  setLifecycle({
+                    ...lifecycle,
+                    channel_range_end: e.target.value ? parseInt(e.target.value) : null,
+                  })
+                }
+                placeholder="No limit"
+              />
+              <p className="text-xs text-muted-foreground">
+                Last channel number (leave empty for no limit)
+              </p>
+            </div>
+          </div>
+
+          {/* Level 1: Numbering Mode - Tab-style layout */}
+          <div className="space-y-0">
+            <Label className="text-sm font-medium mb-3 block">Numbering Mode</Label>
+            <div className="grid grid-cols-3 gap-0">
+              {/* Strict Block */}
+              <label className={`flex flex-col p-3 border-2 cursor-pointer transition-colors rounded-tl-lg ${
+                channelNumbering.numbering_mode === "strict_block"
+                  ? "border-primary border-b-0 bg-muted/30 relative z-10"
+                  : "border-border border-b-primary/20 hover:border-muted-foreground/50 bg-background"
+              }`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <input
+                    type="radio"
+                    name="numbering-mode"
+                    value="strict_block"
+                    checked={channelNumbering.numbering_mode === "strict_block"}
+                    onChange={() =>
+                      setChannelNumbering({
+                        ...channelNumbering,
+                        numbering_mode: "strict_block",
+                        sorting_scope: "per_group",
+                      })
+                    }
+                    className="accent-primary"
+                  />
+                  <span className="font-medium text-sm">Strict Block Reservation</span>
+                </div>
+                <p className="text-xs text-muted-foreground leading-tight">
+                  Reserves blocks by total theoretical stream count per group. Large gaps, minimal drift. Best for stable assignments. Per-group sorting only.
+                </p>
+              </label>
+
+              {/* Rational Block */}
+              <label className={`flex flex-col p-3 border-2 border-l-0 cursor-pointer transition-colors ${
+                channelNumbering.numbering_mode === "rational_block"
+                  ? "border-primary border-b-0 bg-muted/30 relative z-10"
+                  : "border-border border-b-primary/20 hover:border-muted-foreground/50 bg-background"
+              }`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <input
+                    type="radio"
+                    name="numbering-mode"
+                    value="rational_block"
+                    checked={channelNumbering.numbering_mode === "rational_block"}
+                    onChange={() =>
+                      setChannelNumbering({
+                        ...channelNumbering,
+                        numbering_mode: "rational_block",
+                      })
+                    }
+                    className="accent-primary"
+                  />
+                  <span className="font-medium text-sm">Rational Block Reservation</span>
+                </div>
+                <p className="text-xs text-muted-foreground leading-tight">
+                  Reserves blocks by actual channel count. Smaller gaps, low drift. Balanced approach.
+                </p>
+              </label>
+
+              {/* Strict Compact */}
+              <label className={`flex flex-col p-3 border-2 border-l-0 cursor-pointer transition-colors rounded-tr-lg ${
+                channelNumbering.numbering_mode === "strict_compact"
+                  ? "border-primary border-b-0 bg-muted/30 relative z-10"
+                  : "border-border border-b-primary/20 hover:border-muted-foreground/50 bg-background"
+              }`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <input
+                    type="radio"
+                    name="numbering-mode"
+                    value="strict_compact"
+                    checked={channelNumbering.numbering_mode === "strict_compact"}
+                    onChange={() =>
+                      setChannelNumbering({
+                        ...channelNumbering,
+                        numbering_mode: "strict_compact",
+                      })
+                    }
+                    className="accent-primary"
+                  />
+                  <span className="font-medium text-sm">Strict Compact Numbering</span>
+                </div>
+                <p className="text-xs text-muted-foreground leading-tight">
+                  No reservation, sequential numbers. No gaps, higher drift risk. Maximizes density.
+                </p>
+              </label>
+            </div>
+
+            {/* Sub-options panel - connected to tabs */}
+            <div className="rounded-b-lg border-2 border-primary border-t-0 bg-muted/30 p-4 space-y-4 -mt-[2px]">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <span>Sorting Options</span>
+              </div>
+
+            {/* For strict_block: just show sort by options */}
+            {channelNumbering.numbering_mode === "strict_block" && (
+              <div className="space-y-3">
+                <Label className="text-sm">Sort Channels By</Label>
+                <div className="flex gap-3">
+                  <label className={`flex-1 flex items-center gap-2 p-2.5 rounded-md border cursor-pointer transition-colors ${
+                    channelNumbering.sort_by === "time" ? "border-primary bg-background" : "border-transparent bg-background/50 hover:bg-background"
+                  }`}>
+                    <input type="radio" name="sort-by-strict" value="time"
+                      checked={channelNumbering.sort_by === "time"}
+                      onChange={() => setChannelNumbering({ ...channelNumbering, sort_by: "time" })}
+                      className="accent-primary" />
+                    <span className="text-sm">Event Time</span>
+                  </label>
+                  <label className={`flex-1 flex items-center gap-2 p-2.5 rounded-md border cursor-pointer transition-colors ${
+                    channelNumbering.sort_by === "sport_league_time" ? "border-primary bg-background" : "border-transparent bg-background/50 hover:bg-background"
+                  }`}>
+                    <input type="radio" name="sort-by-strict" value="sport_league_time"
+                      checked={channelNumbering.sort_by === "sport_league_time"}
+                      onChange={() => setChannelNumbering({ ...channelNumbering, sort_by: "sport_league_time" })}
+                      className="accent-primary" />
+                    <span className="text-sm">Sport → League → Time</span>
+                  </label>
+                  <label className={`flex-1 flex items-center gap-2 p-2.5 rounded-md border cursor-pointer transition-colors ${
+                    channelNumbering.sort_by === "stream_order" ? "border-primary bg-background" : "border-transparent bg-background/50 hover:bg-background"
+                  }`}>
+                    <input type="radio" name="sort-by-strict" value="stream_order"
+                      checked={channelNumbering.sort_by === "stream_order"}
+                      onChange={() => setChannelNumbering({ ...channelNumbering, sort_by: "stream_order" })}
+                      className="accent-primary" />
+                    <span className="text-sm">Stream Order</span>
+                  </label>
+                </div>
+                {channelNumbering.sort_by === "sport_league_time" && (
+                  <SortPriorityManager currentSortBy="sport_league_time" showWhenSortBy="sport_league_time" />
+                )}
+              </div>
+            )}
+
+            {/* For rational_block and strict_compact: show scope then sort by */}
+            {(channelNumbering.numbering_mode === "rational_block" || channelNumbering.numbering_mode === "strict_compact") && (
+              <div className="space-y-4">
+                {/* Sorting Scope */}
+                <div className="space-y-3">
+                  <Label className="text-sm">Sorting Scope</Label>
+                  <div className="flex gap-3">
+                    <label className={`flex-1 flex flex-col p-2.5 rounded-md border cursor-pointer transition-colors ${
+                      channelNumbering.sorting_scope === "per_group" ? "border-primary bg-background" : "border-transparent bg-background/50 hover:bg-background"
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        <input type="radio"
+                          name={`scope-${channelNumbering.numbering_mode}`}
+                          value="per_group"
+                          checked={channelNumbering.sorting_scope === "per_group"}
+                          onChange={() => setChannelNumbering({ ...channelNumbering, sorting_scope: "per_group" })}
+                          className="accent-primary" />
+                        <span className="text-sm font-medium">Per Group</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground ml-5">Sort within each event group separately</span>
+                    </label>
+                    <label className={`flex-1 flex flex-col p-2.5 rounded-md border cursor-pointer transition-colors ${
+                      channelNumbering.sorting_scope === "global" ? "border-primary bg-background" : "border-transparent bg-background/50 hover:bg-background"
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        <input type="radio"
+                          name={`scope-${channelNumbering.numbering_mode}`}
+                          value="global"
+                          checked={channelNumbering.sorting_scope === "global"}
+                          onChange={() => setChannelNumbering({ ...channelNumbering, sorting_scope: "global", sort_by: "sport_league_time" })}
+                          className="accent-primary" />
+                        <span className="text-sm font-medium">Global</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground ml-5">Sort all channels by sport/league priority</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Sort By - only for per_group scope */}
+                {channelNumbering.sorting_scope === "per_group" && (
+                  <div className="space-y-3">
+                    <Label className="text-sm">Sort Channels By</Label>
+                    <div className="flex gap-3">
+                      <label className={`flex-1 flex items-center gap-2 p-2.5 rounded-md border cursor-pointer transition-colors ${
+                        channelNumbering.sort_by === "time" ? "border-primary bg-background" : "border-transparent bg-background/50 hover:bg-background"
+                      }`}>
+                        <input type="radio" name={`sort-by-${channelNumbering.numbering_mode}`} value="time"
+                          checked={channelNumbering.sort_by === "time"}
+                          onChange={() => setChannelNumbering({ ...channelNumbering, sort_by: "time" })}
+                          className="accent-primary" />
+                        <span className="text-sm">Event Time</span>
+                      </label>
+                      <label className={`flex-1 flex items-center gap-2 p-2.5 rounded-md border cursor-pointer transition-colors ${
+                        channelNumbering.sort_by === "sport_league_time" ? "border-primary bg-background" : "border-transparent bg-background/50 hover:bg-background"
+                      }`}>
+                        <input type="radio" name={`sort-by-${channelNumbering.numbering_mode}`} value="sport_league_time"
+                          checked={channelNumbering.sort_by === "sport_league_time"}
+                          onChange={() => setChannelNumbering({ ...channelNumbering, sort_by: "sport_league_time" })}
+                          className="accent-primary" />
+                        <span className="text-sm">Sport → League → Time</span>
+                      </label>
+                      <label className={`flex-1 flex items-center gap-2 p-2.5 rounded-md border cursor-pointer transition-colors ${
+                        channelNumbering.sort_by === "stream_order" ? "border-primary bg-background" : "border-transparent bg-background/50 hover:bg-background"
+                      }`}>
+                        <input type="radio" name={`sort-by-${channelNumbering.numbering_mode}`} value="stream_order"
+                          checked={channelNumbering.sort_by === "stream_order"}
+                          onChange={() => setChannelNumbering({ ...channelNumbering, sort_by: "stream_order" })}
+                          className="accent-primary" />
+                        <span className="text-sm">Stream Order</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sort Priority Manager - show when using sport_league_time sorting */}
+                {(channelNumbering.sorting_scope === "global" || channelNumbering.sort_by === "sport_league_time") && (
+                  <SortPriorityManager currentSortBy="sport_league_time" showWhenSortBy="sport_league_time" />
+                )}
+              </div>
+            )}
+          </div>
+          </div>
+
+          <div className="pt-4 border-t">
+            <Button
+              onClick={handleSaveChannelNumbering}
+              disabled={updateChannelNumbering.isPending}
+            >
+              {updateChannelNumbering.isPending ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-1" />
+              )}
+              Save
+            </Button>
+            <p className="text-xs text-muted-foreground mt-2">
+              Channel numbers will be updated on the next EPG generation.
+            </p>
           </div>
         </CardContent>
       </Card>

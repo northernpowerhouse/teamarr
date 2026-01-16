@@ -25,6 +25,9 @@ import {
   createExceptionKeyword,
   updateExceptionKeyword,
   deleteExceptionKeyword,
+  getChannelNumberingSettings,
+  updateChannelNumberingSettings,
+  reassignChannelsGlobally,
 } from "@/api/settings"
 import type {
   DispatcharrSettings,
@@ -35,6 +38,7 @@ import type {
   ReconciliationSettings,
   DisplaySettings,
   TeamFilterSettingsUpdate,
+  ChannelNumberingSettingsUpdate,
 } from "@/api/settings"
 
 export function useSettings() {
@@ -261,6 +265,37 @@ export function useDeleteExceptionKeyword() {
     mutationFn: (id: number) => deleteExceptionKeyword(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["keywords"] })
+    },
+  })
+}
+
+export function useChannelNumberingSettings() {
+  return useQuery({
+    queryKey: ["settings", "channel-numbering"],
+    queryFn: getChannelNumberingSettings,
+  })
+}
+
+export function useUpdateChannelNumberingSettings() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (data: ChannelNumberingSettingsUpdate) =>
+      updateChannelNumberingSettings(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["settings"] })
+    },
+  })
+}
+
+export function useReassignChannelsGlobally() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: reassignChannelsGlobally,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["channels"] })
+      queryClient.invalidateQueries({ queryKey: ["settings"] })
     },
   })
 }

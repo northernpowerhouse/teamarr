@@ -1275,42 +1275,23 @@ export function EventGroupForm() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="channel_sort_order">Channel Sort Order</Label>
-                    <Select
-                      id="channel_sort_order"
-                      value={formData.channel_sort_order || "time"}
-                      onChange={(e) =>
-                        setFormData({ ...formData, channel_sort_order: e.target.value })
-                      }
-                    >
-                      <option value="time">By Time (default)</option>
-                      <option value="sport_time">By Sport, then Time</option>
-                      <option value="league_time">By League, then Time</option>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      How to order channels when multiple events are scheduled
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="overlap_handling">Overlap Handling</Label>
-                    <Select
-                      id="overlap_handling"
-                      value={formData.overlap_handling || "add_stream"}
-                      onChange={(e) =>
-                        setFormData({ ...formData, overlap_handling: e.target.value })
-                      }
-                    >
-                      <option value="add_stream">Add Stream (default)</option>
-                      <option value="add_only">Add Only</option>
-                      <option value="create_all">Create All</option>
-                      <option value="skip">Skip</option>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      How to handle events that overlap in time
-                    </p>
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="overlap_handling">Overlap Handling</Label>
+                  <Select
+                    id="overlap_handling"
+                    value={formData.overlap_handling || "add_stream"}
+                    onChange={(e) =>
+                      setFormData({ ...formData, overlap_handling: e.target.value })
+                    }
+                  >
+                    <option value="add_stream">Add Stream (default)</option>
+                    <option value="add_only">Add Only</option>
+                    <option value="create_all">Create All</option>
+                    <option value="skip">Skip</option>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    How to handle events that overlap in time
+                  </p>
                 </div>
               </CardContent>
             </Card>

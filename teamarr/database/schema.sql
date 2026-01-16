@@ -254,8 +254,28 @@ CREATE TABLE IF NOT EXISTS settings (
     -- Custom exclusion patterns (JSON array of regex patterns) - stream must NOT match any
     stream_filter_exclude_patterns JSON DEFAULT '[]',
 
+    -- Channel Numbering Mode (for AUTO groups)
+    -- 'strict_block': Reserve by total_stream_count (current behavior, large gaps, minimal drift)
+    -- 'rational_block': Reserve by actual channel count rounded to 10 (smaller gaps, low drift)
+    -- 'strict_compact': No reservation, sequential numbers (no gaps, higher drift risk)
+    channel_numbering_mode TEXT DEFAULT 'strict_block'
+        CHECK(channel_numbering_mode IN ('strict_block', 'rational_block', 'strict_compact')),
+
+    -- Channel Sorting Scope (only applies to rational_block and strict_compact)
+    -- 'per_group': Sort channels within each group (current behavior)
+    -- 'global': Sort all AUTO channels across groups by sport/league/time
+    channel_sorting_scope TEXT DEFAULT 'per_group'
+        CHECK(channel_sorting_scope IN ('per_group', 'global')),
+
+    -- Sort order for per-group scope
+    -- 'sport_league_time': Sort by sport, then league, then event time
+    -- 'time': Sort by event time only
+    -- 'stream_order': Keep original stream order from M3U
+    channel_sort_by TEXT DEFAULT 'time'
+        CHECK(channel_sort_by IN ('sport_league_time', 'time', 'stream_order')),
+
     -- Schema Version
-    schema_version INTEGER DEFAULT 29
+    schema_version INTEGER DEFAULT 31
 );
 
 -- Insert default settings
@@ -495,13 +515,44 @@ INSERT OR REPLACE INTO sports (sport_code, display_name) VALUES
     ('volleyball', 'Volleyball'),
     ('lacrosse', 'Lacrosse'),
     ('cricket', 'Cricket'),
-    ('rugby_league', 'Rugby League'),
-    ('rugby_union', 'Rugby Union'),
+    ('rugby', 'Rugby'),
     ('boxing', 'Boxing'),
     ('tennis', 'Tennis'),
     ('golf', 'Golf'),
     ('wrestling', 'Wrestling'),
     ('racing', 'Racing');
+
+
+-- =============================================================================
+-- CHANNEL_SORT_PRIORITIES TABLE
+-- User-defined sort order for sports/leagues when using global channel sorting
+-- Used by channel numbering to determine channel order across all AUTO groups
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS channel_sort_priorities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Sport/League identification
+    sport TEXT NOT NULL,                     -- Sport code (e.g., 'football', 'basketball')
+    league_code TEXT,                        -- NULL = sport-level priority only
+
+    -- Sort priority (lower = earlier in channel list)
+    sort_priority INTEGER NOT NULL,
+
+    -- Unique constraint: one entry per sport/league combination
+    UNIQUE(sport, league_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_channel_sort_priorities_priority
+ON channel_sort_priorities(sort_priority);
+
+CREATE TRIGGER IF NOT EXISTS update_channel_sort_priorities_timestamp
+AFTER UPDATE ON channel_sort_priorities
+BEGIN
+    UPDATE channel_sort_priorities SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
 
 
 -- =============================================================================
@@ -691,8 +742,8 @@ INSERT OR REPLACE INTO leagues (league_code, provider, provider_league_id, provi
     ('sa20', 'tsdb', '5532', 'SA20', 'South Africa Twenty20', 'cricket', 'https://r2.thesportsdb.com/images/media/league/badge/aakvuk1734183412.png', NULL, 1, 'SA20', 'sa20', 'team_vs_team', NULL, 'cricbuzz', '10394/sa20-2025-26'),
 
     -- Rugby (TSDB)
-    ('nrl', 'tsdb', '4416', 'Australian National Rugby League', 'National Rugby League', 'rugby_league', 'https://r2.thesportsdb.com/images/media/league/badge/gsztcj1552071996.png', NULL, 1, 'NRL', 'nrl', 'team_vs_team', NULL, NULL, NULL),
-    ('super-rugby', 'tsdb', '4551', 'Super Rugby', 'Super Rugby Pacific', 'rugby_union', 'https://r2.thesportsdb.com/images/media/league/badge/alpxhe1675871443.png', NULL, 1, 'Super Rugby', 'super-rugby', 'team_vs_team', NULL, NULL, NULL),
+    ('nrl', 'tsdb', '4416', 'Australian National Rugby League', 'National Rugby League', 'rugby', 'https://r2.thesportsdb.com/images/media/league/badge/gsztcj1552071996.png', NULL, 1, 'NRL', 'nrl', 'team_vs_team', NULL, NULL, NULL),
+    ('super-rugby', 'tsdb', '4551', 'Super Rugby', 'Super Rugby Pacific', 'rugby', 'https://r2.thesportsdb.com/images/media/league/badge/alpxhe1675871443.png', NULL, 1, 'Super Rugby', 'super-rugby', 'team_vs_team', NULL, NULL, NULL),
 
     -- Boxing (TSDB) - Combat sport with event cards
     ('boxing', 'tsdb', '4445', 'Boxing', 'Boxing', 'boxing', NULL, NULL, 0, NULL, 'boxing', 'event_card', NULL, NULL, NULL);

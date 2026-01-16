@@ -1114,8 +1114,10 @@ class EventGroupProcessor:
             # Step 4: Create/update channels
             matched_streams = self._build_matched_stream_list(streams, match_result)
 
-            # Sort channels based on group's channel_sort_order setting
-            matched_streams = self._sort_matched_streams(matched_streams, group.channel_sort_order)
+            # Sort channels based on global channel numbering sort_by setting
+            from teamarr.database.settings import get_channel_numbering_settings
+            channel_numbering = get_channel_numbering_settings(conn)
+            matched_streams = self._sort_matched_streams(matched_streams, channel_numbering.sort_by)
 
             # Enrich ALL matched events with fresh status from provider
             # This ensures lifecycle filtering uses current final status
@@ -1694,21 +1696,27 @@ class EventGroupProcessor:
         matched_streams: list[dict],
         sort_order: str,
     ) -> list[dict]:
-        """Sort matched streams based on channel_sort_order setting.
+        """Sort matched streams based on global sort_by setting.
 
         Sort orders:
         - 'time': Sort by event start time (default)
-        - 'sport_time': Sort by sport first, then start time
-        - 'league_time': Sort by league first, then start time
+        - 'sport_league_time': Sort by sport, then league, then start time
+        - 'stream_order': Keep original stream order (no sorting)
+        - 'sport_time': Legacy - sort by sport, then start time
+        - 'league_time': Legacy - sort by league, then start time
 
         Args:
             matched_streams: List of {'stream': ..., 'event': ...} dicts
-            sort_order: One of 'time', 'sport_time', 'league_time'
+            sort_order: One of 'time', 'sport_league_time', 'stream_order'
 
         Returns:
             Sorted list of matched streams
         """
         if not matched_streams:
+            return matched_streams
+
+        # stream_order = keep original order, no sorting
+        if sort_order == "stream_order":
             return matched_streams
 
         # Default fallback values for missing data
@@ -1725,8 +1733,18 @@ class EventGroupProcessor:
                 return start.replace(tzinfo=None)
             return start or max_time
 
-        if sort_order == "sport_time":
-            # Sort by sport (alphabetically), then by start time
+        if sort_order == "sport_league_time":
+            # Sort by sport, then league, then by start time
+            def sort_key(m: dict):
+                event = m.get("event")
+                sport = event.sport.lower() if event and event.sport else "zzz"
+                league = event.league.lower() if event and event.league else "zzz"
+                return (sport, league, get_start_time(m))
+
+            return sorted(matched_streams, key=sort_key)
+
+        elif sort_order == "sport_time":
+            # Legacy: Sort by sport (alphabetically), then by start time
             def sort_key(m: dict):
                 event = m.get("event")
                 sport = event.sport.lower() if event and event.sport else "zzz"
@@ -1735,7 +1753,7 @@ class EventGroupProcessor:
             return sorted(matched_streams, key=sort_key)
 
         elif sort_order == "league_time":
-            # Sort by league (alphabetically), then by start time
+            # Legacy: Sort by league (alphabetically), then by start time
             def sort_key(m: dict):
                 event = m.get("event")
                 league = event.league.lower() if event and event.league else "zzz"

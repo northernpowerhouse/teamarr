@@ -20,8 +20,7 @@ const SPORT_DISPLAY_NAMES: Record<string, string> = {
   boxing: "Boxing",
   lacrosse: "Lacrosse",
   cricket: "Cricket",
-  rugby_league: "Rugby League",
-  rugby_union: "Rugby Union",
+  rugby: "Rugby",
   volleyball: "Volleyball",
 }
 

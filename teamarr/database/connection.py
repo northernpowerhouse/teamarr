@@ -777,6 +777,116 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("[MIGRATE] Schema upgraded to version 29 (sports table)")
         current_version = 29
 
+    # Version 30: Add channel numbering settings and sort priorities table
+    # Enables three numbering modes (strict_block, rational_block, strict_compact)
+    # and global channel sorting by sport/league
+    if current_version < 30:
+        _migrate_to_v30(conn)
+        conn.execute("UPDATE settings SET schema_version = 30 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 30 (channel numbering settings)")
+        current_version = 30
+
+    # Version 31: Consolidate rugby_league and rugby_union into single 'rugby' sport
+    # TSDB API returns 'Rugby' for both NRL and Super Rugby, so we unify them
+    if current_version < 31:
+        _migrate_to_v31(conn)
+        conn.execute("UPDATE settings SET schema_version = 31 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 31 (rugby sport consolidation)")
+        current_version = 31
+
+
+def _migrate_to_v31(conn: sqlite3.Connection) -> None:
+    """Consolidate rugby_league and rugby_union into single 'rugby' sport.
+
+    This migration:
+    1. Replaces rugby_league and rugby_union with rugby in sports table
+    2. Updates leagues to use 'rugby' as sport
+    3. Updates channel_sort_priorities if any exist
+    4. Updates managed_channels if any exist with old sport values
+    """
+    # Delete old rugby entries and insert consolidated one
+    conn.execute("DELETE FROM sports WHERE sport_code IN ('rugby_league', 'rugby_union')")
+    conn.execute("INSERT OR REPLACE INTO sports (sport_code, display_name) VALUES ('rugby', 'Rugby')")
+
+    # Update leagues (already done in schema.sql, but needed for existing DBs)
+    conn.execute("UPDATE leagues SET sport = 'rugby' WHERE sport IN ('rugby_league', 'rugby_union')")
+
+    # Update channel_sort_priorities
+    conn.execute("UPDATE channel_sort_priorities SET sport = 'rugby' WHERE sport IN ('rugby_league', 'rugby_union')")
+
+    # Update managed_channels
+    conn.execute("UPDATE managed_channels SET sport = 'rugby' WHERE sport IN ('rugby_league', 'rugby_union')")
+
+    logger.info("[MIGRATE] Consolidated rugby_league and rugby_union into 'rugby'")
+
+
+def _migrate_to_v30(conn: sqlite3.Connection) -> None:
+    """Add channel numbering settings and sort priorities table.
+
+    This migration:
+    1. Adds channel_numbering_mode, channel_sorting_scope, channel_sort_by to settings
+    2. Creates channel_sort_priorities table for global sorting
+    3. Migrates per-group channel_sort_order to global channel_sort_by setting
+    """
+    # Add new settings columns
+    for col_def in [
+        ("channel_numbering_mode", "TEXT DEFAULT 'strict_block'"),
+        ("channel_sorting_scope", "TEXT DEFAULT 'per_group'"),
+        ("channel_sort_by", "TEXT DEFAULT 'time'"),
+    ]:
+        _add_column_if_not_exists(conn, "settings", col_def[0], col_def[1])
+
+    # Create channel_sort_priorities table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS channel_sort_priorities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            sport TEXT NOT NULL,
+            league_code TEXT,
+            sort_priority INTEGER NOT NULL,
+            UNIQUE(sport, league_code)
+        )
+    """)
+
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_channel_sort_priorities_priority
+        ON channel_sort_priorities(sort_priority)
+    """)
+
+    # Migrate per-group channel_sort_order to global setting
+    # Use most common value across groups as the default
+    try:
+        result = conn.execute("""
+            SELECT channel_sort_order, COUNT(*) as cnt
+            FROM event_epg_groups
+            WHERE channel_sort_order IS NOT NULL
+            GROUP BY channel_sort_order
+            ORDER BY cnt DESC
+            LIMIT 1
+        """).fetchone()
+
+        if result:
+            # Map old values to new values
+            mapping = {
+                "time": "time",
+                "sport_time": "sport_league_time",
+                "league_time": "sport_league_time",
+            }
+            old_value = result["channel_sort_order"]
+            new_value = mapping.get(old_value, "time")
+            conn.execute(
+                "UPDATE settings SET channel_sort_by = ? WHERE id = 1",
+                (new_value,),
+            )
+            logger.info(
+                "[MIGRATE] Migrated channel_sort_order '%s' -> channel_sort_by '%s'",
+                old_value,
+                new_value,
+            )
+    except Exception as e:
+        logger.debug("[MIGRATE] Could not migrate channel_sort_order: %s", e)
+
 
 def _drop_stream_profile_columns(conn: sqlite3.Connection) -> None:
     """Remove stream_profile_id from event_epg_groups and managed_channels.

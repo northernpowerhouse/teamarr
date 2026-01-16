@@ -267,6 +267,28 @@ def run_full_generation(
         result.groups_programmes = group_result.total_programmes
         result.programmes_total = result.teams_programmes + result.groups_programmes
 
+        # Step 3b: Global channel reassignment (if enabled)
+        # Only applies to rational_block and strict_compact with global sorting_scope
+        from teamarr.database.settings import get_channel_numbering_settings
+        from teamarr.database.channel_numbers import reassign_channels_globally
+
+        with db_factory() as conn:
+            channel_numbering = get_channel_numbering_settings(conn)
+
+        if (
+            channel_numbering.sorting_scope == "global"
+            and channel_numbering.numbering_mode != "strict_block"
+        ):
+            update_progress("groups", 94, "Reassigning channels globally by sport/league priority...")
+            with db_factory() as conn:
+                global_result = reassign_channels_globally(conn)
+                if global_result["channels_moved"] > 0:
+                    logger.info(
+                        "[GENERATION] Global reassignment: %d channels processed, %d moved",
+                        global_result["channels_processed"],
+                        global_result["channels_moved"],
+                    )
+
         # Step 4: Merge and save XMLTV (95-96%)
         update_progress("saving", 95, "Saving XMLTV...")
 

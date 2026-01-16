@@ -82,6 +82,29 @@ export interface TeamFilterSettingsUpdate {
   clear_exclude_teams?: boolean
 }
 
+export interface ChannelNumberingSettings {
+  numbering_mode: "strict_block" | "rational_block" | "strict_compact"
+  sorting_scope: "per_group" | "global"
+  sort_by: "sport_league_time" | "time" | "stream_order"
+}
+
+export interface ChannelNumberingSettingsUpdate {
+  numbering_mode?: "strict_block" | "rational_block" | "strict_compact"
+  sorting_scope?: "per_group" | "global"
+  sort_by?: "sport_league_time" | "time" | "stream_order"
+}
+
+export interface GlobalReassignResponse {
+  channels_processed: number
+  channels_moved: number
+  drift_details: Array<{
+    channel_id: number
+    channel_name: string
+    old_number: number | string | null
+    new_number: number
+  }>
+}
+
 export interface ExceptionKeyword {
   id: number
   keywords: string
@@ -105,6 +128,7 @@ export interface AllSettings {
   durations: DurationSettings
   reconciliation: ReconciliationSettings
   team_filter?: TeamFilterSettings
+  channel_numbering?: ChannelNumberingSettings
   epg_generation_counter: number
   schema_version: number
   // UI timezone info (read-only, from environment or fallback to epg_timezone)
@@ -285,4 +309,19 @@ export async function updateExceptionKeyword(
 
 export async function deleteExceptionKeyword(id: number): Promise<void> {
   return api.delete(`/keywords/${id}`)
+}
+
+// Channel Numbering Settings API
+export async function getChannelNumberingSettings(): Promise<ChannelNumberingSettings> {
+  return api.get("/settings/channel-numbering")
+}
+
+export async function updateChannelNumberingSettings(
+  data: ChannelNumberingSettingsUpdate
+): Promise<ChannelNumberingSettings> {
+  return api.put("/settings/channel-numbering", data)
+}
+
+export async function reassignChannelsGlobally(): Promise<GlobalReassignResponse> {
+  return api.post("/settings/channel-numbering/reassign-globally", {})
 }

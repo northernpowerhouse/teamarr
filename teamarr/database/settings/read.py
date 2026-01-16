@@ -9,6 +9,7 @@ from sqlite3 import Connection
 from .types import (
     AllSettings,
     APISettings,
+    ChannelNumberingSettings,
     DispatcharrSettings,
     DisplaySettings,
     DurationSettings,
@@ -146,6 +147,11 @@ def get_all_settings(conn: Connection) -> AllSettings:
             if row["default_exclude_teams"]
             else None,
             mode=row["default_team_filter_mode"] or "include",
+        ),
+        channel_numbering=ChannelNumberingSettings(
+            numbering_mode=row["channel_numbering_mode"] or "strict_block",
+            sorting_scope=row["channel_sorting_scope"] or "per_group",
+            sort_by=row["channel_sort_by"] or "time",
         ),
         epg_generation_counter=row["epg_generation_counter"] or 0,
         schema_version=row["schema_version"] or 2,
@@ -351,4 +357,29 @@ def get_team_filter_settings(conn: Connection) -> TeamFilterSettings:
         if row["default_exclude_teams"]
         else None,
         mode=row["default_team_filter_mode"] or "include",
+    )
+
+
+def get_channel_numbering_settings(conn: Connection) -> ChannelNumberingSettings:
+    """Get channel numbering and sorting settings.
+
+    Args:
+        conn: Database connection
+
+    Returns:
+        ChannelNumberingSettings object with numbering mode, sorting scope, and sort by
+    """
+    cursor = conn.execute(
+        """SELECT channel_numbering_mode, channel_sorting_scope, channel_sort_by
+           FROM settings WHERE id = 1"""
+    )
+    row = cursor.fetchone()
+
+    if not row:
+        return ChannelNumberingSettings()
+
+    return ChannelNumberingSettings(
+        numbering_mode=row["channel_numbering_mode"] or "strict_block",
+        sorting_scope=row["channel_sorting_scope"] or "per_group",
+        sort_by=row["channel_sort_by"] or "time",
     )
