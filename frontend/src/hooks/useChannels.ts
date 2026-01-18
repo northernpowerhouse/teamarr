@@ -51,6 +51,7 @@ export function useReconciliationStatus(groupIds?: number[]) {
   return useQuery({
     queryKey: ["reconciliationStatus", groupIds],
     queryFn: () => getReconciliationStatus(groupIds),
+    staleTime: 1000 * 60 * 5, // 5 minutes - reconciliation check is expensive (fetches all Dispatcharr channels)
   })
 }
 
