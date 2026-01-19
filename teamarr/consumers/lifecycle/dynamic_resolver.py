@@ -32,6 +32,7 @@ class DynamicResolver:
     _profiles_by_name: dict[str, int] = field(default_factory=dict)
     _sport_display_names: dict[str, str] = field(default_factory=dict)
     _league_display_names: dict[str, str] = field(default_factory=dict)
+    _league_aliases: dict[str, str] = field(default_factory=dict)
     _initialized: bool = False
 
     def initialize(
@@ -52,6 +53,7 @@ class DynamicResolver:
         self._profiles_by_name = {}
         self._sport_display_names = {}
         self._league_display_names = {}
+        self._league_aliases = {}
 
     def _ensure_initialized(self) -> None:
         """Lazy initialization of caches."""
@@ -63,10 +65,14 @@ class DynamicResolver:
             self._sport_display_names = get_sport_display_names_from_db(self._db_conn)
 
             cursor = self._db_conn.execute(
-                "SELECT league_code, display_name FROM leagues"
+                "SELECT league_code, display_name, league_alias FROM leagues"
             )
             for row in cursor.fetchall():
                 self._league_display_names[row["league_code"]] = row["display_name"]
+                # league_alias with fallback to display_name (matches {league} template variable)
+                alias = row["league_alias"] or row["display_name"]
+                if alias:
+                    self._league_aliases[row["league_code"]] = alias
 
         # Load existing Dispatcharr groups and profiles
         dispatcharr = self._get_dispatcharr()
@@ -117,6 +123,19 @@ class DynamicResolver:
         """Get display name for a league code."""
         self._ensure_initialized()
         return self._league_display_names.get(league_code, league_code.upper())
+
+    def get_league_alias(self, league_code: str) -> str:
+        """Get short alias for a league code (matches {league} template variable).
+
+        Fallback chain:
+            1. league_alias from leagues table (e.g., 'EPL', 'UCL')
+            2. display_name from leagues table (e.g., 'NFL', 'La Liga')
+            3. league_code uppercase
+
+        This ensures consistency with how {league} is resolved in templates.
+        """
+        self._ensure_initialized()
+        return self._league_aliases.get(league_code, league_code.upper())
 
     def _get_or_create_group(self, name: str) -> int | None:
         """Get group ID by name, creating if needed.
@@ -225,9 +244,9 @@ class DynamicResolver:
             return group_id
 
         if mode == "league" and event_league:
-            display_name = self.get_league_display_name(event_league)
-            group_id = self._get_or_create_group(display_name)
-            logger.info("[RESOLVER] League mode: %s -> '%s' -> group_id=%s", event_league, display_name, group_id)
+            alias = self.get_league_alias(event_league)
+            group_id = self._get_or_create_group(alias)
+            logger.info("[RESOLVER] League mode: %s -> '%s' -> group_id=%s", event_league, alias, group_id)
             return group_id
 
         logger.warning("[RESOLVER] Falling back to static_group_id=%s (mode=%s, sport=%s, league=%s)",
@@ -264,8 +283,8 @@ class DynamicResolver:
                 if pid and pid not in resolved:
                     resolved.append(pid)
             elif item == "{league}" and event_league:
-                display_name = self.get_league_display_name(event_league)
-                pid = self._get_or_create_profile(display_name)
+                alias = self.get_league_alias(event_league)
+                pid = self._get_or_create_profile(alias)
                 if pid and pid not in resolved:
                     resolved.append(pid)
             elif isinstance(item, str) and item.isdigit():
