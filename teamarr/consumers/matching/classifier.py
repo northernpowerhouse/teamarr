@@ -547,21 +547,49 @@ def _clean_team_name(name: str) -> str:
     """
     name = re.sub(round_pattern, "", name, flags=re.IGNORECASE | re.VERBOSE)
 
-    # Handle "|" separator - often used for show/league prefix before team names
-    # "Manningcast | MNF with Peyton & Eli: Seahawks" → take part after last "|"
-    # "NFL | 02 - 1/17 8PM 49ers" → take "49ers"
+    # Handle "|" separator - can be prefix (league/show) OR suffix (trailing noise)
+    # Prefix: "NFL | Bills vs Broncos" → take part after "|"
+    # Prefix: "DATE_MASK - TIME_MASK EST | Minnesota Wild" → take "Minnesota Wild"
+    # Suffix: "Montreal Canadiens | Bell Centre" → strip trailing noise
+    # Suffix: "Ohio State | College Football Playoff National Championship" → strip trailing noise
     if "|" in name:
         parts = name.split("|")
+        first_part = parts[0].strip()
         last_part = parts[-1].strip()
 
-        # If the last part after "|" has a colon with something after it, use that
-        if ":" in last_part:
-            after_colon = last_part.split(":")[-1].strip()
-            if after_colon and len(after_colon) >= 3:
-                name = after_colon
+        # Check if the FIRST part is mostly datetime/noise (should take last part)
+        # Strip DATE_MASK, TIME_MASK, and timezone codes to see what's left
+        first_stripped = re.sub(r"\bDATE_MASK\b", "", first_part)
+        first_stripped = re.sub(r"\bTIME_MASK\b", "", first_stripped)
+        first_stripped = re.sub(r"\b[ECPM][SD]?T\b", "", first_stripped, flags=re.IGNORECASE)
+        first_stripped = re.sub(r"[\s\-:.,]+", " ", first_stripped).strip()
+
+        # Determine if the FIRST part looks like a prefix or a team name
+        # Use existing league/sport hint detection - no hardcoded lists
+        first_is_league_hint = detect_league_hint(first_part + ":") is not None
+        first_is_sport_hint = detect_sport_hint(first_part) is not None
+        first_is_channel_number = re.match(r"^\d{1,3}$", first_stripped)
+
+        first_looks_like_prefix = (
+            len(first_stripped) < 5 or  # After stripping datetime, almost nothing left
+            first_is_league_hint or
+            first_is_sport_hint or
+            first_is_channel_number
+        )
+
+        if first_looks_like_prefix:
+            # First part is a prefix - take the last part (possibly with colon handling)
+            if ":" in last_part:
+                after_colon = last_part.split(":")[-1].strip()
+                if after_colon and len(after_colon) >= 3:
+                    name = after_colon
+                else:
+                    name = last_part
+            else:
+                name = last_part
         else:
-            # No colon - just use the part after the last "|"
-            name = last_part
+            # First part looks like a team name - trailing pipe is noise, strip it
+            name = first_part
 
     # Strip channel number prefixes like "02 -", "15 -", "142 -" at the start
     name = re.sub(r"^\d+\s*-\s*", "", name)
