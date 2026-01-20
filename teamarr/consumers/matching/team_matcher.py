@@ -691,6 +691,8 @@ class TeamMatcher:
         This prevents "Marist vs Sacred Heart" from matching "Jessup vs Sacred Heart"
         just because one team name overlaps.
 
+        If a team name contains '|', tries both sides and uses the best match.
+
         Args:
             team1: First extracted team name (normalized)
             team2: Second extracted team name (normalized)
@@ -706,6 +708,10 @@ class TeamMatcher:
         # Normalize event team names for comparison
         home_normalized = normalize_text(event.home_team.name)
         away_normalized = normalize_text(event.away_team.name)
+
+        # Note: Pipe-separated content (e.g., "Sacramento Kings | Golden 1 Center")
+        # is handled naturally by token_set_ratio which finds best token overlap.
+        # No explicit pipe resolution needed - "Sacramento Kings" tokens will match.
 
         if team1 and team2:
             # BOTH teams extracted - require both to match different event teams

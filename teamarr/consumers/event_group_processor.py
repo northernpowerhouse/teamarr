@@ -860,6 +860,7 @@ class EventGroupProcessor:
                 streams, group, target_date,
                 stream_progress_callback=stream_progress_callback,
                 status_callback=status_callback,
+                resolved_leagues=leagues,  # Pass inherited leagues for proper filtering
             )
             result.streams_matched = match_result.matched_count
             result.streams_unmatched = match_result.unmatched_count
@@ -1462,6 +1463,7 @@ class EventGroupProcessor:
         target_date: date,
         stream_progress_callback: Callable | None = None,
         status_callback: Callable[[str], None] | None = None,
+        resolved_leagues: list[str] | None = None,
     ) -> BatchMatchResult:
         """Match streams to events using StreamMatcher.
 
@@ -1478,6 +1480,7 @@ class EventGroupProcessor:
             target_date: Date to match events for
             stream_progress_callback: Optional callback(current, total, stream_name, matched)
             status_callback: Optional callback(status_message) for status updates
+            resolved_leagues: Pre-resolved leagues (for child groups inheriting from parent)
         """
         # Get ALL known leagues from the cache to search against
         # This includes all leagues discovered from ESPN/TSDB (287+), not just
@@ -1493,12 +1496,15 @@ class EventGroupProcessor:
 
         sport_durations = self._load_sport_durations_cached()
 
+        # Use resolved_leagues if provided (e.g., inherited from parent), else group.leagues
+        include_leagues = resolved_leagues if resolved_leagues else group.leagues
+
         matcher = StreamMatcher(
             service=self._service,
             db_factory=self._db_factory,
             group_id=group.id,
             search_leagues=search_leagues,  # Search ALL leagues + group's leagues
-            include_leagues=group.leagues,  # Filter to group's configured leagues
+            include_leagues=include_leagues,  # Filter to resolved/configured leagues
             include_final_events=include_final_events,
             sport_durations=sport_durations,
             generation=getattr(self, "_generation", None),  # Use shared generation if set
