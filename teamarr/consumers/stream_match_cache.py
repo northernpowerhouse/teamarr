@@ -445,7 +445,7 @@ class StreamMatchCache:
     def purge_stale(self, current_generation: int) -> int:
         """Remove stale entries not seen recently.
 
-        All entries (including user-corrected) are purged if not seen recently.
+        User-corrected entries are never purged (they are pinned).
         Failed matches have a shorter TTL than successful matches.
 
         Args:
@@ -459,6 +459,7 @@ class StreamMatchCache:
         try:
             with self._get_connection() as conn:
                 # Purge stale failed matches (shorter TTL)
+                # Never purge user corrections
                 failed_threshold = current_generation - self.PURGE_FAILED_AFTER_GENERATIONS
                 if failed_threshold >= 0:
                     cursor = conn.execute(
@@ -466,6 +467,7 @@ class StreamMatchCache:
                         DELETE FROM stream_match_cache
                         WHERE last_seen_generation < ?
                           AND event_id = ?
+                          AND user_corrected = 0
                         """,
                         (failed_threshold, FAILED_MATCH_EVENT_ID),
                     )
@@ -475,6 +477,7 @@ class StreamMatchCache:
                     purged_total += failed_purged
 
                 # Purge stale successful matches (normal TTL)
+                # Never purge user corrections
                 success_threshold = current_generation - self.PURGE_AFTER_GENERATIONS
                 if success_threshold >= 0:
                     cursor = conn.execute(
@@ -482,6 +485,7 @@ class StreamMatchCache:
                         DELETE FROM stream_match_cache
                         WHERE last_seen_generation < ?
                           AND event_id != ?
+                          AND user_corrected = 0
                         """,
                         (success_threshold, FAILED_MATCH_EVENT_ID),
                     )
