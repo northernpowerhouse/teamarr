@@ -10,8 +10,8 @@ from teamarr.templates.variables.registry import (
     register_variable,
 )
 
-# Networks to filter out (noise/subscription services)
-SKIP_NETWORKS = {
+# Subscription services - sort these last (still visible, just deprioritized)
+SUBSCRIPTION_NETWORKS = {
     "NBA League Pass",
     "NHL.TV",
     "ESPN+",
@@ -47,9 +47,12 @@ def _get_broadcasts(game_ctx: GameContext | None) -> list[str]:
     return game_ctx.event.broadcasts or []
 
 
-def _filter_broadcasts(broadcasts: list[str]) -> list[str]:
-    """Filter out subscription services and noise."""
-    return [b for b in broadcasts if b not in SKIP_NETWORKS]
+def _sort_broadcasts(broadcasts: list[str]) -> list[str]:
+    """Sort broadcasts: national first, regional middle, subscription last."""
+    national = [b for b in broadcasts if b in NATIONAL_NETWORKS]
+    subscription = [b for b in broadcasts if b in SUBSCRIPTION_NETWORKS]
+    other = [b for b in broadcasts if b not in NATIONAL_NETWORKS and b not in SUBSCRIPTION_NETWORKS]
+    return national + other + subscription
 
 
 @register_variable(
@@ -60,8 +63,8 @@ def _filter_broadcasts(broadcasts: list[str]) -> list[str]:
 )
 def extract_broadcast_simple(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
     broadcasts = _get_broadcasts(game_ctx)
-    filtered = _filter_broadcasts(broadcasts)
-    return ", ".join(filtered)
+    sorted_broadcasts = _sort_broadcasts(broadcasts)
+    return ", ".join(sorted_broadcasts)
 
 
 @register_variable(
@@ -72,8 +75,8 @@ def extract_broadcast_simple(ctx: TemplateContext, game_ctx: GameContext | None)
 )
 def extract_broadcast_network(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
     broadcasts = _get_broadcasts(game_ctx)
-    filtered = _filter_broadcasts(broadcasts)
-    return filtered[0] if filtered else ""
+    sorted_broadcasts = _sort_broadcasts(broadcasts)
+    return sorted_broadcasts[0] if sorted_broadcasts else ""
 
 
 @register_variable(
