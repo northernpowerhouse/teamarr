@@ -1238,7 +1238,9 @@ class ChannelLifecycleService:
         | event_id            | tvg_id              | Ensures EPG matching        |
         """
         from teamarr.database.channels import (
+            get_ordered_stream_ids,
             log_channel_history,
+            reorder_channel_streams,
             update_managed_channel,
         )
 
@@ -1308,6 +1310,24 @@ class ChannelLifecycleService:
                     update_data["streams"] = new_streams
                     db_updates["dispatcharr_stream_id"] = stream_id
                     changes_made.append(f"streams: added {stream_id}")
+
+            # 5. Enforce stream ordering based on rules
+            # Reorder streams in DB based on ordering rules, then sync to Dispatcharr
+            reordered_count = reorder_channel_streams(conn, existing.id)
+            if reordered_count > 0:
+                changes_made.append(f"streams: reordered {reordered_count}")
+
+            # Get the correctly ordered stream IDs from our DB
+            ordered_stream_ids = get_ordered_stream_ids(conn, existing.id)
+            if ordered_stream_ids:
+                # Compare with Dispatcharr's current order
+                ch_streams = current_channel.streams
+                dispatcharr_order = list(ch_streams) if ch_streams else []
+                if ordered_stream_ids != dispatcharr_order:
+                    # Order differs - push our ordered list to Dispatcharr
+                    update_data["streams"] = ordered_stream_ids
+                    if "streams: reordered" not in str(changes_made):
+                        changes_made.append("streams: order synced")
 
             # 6. Check tvg_id
             expected_tvg_id = existing.tvg_id
