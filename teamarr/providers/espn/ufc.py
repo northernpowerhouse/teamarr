@@ -114,7 +114,7 @@ class UFCParserMixin:
                 away_team=fighter2,
                 status=status,
                 league="ufc",
-                sport="MMA",
+                sport="mma",  # Lowercase code; display name from sports table
                 main_card_start=main_card_start,
             )
         except Exception as e:
@@ -146,7 +146,7 @@ class UFCParserMixin:
             short_name=short_name,
             abbreviation=short_name.replace(".", "").replace(" ", ""),
             league="ufc",
-            sport="MMA",
+            sport="mma",  # Lowercase code; display name from sports table
             logo_url=logo_url,
             color=None,
         )

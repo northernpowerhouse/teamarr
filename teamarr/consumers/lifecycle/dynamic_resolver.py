@@ -115,9 +115,18 @@ class DynamicResolver:
             return None
 
     def get_sport_display_name(self, sport_code: str) -> str:
-        """Get display name for a sport code."""
+        """Get display name for a sport code.
+
+        Args:
+            sport_code: Sport code (e.g., 'mma', 'football'). Case-insensitive.
+
+        Returns:
+            Display name from sports table (e.g., 'MMA', 'Football').
+        """
         self._ensure_initialized()
-        return self._sport_display_names.get(sport_code, sport_code.title())
+        # Normalize to lowercase - sports table uses lowercase keys
+        key = sport_code.lower() if sport_code else ""
+        return self._sport_display_names.get(key, sport_code.title())
 
     def get_league_display_name(self, league_code: str) -> str:
         """Get display name for a league code."""
