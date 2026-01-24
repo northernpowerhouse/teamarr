@@ -78,20 +78,34 @@ def generate_epg(
     if dispatcharr_settings.enabled and dispatcharr_settings.url:
         dispatcharr_client = get_dispatcharr_connection(get_db)
 
-    # Run unified generation
-    logger.info("[STARTED] EPG generation via API")
-    result = run_full_generation(
-        db_factory=get_db,
-        dispatcharr_client=dispatcharr_client,
-        progress_callback=None,
-    )
-
-    if not result.success:
-        logger.error("[FAILED] EPG generation: %s", result.error)
+    # Check if generation is already running (sync with status endpoint)
+    if not start_generation():
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=result.error or "Generation failed",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Generation already in progress",
         )
+
+    try:
+        # Run unified generation
+        logger.info("[STARTED] EPG generation via API")
+        result = run_full_generation(
+            db_factory=get_db,
+            dispatcharr_client=dispatcharr_client,
+            progress_callback=None,
+        )
+
+        if not result.success:
+            logger.error("[FAILED] EPG generation: %s", result.error)
+            fail_generation(result.error or "Unknown error")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result.error or "Generation failed",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        fail_generation(str(e))
+        raise
 
     logger.info(
         "[COMPLETED] EPG generation: %d programmes, %d teams, %.1fs",
@@ -99,6 +113,13 @@ def generate_epg(
         result.teams_processed,
         result.duration_seconds,
     )
+
+    # Mark generation as complete in status tracker
+    complete_generation({
+        "programmes_count": result.programmes_total,
+        "teams_processed": result.teams_processed,
+        "duration_seconds": result.duration_seconds,
+    })
 
     # Fetch actual match stats from database
     match_stats = MatchStats(
