@@ -85,13 +85,32 @@ def generate_epg(
             detail="Generation already in progress",
         )
 
+    # Progress callback that updates status tracker for polling clients
+    def progress_callback(
+        phase: str,
+        percent: int,
+        message: str,
+        current: int,
+        total: int,
+        item_name: str,
+    ):
+        update_status(
+            status="progress",
+            phase=phase,
+            percent=percent,
+            message=message,
+            current=current,
+            total=total,
+            item_name=item_name,
+        )
+
     try:
         # Run unified generation
         logger.info("[STARTED] EPG generation via API")
         result = run_full_generation(
             db_factory=get_db,
             dispatcharr_client=dispatcharr_client,
-            progress_callback=None,
+            progress_callback=progress_callback,
         )
 
         if not result.success:
