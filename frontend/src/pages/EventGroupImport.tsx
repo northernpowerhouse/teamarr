@@ -116,7 +116,10 @@ export function EventGroupImport() {
   const [bulkLeagues, setBulkLeagues] = useState<Set<string>>(new Set())
   const [bulkTemplateId, setBulkTemplateId] = useState<number | null>(null)
   const [bulkChannelGroupId, setBulkChannelGroupId] = useState<number | null>(null)
+  const [bulkChannelGroupMode, setBulkChannelGroupMode] = useState<'static' | 'sport' | 'league'>('static')
   const [bulkChannelProfileIds, setBulkChannelProfileIds] = useState<(number | string)[]>([])
+  const [bulkChannelSortOrder, setBulkChannelSortOrder] = useState<string>("time")
+  const [bulkOverlapHandling, setBulkOverlapHandling] = useState<string>("add_stream")
   const [bulkEnabled, setBulkEnabled] = useState(true)
   const [bulkImporting, setBulkImporting] = useState(false)
 
@@ -266,8 +269,11 @@ export function EventGroupImport() {
           group_mode: bulkMode,
           leagues: Array.from(bulkLeagues),
           template_id: bulkTemplateId,
-          channel_group_id: bulkChannelGroupId,
+          channel_group_id: bulkChannelGroupMode === 'static' ? bulkChannelGroupId : null,
+          channel_group_mode: bulkChannelGroupMode,
           channel_profile_ids: bulkChannelProfileIds.length > 0 ? bulkChannelProfileIds : null,
+          channel_sort_order: bulkChannelSortOrder,
+          overlap_handling: bulkOverlapHandling,
           enabled: bulkEnabled,
         },
       })
@@ -297,7 +303,10 @@ export function EventGroupImport() {
     setBulkLeagues(new Set())
     setBulkTemplateId(null)
     setBulkChannelGroupId(null)
+    setBulkChannelGroupMode('static')
     setBulkChannelProfileIds([])
+    setBulkChannelSortOrder("time")
+    setBulkOverlapHandling("add_stream")
     setBulkEnabled(true)
     setShowBulkModal(true)
   }
@@ -700,15 +709,70 @@ export function EventGroupImport() {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Channel Group</Label>
-                  <Select
-                    value={bulkChannelGroupId?.toString() || ""}
-                    onChange={(e) => setBulkChannelGroupId(e.target.value ? parseInt(e.target.value) : null)}
-                  >
-                    <option value="">None</option>
-                    {(channelGroupsQuery.data ?? []).map((g) => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </Select>
+                  <div className="space-y-2">
+                    {/* Static group option */}
+                    <div>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="bulk_channel_group_mode"
+                          checked={bulkChannelGroupMode === "static"}
+                          onChange={() => setBulkChannelGroupMode("static")}
+                          className="accent-primary"
+                        />
+                        <span className="text-sm">Existing group</span>
+                      </label>
+                      <div className={`mt-1 ml-6 ${bulkChannelGroupMode !== "static" ? "opacity-40 pointer-events-none" : ""}`}>
+                        <Select
+                          value={bulkChannelGroupId?.toString() ?? ""}
+                          onChange={(e) => setBulkChannelGroupId(e.target.value ? parseInt(e.target.value) : null)}
+                          disabled={bulkChannelGroupMode !== "static"}
+                        >
+                          <option value="">None</option>
+                          {(channelGroupsQuery.data ?? []).map((g) => (
+                            <option key={g.id} value={g.id}>{g.name}</option>
+                          ))}
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* Dynamic group options */}
+                    <div className="border-t pt-2 mt-2">
+                      <div className="text-xs font-medium text-muted-foreground mb-1">Dynamic Groups</div>
+                      <label className="flex items-center gap-2 cursor-pointer py-1">
+                        <input
+                          type="radio"
+                          name="bulk_channel_group_mode"
+                          checked={bulkChannelGroupMode === "sport"}
+                          onChange={() => {
+                            setBulkChannelGroupMode("sport")
+                            setBulkChannelGroupId(null)
+                          }}
+                          className="accent-primary"
+                        />
+                        <div>
+                          <code className="text-xs font-medium bg-muted px-1 rounded">{"{sport}"}</code>
+                          <span className="text-xs text-muted-foreground ml-1">by sport name</span>
+                        </div>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer py-1">
+                        <input
+                          type="radio"
+                          name="bulk_channel_group_mode"
+                          checked={bulkChannelGroupMode === "league"}
+                          onChange={() => {
+                            setBulkChannelGroupMode("league")
+                            setBulkChannelGroupId(null)
+                          }}
+                          className="accent-primary"
+                        />
+                        <div>
+                          <code className="text-xs font-medium bg-muted px-1 rounded">{"{league}"}</code>
+                          <span className="text-xs text-muted-foreground ml-1">by league name</span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Channel Profiles</Label>
@@ -728,6 +792,35 @@ export function EventGroupImport() {
                   </div>
                 </div>
               </div>
+
+              {/* Multi-sport options */}
+              {bulkMode === "multi" && (
+                <div className="grid grid-cols-2 gap-4 pt-2 border-t">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Channel Sort Order</Label>
+                    <Select
+                      value={bulkChannelSortOrder}
+                      onChange={(e) => setBulkChannelSortOrder(e.target.value)}
+                    >
+                      <option value="time">Time</option>
+                      <option value="sport_time">Sport → Time</option>
+                      <option value="league_time">League → Time</option>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Overlap Handling</Label>
+                    <Select
+                      value={bulkOverlapHandling}
+                      onChange={(e) => setBulkOverlapHandling(e.target.value)}
+                    >
+                      <option value="add_stream">Add stream to existing channel</option>
+                      <option value="add_only">Add only (skip if no existing)</option>
+                      <option value="create_all">Create all (ignore overlap)</option>
+                      <option value="skip">Skip overlapping events</option>
+                    </Select>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Groups to import */}
