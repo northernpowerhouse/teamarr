@@ -34,6 +34,65 @@ SEGMENT_DISPLAY_NAMES: dict[str, str] = {
 SEGMENT_ORDER = ["early_prelims", "prelims", "main_card"]
 
 
+def canonicalize_segment(detected: str, event: Event) -> str:
+    """Validate detected segment against ESPN's segment_times.
+
+    If ESPN has segment data, ensures the detected segment exists.
+    If not, maps to the closest valid segment.
+
+    Args:
+        detected: Segment detected from stream name
+        event: UFC Event with segment_times from ESPN
+
+    Returns:
+        Validated segment code that exists in ESPN's data
+    """
+    # If no ESPN segment data, trust the detection
+    if not event.segment_times:
+        return detected
+
+    espn_segments = set(event.segment_times.keys())
+
+    # If detected segment exists in ESPN data, use it
+    if detected in espn_segments:
+        return detected
+
+    # Map to closest valid segment
+    # Priority: try to find the next available segment in order
+    detected_idx = SEGMENT_ORDER.index(detected) if detected in SEGMENT_ORDER else -1
+
+    if detected_idx >= 0:
+        # Try segments at same position or later first
+        for segment in SEGMENT_ORDER[detected_idx:]:
+            if segment in espn_segments:
+                logger.info(
+                    "[UFC_SEGMENTS] Mapped '%s' to '%s' (not in ESPN data: %s)",
+                    detected, segment, sorted(espn_segments),
+                )
+                return segment
+        # Fall back to earlier segments
+        for segment in reversed(SEGMENT_ORDER[:detected_idx]):
+            if segment in espn_segments:
+                logger.info(
+                    "[UFC_SEGMENTS] Mapped '%s' to '%s' (not in ESPN data: %s)",
+                    detected, segment, sorted(espn_segments),
+                )
+                return segment
+
+    # Last resort: use main_card if available, else first available
+    if "main_card" in espn_segments:
+        logger.warning(
+            "[UFC_SEGMENTS] Unknown segment '%s', defaulting to main_card", detected
+        )
+        return "main_card"
+
+    fallback = next(iter(espn_segments))
+    logger.warning(
+        "[UFC_SEGMENTS] Unknown segment '%s', defaulting to '%s'", detected, fallback
+    )
+    return fallback
+
+
 @dataclass
 class SegmentInfo:
     """Information about a UFC card segment."""
@@ -223,6 +282,9 @@ def expand_ufc_segments(
         # Combined streams go to main_card
         if segment == "combined":
             segment = "main_card"
+
+        # Validate against ESPN's segment data - ensures segment exists
+        segment = canonicalize_segment(segment, event)
 
         event_id = event.id
         if event_id not in ufc_by_segment:
