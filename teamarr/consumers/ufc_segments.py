@@ -153,6 +153,75 @@ def get_segment_display_suffix(segment: str | None) -> str:
     return ""
 
 
+def disambiguate_prelims_by_time(
+    detected_segment: str,
+    stream_time: "time | None",
+    event: Event,
+) -> str:
+    """Disambiguate "prelims" segment based on stream time.
+
+    If a stream says "prelims" but has a time in its name that's closer to
+    early_prelims, reassign to early_prelims.
+
+    Args:
+        detected_segment: Segment detected from stream name ("prelims")
+        stream_time: Time extracted from stream name (e.g., time(22, 30))
+        event: UFC Event with segment_times from ESPN
+
+    Returns:
+        Disambiguated segment code
+    """
+    from datetime import time
+
+    # Only disambiguate "prelims" - other segments are unambiguous
+    if detected_segment != "prelims":
+        return detected_segment
+
+    # Need stream time and ESPN segment data to disambiguate
+    if not stream_time or not event.segment_times:
+        return detected_segment
+
+    # Need both early_prelims and prelims times for comparison
+    early_prelims_dt = event.segment_times.get("early_prelims")
+    prelims_dt = event.segment_times.get("prelims")
+
+    if not early_prelims_dt or not prelims_dt:
+        return detected_segment
+
+    # Convert ESPN datetime to time for comparison
+    early_time = early_prelims_dt.time()
+    prelims_time = prelims_dt.time()
+
+    # Calculate time differences (in seconds from midnight)
+    def time_to_seconds(t: time) -> int:
+        return t.hour * 3600 + t.minute * 60 + t.second
+
+    stream_secs = time_to_seconds(stream_time)
+    early_secs = time_to_seconds(early_time)
+    prelims_secs = time_to_seconds(prelims_time)
+
+    # Distance from stream time to each segment time
+    # Handle wrap-around at midnight (e.g., stream at 23:00, event at 01:00)
+    def time_distance(t1_secs: int, t2_secs: int) -> int:
+        diff = abs(t1_secs - t2_secs)
+        # If difference > 12 hours, it's probably wrap-around
+        return min(diff, 86400 - diff)
+
+    dist_to_early = time_distance(stream_secs, early_secs)
+    dist_to_prelims = time_distance(stream_secs, prelims_secs)
+
+    # If stream time is closer to early_prelims, reassign
+    if dist_to_early < dist_to_prelims:
+        logger.info(
+            "[UFC_SEGMENTS] Disambiguated 'prelims' to 'early_prelims' based on time "
+            "(stream=%s, early=%s, prelims=%s)",
+            stream_time, early_time, prelims_time,
+        )
+        return "early_prelims"
+
+    return detected_segment
+
+
 def get_segment_times(
     event: Event,
     segment: str,

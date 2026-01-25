@@ -158,8 +158,10 @@ def _run_startup_tasks():
         # One-time migrations: Clear UFC caches for segment fixes
         # v1: Initial segment_times and segment-aware event_ids
         # v2: Cross-group consolidation and event_date fixes
+        # v3: Switch from app API to scoreboard (correct times)
         _run_ufc_segment_migration(get_db, "ufc_segment_fix_v1")
         _run_ufc_segment_migration(get_db, "ufc_segment_fix_v2")
+        _run_ufc_segment_migration(get_db, "ufc_segment_fix_v3")
 
         # Refresh team/league cache (this takes time)
         startup_state.set_phase(StartupPhase.REFRESHING_CACHE)

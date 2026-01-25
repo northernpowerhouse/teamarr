@@ -285,10 +285,25 @@ class ESPNClient:
     def get_ufc_events(self) -> dict | None:
         """Fetch all UFC events from the app API.
 
+        NOTE: This endpoint returns times 3 hours late. Use get_ufc_scoreboard()
+        for correct times on upcoming events.
+
         Returns:
             Raw ESPN response with events list or None on error
         """
         return self._request(ESPN_UFC_EVENTS_URL)
+
+    def get_ufc_scoreboard(self) -> dict | None:
+        """Fetch UFC scoreboard with correct bout times.
+
+        The scoreboard endpoint returns accurate segment times, unlike the
+        app API which is 3 hours off.
+
+        Returns:
+            Raw ESPN scoreboard response or None on error
+        """
+        url = f"{ESPN_BASE_URL}/mma/ufc/scoreboard"
+        return self._request(url)
 
     def get_fighter(self, fighter_id: str) -> dict | None:
         """Fetch UFC fighter profile.
