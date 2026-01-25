@@ -7,6 +7,7 @@ Handles channel creation, deletion, settings sync, and EPG association.
 import json
 import logging
 import threading
+from datetime import datetime
 from sqlite3 import Connection
 from typing import Any
 
@@ -313,6 +314,7 @@ class ChannelLifecycleService:
                     # UFC segment support: extract segment info if present
                     segment = matched.get("segment")  # e.g., "prelims", "main_card"
                     segment_display = matched.get("segment_display", "")
+                    segment_start = matched.get("segment_start")  # Segment-specific start time
                     # For channel lookup/creation, use segment-aware event_id
                     # This treats each segment as a separate "sub-event"
                     effective_event_id = f"{event_id}-{segment}" if segment else event_id
@@ -431,6 +433,7 @@ class ChannelLifecycleService:
                             overlap_handling=overlap_handling,
                             group_config=group_config,
                             template=template,
+                            segment=segment,
                         )
 
                         if cross_group_result is not None:
@@ -469,6 +472,7 @@ class ChannelLifecycleService:
                         channel_profile_ids=resolved_channel_profile_ids,
                         segment=segment,
                         segment_display=segment_display,
+                        segment_start=segment_start,
                     )
 
                     if channel_result.success:
@@ -535,6 +539,7 @@ class ChannelLifecycleService:
         overlap_handling: str,
         group_config: dict,
         template: dict | None,
+        segment: str | None = None,
     ) -> StreamProcessResult | None:
         """Handle cross-group overlap for multi-league groups.
 
@@ -556,6 +561,7 @@ class ChannelLifecycleService:
             overlap_handling: One of add_stream, add_only, skip
             group_config: Full group configuration
             template: Template configuration
+            segment: UFC card segment (e.g., "prelims", "main_card")
 
         Returns:
             StreamProcessResult if stream was handled (added/skipped)
@@ -573,7 +579,8 @@ class ChannelLifecycleService:
 
         stream_name = stream.get("name", "")
         stream_id = stream.get("id")
-        event_id = event.id
+        # Use segment-aware event_id for UFC segments
+        event_id = f"{event.id}-{segment}" if segment else event.id
         event_provider = getattr(event, "provider", "espn")
 
         # First try to find channel with matching keyword (or no keyword)
@@ -879,12 +886,14 @@ class ChannelLifecycleService:
         channel_profile_ids: list[int],
         segment: str | None = None,
         segment_display: str = "",
+        segment_start: datetime | None = None,
     ) -> ChannelCreationResult:
         """Create a new channel in DB and Dispatcharr.
 
         Args:
             segment: UFC card segment code (e.g., "prelims", "main_card")
             segment_display: Display name for segment (e.g., "Prelims")
+            segment_start: Segment-specific start time (for UFC segments)
         """
         from teamarr.database.channels import (
             add_stream_to_channel,
@@ -994,7 +1003,8 @@ class ChannelLifecycleService:
                 exception_keyword=matched_keyword,
                 home_team=event.home_team.name if event.home_team else None,
                 away_team=event.away_team.name if event.away_team else None,
-                event_date=event.start_time.isoformat() if event.start_time else None,
+                # Use segment-specific start time for UFC segments, otherwise event start
+                event_date=(segment_start or event.start_time).isoformat() if (segment_start or event.start_time) else None,
                 event_name=event.name,
                 league=event.league,
                 sport=event.sport,

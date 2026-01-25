@@ -76,16 +76,14 @@ def _cleanup_orphaned_xmltv(conn) -> None:
         logger.warning("[STARTUP] XMLTV cleanup failed: %s", e)
 
 
-def _run_ufc_segment_migration(db_factory):
+def _run_ufc_segment_migration(db_factory, migration_name: str = "ufc_segment_fix_v1"):
     """One-time migration to fix UFC segment handling.
 
     Clears UFC event cache and managed channels so they're recreated
     with proper segment_times and segment-aware event_ids.
 
-    Uses a migrations table to track completion (runs only once).
+    Uses a migrations table to track completion (runs only once per migration_name).
     """
-    MIGRATION_NAME = "ufc_segment_fix_v1"
-
     try:
         with db_factory() as conn:
             # Create migrations table if it doesn't exist
@@ -98,7 +96,7 @@ def _run_ufc_segment_migration(db_factory):
 
             # Check if migration already ran
             cursor = conn.execute(
-                "SELECT 1 FROM migrations WHERE name = ?", (MIGRATION_NAME,)
+                "SELECT 1 FROM migrations WHERE name = ?", (migration_name,)
             )
             if cursor.fetchone():
                 return  # Already migrated
@@ -123,17 +121,17 @@ def _run_ufc_segment_migration(db_factory):
 
             # Mark migration as done
             conn.execute(
-                "INSERT INTO migrations (name) VALUES (?)", (MIGRATION_NAME,)
+                "INSERT INTO migrations (name) VALUES (?)", (migration_name,)
             )
             conn.commit()
 
             if events_cleared or channels_cleared or fingerprints_cleared:
                 logger.info(
-                    "[MIGRATION] UFC segment fix: cleared %d events, %d channels, %d fingerprints",
-                    events_cleared, channels_cleared, fingerprints_cleared,
+                    "[MIGRATION] %s: cleared %d events, %d channels, %d fingerprints",
+                    migration_name, events_cleared, channels_cleared, fingerprints_cleared,
                 )
     except Exception as e:
-        logger.warning("[MIGRATION] UFC segment migration failed: %s", e)
+        logger.warning("[MIGRATION] %s failed: %s", migration_name, e)
 
 
 def _run_startup_tasks():
@@ -157,10 +155,11 @@ def _run_startup_tasks():
         ProviderRegistry.initialize(league_mapping_service)
         logger.info("[STARTUP] League mapping service and providers initialized")
 
-        # One-time migration: Clear UFC caches for segment_times fix
-        # This ensures old cached events without segment_times are refreshed
-        # and channels are recreated with proper segment-aware event_ids
-        _run_ufc_segment_migration(get_db)
+        # One-time migrations: Clear UFC caches for segment fixes
+        # v1: Initial segment_times and segment-aware event_ids
+        # v2: Cross-group consolidation and event_date fixes
+        _run_ufc_segment_migration(get_db, "ufc_segment_fix_v1")
+        _run_ufc_segment_migration(get_db, "ufc_segment_fix_v2")
 
         # Refresh team/league cache (this takes time)
         startup_state.set_phase(StartupPhase.REFRESHING_CACHE)

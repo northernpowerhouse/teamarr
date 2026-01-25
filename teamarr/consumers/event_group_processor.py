@@ -882,10 +882,18 @@ class EventGroupProcessor:
             matched_streams = self._build_matched_stream_list(streams, match_result)
 
             # Build event lookup BEFORE team filtering (for cleanup)
+            # Use segment-aware event_id to match channel.event_id storage
+            def _effective_event_id(m):
+                event = m.get("event")
+                if not event or not hasattr(event, "id"):
+                    return None
+                segment = m.get("segment")
+                return f"{event.id}-{segment}" if segment else event.id
+
             all_matched_events = {
-                m.get("event").id: m.get("event")
+                _effective_event_id(m): m.get("event")
                 for m in matched_streams
-                if m.get("event") and hasattr(m.get("event"), "id")
+                if _effective_event_id(m)
             }
 
             # Apply team include/exclude filtering (inherits from parent if not set)
@@ -894,11 +902,11 @@ class EventGroupProcessor:
             )
             result.filtered_team = filtered_team_count
 
-            # Build set of event IDs that passed the filter
+            # Build set of event IDs that passed the filter (segment-aware)
             passed_event_ids = {
-                m.get("event").id
+                _effective_event_id(m)
                 for m in matched_streams
-                if m.get("event") and hasattr(m.get("event"), "id")
+                if _effective_event_id(m)
             }
 
             # Cleanup existing channels that no longer pass team filter
@@ -1194,10 +1202,18 @@ class EventGroupProcessor:
             matched_streams = self._enrich_matched_events(matched_streams)
 
             # Build event lookup BEFORE team filtering (for cleanup of existing channels)
+            # Use segment-aware event_id to match channel.event_id storage
+            def _effective_event_id(m):
+                event = m.get("event")
+                if not event or not hasattr(event, "id"):
+                    return None
+                segment = m.get("segment")
+                return f"{event.id}-{segment}" if segment else event.id
+
             all_matched_events = {
-                m.get("event").id: m.get("event")
+                _effective_event_id(m): m.get("event")
                 for m in matched_streams
-                if m.get("event") and hasattr(m.get("event"), "id")
+                if _effective_event_id(m)
             }
 
             # Apply team include/exclude filtering
@@ -1206,11 +1222,11 @@ class EventGroupProcessor:
             )
             result.filtered_team = filtered_team_count
 
-            # Build set of event IDs that passed the filter
+            # Build set of event IDs that passed the filter (segment-aware)
             passed_event_ids = {
-                m.get("event").id
+                _effective_event_id(m)
                 for m in matched_streams
-                if m.get("event") and hasattr(m.get("event"), "id")
+                if _effective_event_id(m)
             }
 
             # Cleanup existing channels that no longer pass team filter
