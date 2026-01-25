@@ -9,8 +9,9 @@ Segment timing comes from ESPN bout-level data:
 """
 
 import logging
+import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
 from teamarr.consumers.matching.classifier import (
     ClassifiedStream,
@@ -93,6 +94,59 @@ def canonicalize_segment(detected: str, event: Event) -> str:
     return fallback
 
 
+def extract_time_from_stream(stream_name: str) -> time | None:
+    """Extract time from stream name for segment disambiguation.
+
+    Looks for common time patterns in stream names:
+    - "5:30 PM", "5:30PM", "5:30pm"
+    - "10pm", "10 pm", "10PM"
+    - "22:30" (24-hour format)
+
+    Args:
+        stream_name: Raw stream name
+
+    Returns:
+        Extracted time or None
+    """
+    if not stream_name:
+        return None
+
+    # Pattern 1: 12-hour format with minutes - "5:30 PM", "5:30PM"
+    match = re.search(r'\b(\d{1,2}):(\d{2})\s*(am|pm)\b', stream_name, re.IGNORECASE)
+    if match:
+        hour = int(match.group(1))
+        minute = int(match.group(2))
+        ampm = match.group(3).upper()
+        if ampm == "PM" and hour < 12:
+            hour += 12
+        elif ampm == "AM" and hour == 12:
+            hour = 0
+        return time(hour, minute)
+
+    # Pattern 2: 12-hour format without minutes - "10pm", "10 pm"
+    match = re.search(r'\b(\d{1,2})\s*(am|pm)\b', stream_name, re.IGNORECASE)
+    if match:
+        hour = int(match.group(1))
+        ampm = match.group(2).upper()
+        if ampm == "PM" and hour < 12:
+            hour += 12
+        elif ampm == "AM" and hour == 12:
+            hour = 0
+        return time(hour, 0)
+
+    # Pattern 3: 24-hour format - "22:30"
+    match = re.search(r'\b([01]?\d|2[0-3]):([0-5]\d)\b', stream_name)
+    if match:
+        hour = int(match.group(1))
+        minute = int(match.group(2))
+        # Only use if it looks like a time (not like "UFC 324")
+        # Times typically have hours >= 10 or are early morning (< 6)
+        if hour >= 10 or hour < 6:
+            return time(hour, minute)
+
+    return None
+
+
 @dataclass
 class SegmentInfo:
     """Information about a UFC card segment."""
@@ -155,7 +209,7 @@ def get_segment_display_suffix(segment: str | None) -> str:
 
 def disambiguate_prelims_by_time(
     detected_segment: str,
-    stream_time: "time | None",
+    stream_time: time | None,
     event: Event,
 ) -> str:
     """Disambiguate "prelims" segment based on stream time.
@@ -163,15 +217,18 @@ def disambiguate_prelims_by_time(
     If a stream says "prelims" but has a time in its name that's closer to
     early_prelims, reassign to early_prelims.
 
+    Stream times are assumed to be in user's local timezone. ESPN times (UTC)
+    are converted to user timezone for comparison.
+
     Args:
         detected_segment: Segment detected from stream name ("prelims")
-        stream_time: Time extracted from stream name (e.g., time(22, 30))
-        event: UFC Event with segment_times from ESPN
+        stream_time: Time extracted from stream name (in local timezone)
+        event: UFC Event with segment_times from ESPN (UTC)
 
     Returns:
         Disambiguated segment code
     """
-    from datetime import time
+    from teamarr.utilities.tz import to_user_tz
 
     # Only disambiguate "prelims" - other segments are unambiguous
     if detected_segment != "prelims":
@@ -188,9 +245,9 @@ def disambiguate_prelims_by_time(
     if not early_prelims_dt or not prelims_dt:
         return detected_segment
 
-    # Convert ESPN datetime to time for comparison
-    early_time = early_prelims_dt.time()
-    prelims_time = prelims_dt.time()
+    # Convert ESPN datetime (UTC) to user timezone, then extract time
+    early_time = to_user_tz(early_prelims_dt).time()
+    prelims_time = to_user_tz(prelims_dt).time()
 
     # Calculate time differences (in seconds from midnight)
     def time_to_seconds(t: time) -> int:
@@ -351,6 +408,14 @@ def expand_ufc_segments(
         # Combined streams go to main_card
         if segment == "combined":
             segment = "main_card"
+
+        # Disambiguate "prelims" using time if available
+        # Streams labeled "prelims" might actually be early prelims based on time
+        if segment == "prelims":
+            stream_name = stream.get("name", "")
+            stream_time = extract_time_from_stream(stream_name)
+            if stream_time:
+                segment = disambiguate_prelims_by_time(segment, stream_time, event)
 
         # Validate against ESPN's segment data - ensures segment exists
         segment = canonicalize_segment(segment, event)
