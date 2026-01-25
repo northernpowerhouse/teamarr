@@ -279,20 +279,26 @@ class TeamMatcher:
         if cache_result:
             return cache_result
 
-        # Detect league hint
+        # Detect league hint (can be single league or list for umbrella brands like EFL)
         league_hint = classified.league_hint
 
         if league_hint:
-            if league_hint not in enabled_leagues:
-                # Stream is for a league we're not tracking
+            # Normalize to list for uniform handling
+            hint_leagues = [league_hint] if isinstance(league_hint, str) else league_hint
+            # Filter to only leagues that are enabled for this group
+            valid_leagues = [lg for lg in hint_leagues if lg in enabled_leagues]
+
+            if not valid_leagues:
+                # None of the hinted leagues are enabled
+                hint_display = league_hint if isinstance(league_hint, str) else ", ".join(league_hint)
                 return MatchOutcome.filtered(
                     FilteredReason.LEAGUE_NOT_INCLUDED,
                     stream_name=ctx.stream_name,
                     stream_id=stream_id,
-                    detail=f"League '{league_hint}' not in enabled leagues",
+                    detail=f"League '{hint_display}' not in enabled leagues",
                 )
-            # Narrow search to hinted league
-            leagues_to_search = [league_hint]
+            # Narrow search to valid hinted leagues
+            leagues_to_search = valid_leagues
         else:
             # No hint, search all enabled leagues
             leagues_to_search = enabled_leagues

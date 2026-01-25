@@ -56,7 +56,8 @@ class ClassifiedStream:
     card_segment: str | None = None
 
     # Detected league hint (for any category)
-    league_hint: str | None = None
+    # Can be a single league code or list for umbrella brands (e.g., EFL → [eng.2, eng.3, eng.4])
+    league_hint: str | list[str] | None = None
 
     # Detected sport hint (e.g., "Hockey", "Football")
     sport_hint: str | None = None
@@ -701,19 +702,20 @@ def _clean_team_name(name: str) -> str:
 # =============================================================================
 
 
-def detect_league_hint(text: str) -> str | None:
+def detect_league_hint(text: str) -> str | list[str] | None:
     """Detect league from stream name patterns.
 
     Examples:
         "NHL: Bruins vs Rangers" → "nhl"
         "EPL - Arsenal vs Chelsea" → "eng.1"
         "UFC 315: Main Card" → "ufc"
+        "EFL: Portsmouth vs Southampton" → ["eng.2", "eng.3", "eng.4"]
 
     Args:
         text: Stream name (should be normalized)
 
     Returns:
-        League code if detected, None otherwise
+        League code (str), list of league codes (for umbrella brands), or None
     """
     if not text:
         return None

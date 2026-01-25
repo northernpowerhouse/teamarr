@@ -352,13 +352,14 @@ BROADCAST_NETWORKS: list[str] = [
 # =============================================================================
 # LEAGUE HINT PATTERNS
 # Patterns to detect league from stream name for multi-league groups.
-# Returns league_code if detected.
+# Returns league_code(s) if detected.
 #
-# Format: (pattern, league_code)
+# Format: (pattern, league_code) where league_code is str or list[str]
+# Use list for umbrella brands (e.g., "EFL" covers Championship, League One, League Two)
 # Patterns are case-insensitive, checked in order
 # =============================================================================
 
-LEAGUE_HINT_PATTERNS: list[tuple[str, str]] = [
+LEAGUE_HINT_PATTERNS: list[tuple[str, str | list[str]]] = [
     # ==========================================================================
     # Major US/Canadian Pro Leagues
     # ==========================================================================
@@ -378,10 +379,30 @@ LEAGUE_HINT_PATTERNS: list[tuple[str, str]] = [
     (r"^ncaaw[:\s-]", "womens-college-basketball"),
     (r"^ncaab[:\s-]", "mens-college-basketball"),  # Alternate abbreviation
     # ==========================================================================
-    # Soccer / Football
+    # Soccer / Football - Multi-league umbrella brands first
     # ==========================================================================
+    # EFL = English Football League (Championship, League One, League Two)
+    # Include FA Cup since providers often mislabel FA Cup matches as "EFL"
+    # Use \b word boundary instead of ^ to match after channel prefixes like "03: "
+    (r"\befl[:\s-]", ["eng.2", "eng.3", "eng.4", "eng.fa"]),
+    (r"\benglish\s+football\s+league[:\s-]", ["eng.2", "eng.3", "eng.4", "eng.fa"]),
+    # Specific EFL divisions
+    (r"\befl\s+championship[:\s-]", "eng.2"),
+    (r"\bchampionship[:\s-]", "eng.2"),
+    (r"\befl\s+league\s+one[:\s-]", "eng.3"),
+    (r"\bleague\s+one[:\s-]", "eng.3"),
+    (r"\befl\s+league\s+two[:\s-]", "eng.4"),
+    (r"\bleague\s+two[:\s-]", "eng.4"),
+    # EFL Cup (Carabao Cup)
+    (r"\befl\s+cup[:\s-]", "eng.league_cup"),
+    (r"\bcarabao\s+cup[:\s-]", "eng.league_cup"),
+    (r"\bleague\s+cup[:\s-]", "eng.league_cup"),
+    # FA Cup
+    (r"\bfa\s+cup[:\s-]", "eng.fa"),
+    # Premier League
     (r"^epl[:\s-]", "eng.1"),
     (r"^premier\s+league[:\s-]", "eng.1"),
+    # Other top European leagues
     (r"^la\s+liga[:\s-]", "esp.1"),
     (r"^bundesliga[:\s-]", "ger.1"),
     (r"^serie\s+a[:\s-]", "ita.1"),
@@ -390,8 +411,12 @@ LEAGUE_HINT_PATTERNS: list[tuple[str, str]] = [
     (r"^champions\s+league[:\s-]", "uefa.champions"),
     (r"^spl[:\s-]", "ksa.1"),  # Saudi Pro League
     # ==========================================================================
-    # Hockey (NHL, minor, junior, women's)
+    # Hockey - Multi-league umbrella brands first
     # ==========================================================================
+    # CHL = Canadian Hockey League (OHL, WHL, QMJHL)
+    (r"^chl[:\s-]", ["ohl", "whl", "qmjhl"]),
+    (r"^canadian\s+hockey\s+league[:\s-]", ["ohl", "whl", "qmjhl"]),
+    # Specific CHL leagues
     (r"^pwhl[:\s-]", "pwhl"),
     (r"^ahl[:\s-]", "ahl"),
     (r"^ohl[:\s-]", "ohl"),

@@ -578,6 +578,12 @@ class StreamMatcher:
             reason = outcome.failed_reason.value if outcome.failed_reason else "failed"
             exclusion_reason = reason
 
+        # Convert list hint to comma-separated string for storage
+        league_hint = classified.league_hint
+        detected_league_str = (
+            ", ".join(league_hint) if isinstance(league_hint, list) else league_hint
+        )
+
         return MatchedStreamResult(
             stream_name=stream_name,
             stream_id=stream_id,
@@ -593,7 +599,7 @@ class StreamMatcher:
             category=classified.category,
             parsed_team1=classified.team1,
             parsed_team2=classified.team2,
-            detected_league=classified.league_hint,
+            detected_league=detected_league_str,
             card_segment=classified.card_segment,  # UFC segment from stream name
         )
 
