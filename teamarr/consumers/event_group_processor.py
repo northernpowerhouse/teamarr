@@ -1083,6 +1083,18 @@ class EventGroupProcessor:
         """
         result = ProcessingResult(group_id=group.id, group_name=group.name)
 
+        # Template is required - skip groups without one
+        if group.template_id is None:
+            logger.warning(
+                "[EVENT_GROUP_SKIP] Group '%s' (id=%d): no template assigned - "
+                "template is required for channel naming. Skipping group.",
+                group.name,
+                group.id,
+            )
+            result.errors.append("No template assigned - template is required for channel naming")
+            result.completed_at = datetime.now()
+            return result
+
         # Create stats run for tracking
         stats_run = create_run(conn, run_type="event_group", group_id=group.id)
 
