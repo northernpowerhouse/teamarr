@@ -19,7 +19,7 @@ Teamarr pulls rich sports data from providers (ESPN, TSDB, HockeyTech, etc.) - s
 
 **Two workflows:**
 
-- **Event-based** - Many IPTV providers offer sports through ephemeral streams created to serve a single game. These appear around game time (often the morning of, or a day before) and disappear shortly after. The stream names contain the event info directly (e.g., "NFL: Bills vs Dolphins"). Teamarr analyzes these names, matches them to real events, dynamically manages channels in Dispatcharr, and generates EPG for each match.
+- **Event-based** - Many IPTV providers offer sports through ephemeral streams created to serve a single game. These appear around game time (often the morning of, or a day before) and disappear after the event concludes (typically end of day or the following morning). Streams are typically organized into groups - either by league (NFL, NBA, NHL) or by source (ESPN+, DAZN, TSN+, FloSports). A group may contain events from a single sport or league, or intermixed events from multiple leagues and sports. As long as stream names contain enough information to match to real-world events (e.g., "NFL: Bills vs Dolphins" or "DAZN: Man City vs Arsenal"), these IPTV groups can be used as source groups in Teamarr.
 
 - **Team-based** - Some IPTV providers offer persistent channels dedicated to a single team (e.g., "New York Yankees", "LA Lakers"). These channels exist continuously but only have programming when that team plays. Teamarr looks up the team's schedule and populates the guide with their upcoming games.
 
