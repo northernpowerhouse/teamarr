@@ -4,7 +4,7 @@ layout: home
 nav_order: 1
 ---
 
-# Teamarr V2
+# Teamarr
 
 Sports EPG Generator for Dispatcharr integration.
 
