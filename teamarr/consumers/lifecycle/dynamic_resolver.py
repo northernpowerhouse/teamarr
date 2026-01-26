@@ -146,6 +146,31 @@ class DynamicResolver:
         self._ensure_initialized()
         return self._league_aliases.get(league_code, league_code.upper())
 
+    def resolve_pattern(
+        self, pattern: str, event_sport: str | None, event_league: str | None
+    ) -> str:
+        """Interpolate pattern with event data.
+
+        Args:
+            pattern: Pattern string like '{sport}', '{league}', or 'Sports | {sport} | {league}'
+            event_sport: Event's sport code (e.g., 'soccer', 'mma')
+            event_league: Event's league code (e.g., 'eng.1', 'nfl')
+
+        Returns:
+            Resolved string with wildcards replaced by display names
+        """
+        result = pattern
+
+        if event_sport and "{sport}" in result:
+            display_name = self.get_sport_display_name(event_sport)
+            result = result.replace("{sport}", display_name)
+
+        if event_league and "{league}" in result:
+            alias = self.get_league_alias(event_league)
+            result = result.replace("{league}", alias)
+
+        return result
+
     def _get_or_create_group(self, name: str) -> int | None:
         """Get group ID by name, creating if needed.
 
@@ -230,10 +255,10 @@ class DynamicResolver:
         """Resolve channel group ID based on mode.
 
         Args:
-            mode: 'static', 'sport', or 'league'
+            mode: 'static' or pattern string containing {sport}/{league}
             static_group_id: Group ID to use for 'static' mode
-            event_sport: Event's sport code (for 'sport' mode)
-            event_league: Event's league code (for 'league' mode)
+            event_sport: Event's sport code
+            event_league: Event's league code
 
         Returns:
             Resolved group ID or None
@@ -246,21 +271,50 @@ class DynamicResolver:
         if mode == "static":
             return static_group_id
 
+        # Legacy mode support (pre-v39 databases)
         if mode == "sport" and event_sport:
             display_name = self.get_sport_display_name(event_sport)
             group_id = self._get_or_create_group(display_name)
-            logger.info("[RESOLVER] Sport mode: %s -> '%s' -> group_id=%s", event_sport, display_name, group_id)
+            logger.info(
+                "[RESOLVER] Sport mode: %s -> '%s' -> group_id=%s",
+                event_sport, display_name, group_id
+            )
             return group_id
 
         if mode == "league" and event_league:
             alias = self.get_league_alias(event_league)
             group_id = self._get_or_create_group(alias)
-            logger.info("[RESOLVER] League mode: %s -> '%s' -> group_id=%s", event_league, alias, group_id)
+            logger.info(
+                "[RESOLVER] League mode: %s -> '%s' -> group_id=%s",
+                event_league, alias, group_id
+            )
             return group_id
 
-        logger.warning("[RESOLVER] Falling back to static_group_id=%s (mode=%s, sport=%s, league=%s)",
-                      static_group_id, mode, event_sport, event_league)
-        return static_group_id  # Fallback
+        # Pattern mode: resolve {sport} and {league} wildcards
+        if "{" in mode:
+            resolved_name = self.resolve_pattern(mode, event_sport, event_league)
+
+            # Check if any wildcards remain unresolved
+            if "{sport}" in resolved_name or "{league}" in resolved_name:
+                logger.warning(
+                    "[RESOLVER] Pattern has unresolved wildcards: %s -> %s (sport=%s, league=%s)",
+                    mode, resolved_name, event_sport, event_league
+                )
+                return static_group_id  # Fallback
+
+            group_id = self._get_or_create_group(resolved_name)
+            logger.info(
+                "[RESOLVER] Pattern mode: %s -> '%s' -> group_id=%s",
+                mode, resolved_name, group_id
+            )
+            return group_id
+
+        # Unknown mode, fallback
+        logger.warning(
+            "[RESOLVER] Unknown mode '%s', falling back to static_group_id=%s",
+            mode, static_group_id
+        )
+        return static_group_id
 
     def resolve_channel_profiles(
         self,
@@ -268,10 +322,10 @@ class DynamicResolver:
         event_sport: str | None,
         event_league: str | None,
     ) -> list[int]:
-        """Resolve channel profile IDs, expanding wildcards.
+        """Resolve channel profile IDs, expanding wildcards and patterns.
 
         Args:
-            profile_ids: List of profile IDs and/or wildcards ("{sport}", "{league}")
+            profile_ids: List of profile IDs, wildcards ("{sport}", "{league}"), or custom patterns
             event_sport: Event's sport code
             event_league: Event's league code
 
@@ -285,19 +339,30 @@ class DynamicResolver:
 
         for item in profile_ids:
             if isinstance(item, int):
+                # Static profile ID
                 resolved.append(item)
-            elif item == "{sport}" and event_sport:
-                display_name = self.get_sport_display_name(event_sport)
-                pid = self._get_or_create_profile(display_name)
-                if pid and pid not in resolved:
-                    resolved.append(pid)
-            elif item == "{league}" and event_league:
-                alias = self.get_league_alias(event_league)
-                pid = self._get_or_create_profile(alias)
-                if pid and pid not in resolved:
-                    resolved.append(pid)
-            elif isinstance(item, str) and item.isdigit():
-                # Handle string IDs that are actually numbers
-                resolved.append(int(item))
+            elif isinstance(item, str):
+                if item.isdigit():
+                    # String that's actually a number
+                    resolved.append(int(item))
+                elif "{" in item:
+                    # Pattern - resolve it
+                    resolved_name = self.resolve_pattern(item, event_sport, event_league)
+
+                    # Check if wildcards remain unresolved
+                    if "{sport}" in resolved_name or "{league}" in resolved_name:
+                        logger.warning(
+                            "[RESOLVER] Profile pattern has unresolved wildcards: %s -> %s",
+                            item, resolved_name
+                        )
+                        continue  # Skip this pattern
+
+                    pid = self._get_or_create_profile(resolved_name)
+                    if pid and pid not in resolved:
+                        resolved.append(pid)
+                        logger.debug(
+                            "[RESOLVER] Profile pattern: %s -> '%s' -> id=%s",
+                            item, resolved_name, pid
+                        )
 
         return resolved

@@ -963,6 +963,343 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("[MIGRATE] Schema upgraded to version 38 (separate mode unique constraint fix)")
         current_version = 38
 
+    # Version 39: (BROKEN - did not remove CHECK constraint)
+    # Skipped - v40 handles this properly
+    if current_version < 39:
+        conn.execute("UPDATE settings SET schema_version = 39 WHERE id = 1")
+        current_version = 39
+
+    # Version 40: Convert channel_group_mode enum to pattern format (fixes v39)
+    # Enables custom patterns like '{sport} | {league}' instead of just 'sport' or 'league'
+    # Must recreate table to remove CHECK constraint
+    if current_version < 40:
+        _migrate_channel_group_mode_to_patterns(conn)
+        conn.execute("UPDATE settings SET schema_version = 40 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 40 (channel_group_mode patterns)")
+        current_version = 40
+
+    # Version 41: Add prepend_postponed_label setting
+    # When enabled, prepends "Postponed: " to channel name and EPG content for postponed events
+    if current_version < 41:
+        _migrate_add_prepend_postponed_label(conn)
+        conn.execute("UPDATE settings SET schema_version = 41 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 41 (prepend_postponed_label setting)")
+        current_version = 41
+
+    # Version 42: Fix invalid enum values in event_epg_groups (recovery migration)
+    # For users who got stuck on v40 migration with bad data
+    if current_version < 42:
+        _migrate_fix_invalid_enum_values(conn)
+        conn.execute("UPDATE settings SET schema_version = 42 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 42 (enum value fixes)")
+        current_version = 42
+
+    # Version 43: Clean up erroneous columns from buggy v40 migration
+    # - team_filter_enabled was added to event_epg_groups but should only be in settings
+    # - stream_profile_id may still exist on SQLite < 3.35 (v26 DROP failed)
+    if current_version < 43:
+        _migrate_cleanup_legacy_columns(conn)
+        conn.execute("UPDATE settings SET schema_version = 43 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 43 (legacy column cleanup)")
+        current_version = 43
+
+
+def _migrate_cleanup_legacy_columns(conn: sqlite3.Connection) -> None:
+    """Clean up erroneous columns from buggy v40 migration.
+
+    Removes:
+    - team_filter_enabled from event_epg_groups (erroneously added, belongs in settings)
+    - stream_profile_id from event_epg_groups/managed_channels (v26 DROP may have failed)
+
+    On SQLite < 3.35, DROP COLUMN is not supported - columns are left but unused.
+    """
+    tables_and_columns = [
+        ("event_epg_groups", "team_filter_enabled"),
+        ("event_epg_groups", "stream_profile_id"),
+        ("managed_channels", "stream_profile_id"),
+    ]
+
+    for table, column in tables_and_columns:
+        # Check if column exists
+        cursor = conn.execute(f"PRAGMA table_info({table})")
+        columns = {row["name"] for row in cursor.fetchall()}
+
+        if column not in columns:
+            continue
+
+        try:
+            conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+            logger.info("[MIGRATE] Dropped %s.%s", table, column)
+        except sqlite3.OperationalError as e:
+            # SQLite < 3.35 doesn't support DROP COLUMN
+            logger.debug(
+                "[MIGRATE] Could not drop %s.%s (SQLite < 3.35): %s",
+                table, column, e
+            )
+
+
+def _migrate_fix_invalid_enum_values(conn: sqlite3.Connection) -> None:
+    """Fix invalid enum values in event_epg_groups.
+
+    Recovery migration for users who got stuck on broken v40 migration.
+    Converts old enum values to new format.
+    """
+    # Check if table exists
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='event_epg_groups'"
+    )
+    if not cursor.fetchone():
+        return  # No table to fix
+
+    cursor = conn.execute("PRAGMA table_info(event_epg_groups)")
+    columns = {row["name"] for row in cursor.fetchall()}
+
+    fixes_made = 0
+
+    # Fix channel_assignment_mode
+    if "channel_assignment_mode" in columns:
+        cursor = conn.execute("""
+            UPDATE event_epg_groups
+            SET channel_assignment_mode = 'auto'
+            WHERE channel_assignment_mode NOT IN ('auto', 'manual')
+        """)
+        fixes_made += cursor.rowcount
+
+    # Fix channel_sort_order
+    if "channel_sort_order" in columns:
+        cursor = conn.execute("""
+            UPDATE event_epg_groups
+            SET channel_sort_order = 'time'
+            WHERE channel_sort_order NOT IN ('time', 'sport_time', 'league_time')
+        """)
+        fixes_made += cursor.rowcount
+
+    # Fix overlap_handling
+    if "overlap_handling" in columns:
+        cursor = conn.execute("""
+            UPDATE event_epg_groups
+            SET overlap_handling = 'add_stream'
+            WHERE overlap_handling NOT IN ('add_stream', 'add_only', 'create_all', 'skip')
+        """)
+        fixes_made += cursor.rowcount
+
+    # Fix channel_group_mode
+    if "channel_group_mode" in columns:
+        cursor = conn.execute("""
+            UPDATE event_epg_groups
+            SET channel_group_mode = '{sport}'
+            WHERE channel_group_mode = 'sport'
+        """)
+        fixes_made += cursor.rowcount
+        cursor = conn.execute("""
+            UPDATE event_epg_groups
+            SET channel_group_mode = '{league}'
+            WHERE channel_group_mode = 'league'
+        """)
+        fixes_made += cursor.rowcount
+
+    if fixes_made > 0:
+        logger.info("[MIGRATE] Fixed %d invalid enum values in event_epg_groups", fixes_made)
+
+
+def _migrate_add_prepend_postponed_label(conn: sqlite3.Connection) -> None:
+    """Add prepend_postponed_label column to settings table.
+
+    Adds the column with default value of 1 (enabled).
+    """
+    # Check if column already exists
+    cursor = conn.execute("PRAGMA table_info(settings)")
+    columns = [row["name"] for row in cursor.fetchall()]
+
+    if "prepend_postponed_label" not in columns:
+        conn.execute(
+            "ALTER TABLE settings ADD COLUMN prepend_postponed_label BOOLEAN DEFAULT 1"
+        )
+        logger.info("[MIGRATE] Added prepend_postponed_label column to settings")
+
+
+def _migrate_channel_group_mode_to_patterns(conn: sqlite3.Connection) -> None:
+    """Convert channel_group_mode from enum to pattern strings.
+
+    This migration:
+    1. Cleans up any partial previous migration attempts
+    2. Converts old enum values in the source table FIRST
+    3. Recreates event_epg_groups table WITHOUT the CHECK constraint
+    4. Copies data (now with valid values for CHECK constraints)
+
+    IMPORTANT: Handles legacy columns that may exist on SQLite < 3.35:
+    - stream_profile_id: v26 tried to DROP this but failed on older SQLite
+    - The new table doesn't have this column, so we filter it out during copy
+    """
+    # Check if table exists
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='event_epg_groups'"
+    )
+    if not cursor.fetchone():
+        return  # Fresh database, schema.sql will create correct table
+
+    # Clean up any leftover temp table from previous failed migration
+    conn.execute("DROP TABLE IF EXISTS event_epg_groups_new")
+
+    logger.info("[MIGRATE] Converting channel_group_mode to pattern format")
+
+    conn.execute("PRAGMA foreign_keys = OFF")
+
+    try:
+        # Get column info to preserve structure
+        cursor = conn.execute("PRAGMA table_info(event_epg_groups)")
+        all_columns = [row["name"] for row in cursor.fetchall()]
+
+        if "channel_group_mode" not in all_columns:
+            logger.debug("[MIGRATE] channel_group_mode column not found, skipping")
+            return
+
+        # Filter out columns that don't exist in the new table structure
+        # stream_profile_id: v26 tried to DROP but may have failed on SQLite < 3.35
+        # team_filter_enabled: was erroneously added in earlier v40, now removed
+        legacy_columns = {"stream_profile_id", "team_filter_enabled"}
+        columns = [c for c in all_columns if c not in legacy_columns]
+
+        if len(columns) < len(all_columns):
+            removed = set(all_columns) - set(columns)
+            logger.info("[MIGRATE] Filtering out legacy columns: %s", removed)
+
+        # NOTE: We do NOT update the old table in place because it may have CHECK constraints
+        # that prevent the new values (e.g., channel_group_mode CHECK only allows 'static','sport','league')
+        # Instead, we convert values during the INSERT using CASE expressions
+
+        # Build column list for copy - we'll use CASE for conversions
+        col_list = ", ".join(columns)
+
+        # Build SELECT expressions with CASE for value conversions
+        select_exprs = []
+        for col in columns:
+            if col == "channel_group_mode":
+                # Convert 'sport' -> '{sport}', 'league' -> '{league}'
+                select_exprs.append("""
+                    CASE channel_group_mode
+                        WHEN 'sport' THEN '{sport}'
+                        WHEN 'league' THEN '{league}'
+                        ELSE channel_group_mode
+                    END""")
+            elif col == "channel_assignment_mode":
+                # Convert 'one_per_stream' -> 'manual', others -> 'auto'
+                select_exprs.append("""
+                    CASE
+                        WHEN channel_assignment_mode = 'one_per_stream' THEN 'manual'
+                        WHEN channel_assignment_mode IN ('auto', 'manual') THEN channel_assignment_mode
+                        ELSE 'auto'
+                    END""")
+            elif col == "channel_sort_order":
+                # Convert invalid values to 'time'
+                select_exprs.append("""
+                    CASE
+                        WHEN channel_sort_order IN ('time', 'sport_time', 'league_time') THEN channel_sort_order
+                        ELSE 'time'
+                    END""")
+            elif col == "overlap_handling":
+                # Convert invalid values to 'add_stream'
+                select_exprs.append("""
+                    CASE
+                        WHEN overlap_handling IN ('add_stream', 'add_only', 'create_all', 'skip') THEN overlap_handling
+                        ELSE 'add_stream'
+                    END""")
+            else:
+                select_exprs.append(col)
+
+        select_list = ", ".join(select_exprs)
+
+        # Create new table without CHECK constraint on channel_group_mode
+        # Copy the exact schema but remove the CHECK constraint
+        conn.execute("""
+            CREATE TABLE event_epg_groups_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                display_name TEXT,
+                leagues TEXT NOT NULL DEFAULT '[]',
+                group_mode TEXT DEFAULT 'single',
+                parent_group_id INTEGER REFERENCES event_epg_groups(id) ON DELETE SET NULL,
+                template_id INTEGER REFERENCES templates(id) ON DELETE SET NULL,
+                channel_start_number INTEGER,
+                channel_group_id INTEGER,
+                channel_group_mode TEXT DEFAULT 'static',
+                channel_profile_ids TEXT,
+                duplicate_event_handling TEXT DEFAULT 'consolidate'
+                    CHECK(duplicate_event_handling IN ('consolidate', 'separate', 'ignore')),
+                channel_assignment_mode TEXT DEFAULT 'auto'
+                    CHECK(channel_assignment_mode IN ('auto', 'manual')),
+                sort_order INTEGER DEFAULT 0,
+                total_stream_count INTEGER DEFAULT 0,
+                m3u_group_id INTEGER,
+                m3u_group_name TEXT,
+                m3u_account_id INTEGER,
+                m3u_account_name TEXT,
+                stream_include_regex TEXT,
+                stream_include_regex_enabled BOOLEAN DEFAULT 0,
+                stream_exclude_regex TEXT,
+                stream_exclude_regex_enabled BOOLEAN DEFAULT 0,
+                custom_regex_teams TEXT,
+                custom_regex_teams_enabled BOOLEAN DEFAULT 0,
+                custom_regex_date TEXT,
+                custom_regex_date_enabled BOOLEAN DEFAULT 0,
+                custom_regex_time TEXT,
+                custom_regex_time_enabled BOOLEAN DEFAULT 0,
+                custom_regex_league TEXT,
+                custom_regex_league_enabled BOOLEAN DEFAULT 0,
+                skip_builtin_filter BOOLEAN DEFAULT 0,
+                include_teams TEXT,
+                exclude_teams TEXT,
+                team_filter_mode TEXT DEFAULT 'include' CHECK(team_filter_mode IN ('include', 'exclude')),
+                last_refresh TIMESTAMP,
+                stream_count INTEGER DEFAULT 0,
+                matched_count INTEGER DEFAULT 0,
+                filtered_include_regex INTEGER DEFAULT 0,
+                filtered_exclude_regex INTEGER DEFAULT 0,
+                filtered_not_event INTEGER DEFAULT 0,
+                filtered_team INTEGER DEFAULT 0,
+                failed_count INTEGER DEFAULT 0,
+                streams_excluded INTEGER DEFAULT 0,
+                excluded_event_final INTEGER DEFAULT 0,
+                excluded_event_past INTEGER DEFAULT 0,
+                excluded_before_window INTEGER DEFAULT 0,
+                excluded_league_not_included INTEGER DEFAULT 0,
+                filtered_stale INTEGER DEFAULT 0,
+                channel_sort_order TEXT DEFAULT 'time'
+                    CHECK(channel_sort_order IN ('time', 'sport_time', 'league_time')),
+                overlap_handling TEXT DEFAULT 'add_stream'
+                    CHECK(overlap_handling IN ('add_stream', 'add_only', 'create_all', 'skip')),
+                enabled BOOLEAN DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Copy data with value conversions via CASE expressions
+        conn.execute(f"""
+            INSERT INTO event_epg_groups_new ({col_list})
+            SELECT {select_list} FROM event_epg_groups
+        """)
+
+        # Drop old table and rename
+        conn.execute("DROP TABLE event_epg_groups")
+        conn.execute("ALTER TABLE event_epg_groups_new RENAME TO event_epg_groups")
+
+        # Recreate indexes
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_event_epg_groups_parent
+            ON event_epg_groups(parent_group_id)
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_event_epg_groups_name_account
+            ON event_epg_groups(name, COALESCE(m3u_account_id, -1))
+        """)
+
+        conn.commit()
+        logger.info("[MIGRATE] Successfully converted channel_group_mode to patterns")
+
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
+
 
 def _migrate_to_v35(conn: sqlite3.Connection) -> None:
     """Restructure exception keywords table: keywords -> match_terms, display_name -> label.

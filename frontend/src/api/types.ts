@@ -18,7 +18,7 @@ export interface EventGroup {
   template_id: number | null
   channel_start_number: number | null
   channel_group_id: number | null
-  channel_group_mode: 'static' | 'sport' | 'league'  // Dynamic channel group assignment mode
+  channel_group_mode: string  // Dynamic channel group assignment mode
   channel_profile_ids: (number | string)[] | null  // null = use global default, can include "{sport}", "{league}"
   duplicate_event_handling: string
   channel_assignment_mode: string
@@ -81,7 +81,7 @@ export interface EventGroupCreate {
   template_id?: number | null
   channel_start_number?: number | null
   channel_group_id?: number | null
-  channel_group_mode?: 'static' | 'sport' | 'league'  // Dynamic channel group assignment mode
+  channel_group_mode?: string  // Dynamic channel group assignment mode
   channel_profile_ids?: (number | string)[] | null  // null = use global default, can include "{sport}", "{league}"
   duplicate_event_handling?: string
   channel_assignment_mode?: string
@@ -146,7 +146,7 @@ export interface BulkGroupUpdateRequest {
   leagues?: string[]
   template_id?: number | null
   channel_group_id?: number | null
-  channel_group_mode?: 'static' | 'sport' | 'league'
+  channel_group_mode?: string
   channel_profile_ids?: (number | string)[] | null  // null = use global default, can include "{sport}", "{league}"
   channel_sort_order?: string
   overlap_handling?: string

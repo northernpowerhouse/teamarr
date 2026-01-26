@@ -12,11 +12,14 @@ interface ChannelProfile {
   name: string
 }
 
-// Wildcard options for dynamic profile assignment
+// Preset wildcard options for dynamic profile assignment
 const WILDCARD_OPTIONS = [
   { value: "{sport}", label: "{sport}", description: "Add channels to a profile by sport name (e.g., Basketball). Profile created if it doesn't exist." },
   { value: "{league}", label: "{league}", description: "Add channels to a profile by league name (e.g., NBA, NFL). Profile created if it doesn't exist." },
 ] as const
+
+// Check if a string is a preset wildcard
+const PRESET_WILDCARDS = ["{sport}", "{league}"]
 
 async function fetchChannelProfiles(): Promise<ChannelProfile[]> {
   const response = await fetch("/api/v1/dispatcharr/channel-profiles")
@@ -69,6 +72,8 @@ export function ChannelProfileSelector({
   const [showCreate, setShowCreate] = useState(false)
   const [newName, setNewName] = useState("")
   const [creating, setCreating] = useState(false)
+  const [showCustomInput, setShowCustomInput] = useState(false)
+  const [customPattern, setCustomPattern] = useState("")
 
   const { data: profiles = [], isLoading } = useQuery({
     queryKey: ["dispatcharr-channel-profiles"],
@@ -76,9 +81,13 @@ export function ChannelProfileSelector({
     retry: false,
   })
 
-  // Separate numeric IDs from wildcards
+  // Separate numeric IDs from wildcards/patterns
   const numericIds = selectedIds.filter((x): x is number => typeof x === "number")
   const wildcardIds = selectedIds.filter((x): x is string => typeof x === "string")
+
+  // Separate preset wildcards from custom patterns
+  const presetWildcards = wildcardIds.filter(w => PRESET_WILDCARDS.includes(w))
+  const customPatterns = wildcardIds.filter(w => !PRESET_WILDCARDS.includes(w))
 
   const selectedSet = new Set(numericIds)
   const allProfilesSelected = profiles.length > 0 && profiles.every(p => selectedSet.has(p.id))
@@ -98,6 +107,25 @@ export function ChannelProfileSelector({
     } else {
       onChange([...selectedIds, wildcard])
     }
+  }
+
+  const addCustomPattern = () => {
+    if (!customPattern.trim()) return
+    if (!customPattern.includes("{sport}") && !customPattern.includes("{league}")) {
+      toast.error("Pattern must include {sport} or {league}")
+      return
+    }
+    if (selectedIds.includes(customPattern)) {
+      toast.error("Pattern already added")
+      return
+    }
+    onChange([...selectedIds, customPattern])
+    setCustomPattern("")
+    setShowCustomInput(false)
+  }
+
+  const removeCustomPattern = (pattern: string) => {
+    onChange(selectedIds.filter(x => x !== pattern))
   }
 
   const selectAllProfiles = () => {
@@ -140,11 +168,14 @@ export function ChannelProfileSelector({
         parts.push(`${numericIds.length} profile${numericIds.length !== 1 ? "s" : ""}`)
       }
     }
-    if (wildcardIds.length > 0) {
-      const wildcardLabels = wildcardIds
+    if (presetWildcards.length > 0) {
+      const wildcardLabels = presetWildcards
         .map(w => WILDCARD_OPTIONS.find(o => o.value === w)?.label || w)
         .join(", ")
       parts.push(wildcardLabels)
+    }
+    if (customPatterns.length > 0) {
+      parts.push(`${customPatterns.length} custom pattern${customPatterns.length !== 1 ? "s" : ""}`)
     }
     return parts.length > 0 ? parts.join(" + ") : "No profiles selected"
   }
@@ -276,14 +307,15 @@ export function ChannelProfileSelector({
         )}
       </div>
 
-      {/* Dynamic Profiles (wildcards) */}
+      {/* Dynamic Profiles (wildcards and custom patterns) */}
       {showWildcards && (
         <div className="border rounded-md divide-y bg-muted/30">
           <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
             Dynamic Profiles
           </div>
+          {/* Preset wildcards */}
           {WILDCARD_OPTIONS.map((option) => {
-            const isSelected = wildcardIds.includes(option.value)
+            const isSelected = presetWildcards.includes(option.value)
             return (
               <label
                 key={option.value}
@@ -305,6 +337,80 @@ export function ChannelProfileSelector({
               </label>
             )
           })}
+
+          {/* Custom patterns already added */}
+          {customPatterns.map((pattern) => (
+            <div
+              key={pattern}
+              className="flex items-center gap-3 px-3 py-2 bg-primary/5"
+            >
+              <Checkbox checked disabled />
+              <code className="text-sm font-medium bg-muted px-1 rounded flex-1">{pattern}</code>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                onClick={() => !disabled && removeCustomPattern(pattern)}
+                disabled={disabled}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+
+          {/* Add custom pattern */}
+          {showCustomInput ? (
+            <div className="flex gap-2 p-2">
+              <Input
+                placeholder="Sports | {sport} | {league}"
+                value={customPattern}
+                onChange={(e) => setCustomPattern(e.target.value)}
+                className="flex-1 h-8 font-mono text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    addCustomPattern()
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                className="h-8"
+                disabled={!customPattern.trim()}
+                onClick={addCustomPattern}
+              >
+                Add
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2"
+                onClick={() => {
+                  setShowCustomInput(false)
+                  setCustomPattern("")
+                }}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="flex items-center gap-2 px-3 py-2 w-full text-left hover:bg-accent text-muted-foreground"
+              onClick={() => setShowCustomInput(true)}
+              disabled={disabled}
+            >
+              <Plus className="h-4 w-4" />
+              <span className="text-sm">Add custom pattern...</span>
+            </button>
+          )}
+
+          <div className="px-3 py-1.5 text-xs text-muted-foreground">
+            Available: <code className="bg-muted px-1 rounded">{"{sport}"}</code>, <code className="bg-muted px-1 rounded">{"{league}"}</code>
+          </div>
         </div>
       )}
     </div>

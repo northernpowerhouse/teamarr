@@ -1083,6 +1083,18 @@ class EventGroupProcessor:
         """
         result = ProcessingResult(group_id=group.id, group_name=group.name)
 
+        # Template is required - skip groups without one
+        if group.template_id is None:
+            logger.warning(
+                "[EVENT_GROUP_SKIP] Group '%s' (id=%d): no template assigned - "
+                "template is required for channel naming. Skipping group.",
+                group.name,
+                group.id,
+            )
+            result.errors.append("No template assigned - template is required for channel naming")
+            result.completed_at = datetime.now()
+            return result
+
         # Create stats run for tracking
         stats_run = create_run(conn, run_type="event_group", group_id=group.id)
 
@@ -2365,7 +2377,8 @@ class EventGroupProcessor:
         # Generate filler if enabled in template
         if filler_config:
             filler_result = self._generate_filler_for_streams(
-                matched_streams, filler_config, options.sport_durations, lookback_hours
+                matched_streams, filler_config, options.sport_durations, lookback_hours,
+                prepend_postponed_label=options.prepend_postponed_label,
             )
             if filler_result.programmes:
                 pregame_count = filler_result.pregame_count
@@ -2415,6 +2428,7 @@ class EventGroupProcessor:
         filler_config: EventFillerConfig,
         sport_durations: dict[str, float],
         lookback_hours: int = 6,
+        prepend_postponed_label: bool = True,
     ) -> EventFillerResult:
         """Generate filler programmes for matched event streams.
 
@@ -2423,6 +2437,7 @@ class EventGroupProcessor:
             filler_config: Filler configuration from template
             sport_durations: Sport duration settings
             lookback_hours: How far back to generate EPG (for preceding content)
+            prepend_postponed_label: Whether to prepend "Postponed: " for postponed events
 
         Returns:
             EventFillerResult with programmes and pregame/postgame counts
@@ -2445,6 +2460,7 @@ class EventGroupProcessor:
             sport_durations=sport_durations,
             default_duration=3.0,
             postgame_buffer_hours=24.0,
+            prepend_postponed_label=prepend_postponed_label,
         )
 
         for stream_match in matched_streams:
@@ -2473,6 +2489,7 @@ class EventGroupProcessor:
                     default_duration=3.0,
                     postgame_buffer_hours=24.0,
                     event_end_override=segment_end,  # Use exact segment end time
+                    prepend_postponed_label=prepend_postponed_label,
                 )
                 # Create a modified event with segment start time
                 from dataclasses import replace

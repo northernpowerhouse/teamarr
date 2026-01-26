@@ -907,9 +907,9 @@ export function EventGroupForm() {
                         <input
                           type="radio"
                           name="channel_group_mode"
-                          value="sport"
-                          checked={formData.channel_group_mode === "sport"}
-                          onChange={() => setFormData({ ...formData, channel_group_mode: "sport" })}
+                          value="{sport}"
+                          checked={formData.channel_group_mode === "{sport}"}
+                          onChange={() => setFormData({ ...formData, channel_group_mode: "{sport}" })}
                           className="accent-primary"
                         />
                         <div className="flex-1">
@@ -921,9 +921,9 @@ export function EventGroupForm() {
                         <input
                           type="radio"
                           name="channel_group_mode"
-                          value="league"
-                          checked={formData.channel_group_mode === "league"}
-                          onChange={() => setFormData({ ...formData, channel_group_mode: "league" })}
+                          value="{league}"
+                          checked={formData.channel_group_mode === "{league}"}
+                          onChange={() => setFormData({ ...formData, channel_group_mode: "{league}" })}
                           className="accent-primary"
                         />
                         <div className="flex-1">
@@ -931,6 +931,33 @@ export function EventGroupForm() {
                           <p className="text-xs text-muted-foreground mt-0.5">Assign channels to a group by league name (e.g., NBA, NFL). Group created if it doesn't exist.</p>
                         </div>
                       </label>
+                      <label className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent">
+                        <input
+                          type="radio"
+                          name="channel_group_mode"
+                          value="custom"
+                          checked={formData.channel_group_mode !== "static" && formData.channel_group_mode !== "{sport}" && formData.channel_group_mode !== "{league}"}
+                          onChange={() => setFormData({ ...formData, channel_group_mode: "{sport} | {league}" })}
+                          className="accent-primary"
+                        />
+                        <div className="flex-1">
+                          <span className="text-sm font-medium">Custom</span>
+                          <p className="text-xs text-muted-foreground mt-0.5">Define a custom pattern with variables.</p>
+                        </div>
+                      </label>
+                      {formData.channel_group_mode !== "static" && formData.channel_group_mode !== "{sport}" && formData.channel_group_mode !== "{league}" && (
+                        <div className="p-3 space-y-2">
+                          <Input
+                            value={formData.channel_group_mode}
+                            onChange={(e) => setFormData({ ...formData, channel_group_mode: e.target.value })}
+                            placeholder="Sports | {sport} | {league}"
+                            className="font-mono text-sm"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Available: <code className="bg-muted px-1 rounded">{"{sport}"}</code>, <code className="bg-muted px-1 rounded">{"{league}"}</code>
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

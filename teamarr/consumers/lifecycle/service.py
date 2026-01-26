@@ -12,6 +12,7 @@ from sqlite3 import Connection
 from typing import Any
 
 from teamarr.core import Event
+from teamarr.consumers.event_epg import is_event_postponed, POSTPONED_LABEL
 from teamarr.templates import ContextBuilder, TemplateResolver
 
 from .dynamic_resolver import DynamicResolver
@@ -1064,20 +1065,25 @@ class ChannelLifecycleService:
         template,
         exception_keyword: str | None,
     ) -> str:
-        """Generate channel name for an event.
+        """Generate channel name for an event using template.
 
-        Uses full template engine (141 variables) when service is available.
-        Otherwise falls back to default "Away @ Home" format.
+        Template is required - raises ValueError if not provided.
 
         Supports {exception_keyword} variable in templates. If the template
         includes {exception_keyword}, the value is substituted directly.
         If not included and a keyword is present, it's auto-appended as
         "(Keyword)" to maintain backward compatibility.
 
+        Also prepends "Postponed: " to the channel name if the event is
+        postponed and the prepend_postponed_label setting is enabled.
+
         Args:
             event: Event data
-            template: Can be dict, EventTemplateConfig dataclass, or None
+            template: Required - dict or EventTemplateConfig with channel name format
             exception_keyword: Optional keyword for naming
+
+        Raises:
+            ValueError: If template is missing or has no channel name format
         """
         # Get channel name format from template or use default
         name_format = None
@@ -1096,34 +1102,37 @@ class ChannelLifecycleService:
             "exception_keyword": exception_keyword.title() if exception_keyword else "",
         }
 
-        if name_format:
-            # Check if template uses {exception_keyword} - if so, don't auto-append
-            template_uses_keyword = "{exception_keyword}" in name_format
+        if not name_format:
+            raise ValueError(
+                f"Template has no channel name format for event {event.id} - "
+                "template must define event_channel_name or channel_name_format"
+            )
 
-            # Resolve using full template engine with extra variables
-            # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
-            base_name = self._resolve_template(name_format, event, extra_vars)
+        # Check if template uses {exception_keyword} - if so, don't auto-append
+        template_uses_keyword = "{exception_keyword}" in name_format
 
-            # Clean up empty wrappers when {exception_keyword} resolves to ""
-            # e.g., "Team A @ Team B ()" → "Team A @ Team B"
-            base_name = self._clean_empty_wrappers(base_name)
+        # Resolve using full template engine with extra variables
+        # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
+        base_name = self._resolve_template(name_format, event, extra_vars)
 
-            # Auto-append keyword only if template didn't use {exception_keyword}
-            if exception_keyword and not template_uses_keyword:
-                return f"{base_name} ({exception_keyword.title()})"
+        # Clean up empty wrappers when {exception_keyword} resolves to ""
+        # e.g., "Team A @ Team B ()" → "Team A @ Team B"
+        base_name = self._clean_empty_wrappers(base_name)
 
-            return base_name
-        else:
-            # Default format: "Away @ Home"
-            home_name = event.home_team.short_name if event.home_team else "Home"
-            away_name = event.away_team.short_name if event.away_team else "Away"
-            base_name = f"{away_name} @ {home_name}"
+        # Auto-append keyword only if template didn't use {exception_keyword}
+        if exception_keyword and not template_uses_keyword:
+            base_name = f"{base_name} ({exception_keyword.title()})"
 
-            # Append keyword if present (default format doesn't support template vars)
-            if exception_keyword:
-                return f"{base_name} ({exception_keyword.title()})"
+        # Prepend "POSTPONED | " if event is postponed and setting is enabled
+        if is_event_postponed(event):
+            from teamarr.database.settings import get_epg_settings
 
-            return base_name
+            with self._db_factory() as conn:
+                epg_settings = get_epg_settings(conn)
+                if epg_settings.prepend_postponed_label:
+                    base_name = f"{POSTPONED_LABEL}{base_name}"
+
+        return base_name
 
     def _clean_empty_wrappers(self, text: str) -> str:
         """Clean up empty wrappers left when variables resolve to empty string.

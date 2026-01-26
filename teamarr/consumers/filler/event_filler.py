@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from teamarr.core import Event, Programme, TeamStats
+from teamarr.consumers.event_epg import is_event_postponed, POSTPONED_LABEL
 from teamarr.services.sports_data import SportsDataService
 from teamarr.templates.context import GameContext, Odds, TeamChannelContext, TemplateContext
 from teamarr.templates.resolver import TemplateResolver
@@ -74,6 +75,9 @@ class EventFillerOptions:
 
     # Override event end time (for UFC segments with known end times)
     event_end_override: datetime | None = None
+
+    # Postponed label - prepend "Postponed: " to filler for postponed events
+    prepend_postponed_label: bool = True
 
 
 @dataclass
@@ -159,6 +163,8 @@ class EventFillerGenerator:
                 config=config,
                 logo_url=event.home_team.logo_url,
                 filler_type="pregame",
+                event=event,
+                prepend_postponed_label=options.prepend_postponed_label,
             )
             programmes.extend(pregame_programmes)
             logger.debug(
@@ -181,6 +187,8 @@ class EventFillerGenerator:
                 config=config,
                 logo_url=event.home_team.logo_url,
                 filler_type="postgame",
+                event=event,
+                prepend_postponed_label=options.prepend_postponed_label,
             )
             programmes.extend(postgame_programmes)
             logger.debug(
@@ -236,6 +244,8 @@ class EventFillerGenerator:
                 config=config,
                 logo_url=event.home_team.logo_url,
                 filler_type="pregame",
+                event=event,
+                prepend_postponed_label=options.prepend_postponed_label,
             )
             result.programmes.extend(pregame_programmes)
             result.pregame_count = len(pregame_programmes)
@@ -253,6 +263,8 @@ class EventFillerGenerator:
                 config=config,
                 logo_url=event.home_team.logo_url,
                 filler_type="postgame",
+                event=event,
+                prepend_postponed_label=options.prepend_postponed_label,
             )
             result.programmes.extend(postgame_programmes)
             result.postgame_count = len(postgame_programmes)
@@ -269,6 +281,8 @@ class EventFillerGenerator:
         config: EventFillerConfig,
         logo_url: str | None,
         filler_type: str,
+        event: Event | None = None,
+        prepend_postponed_label: bool = True,
     ) -> list[Programme]:
         """Generate filler programmes for a time range.
 
@@ -280,6 +294,11 @@ class EventFillerGenerator:
         if not chunks:
             return []
 
+        # Check if we should prepend "Postponed: " label
+        should_prepend = (
+            prepend_postponed_label and event and is_event_postponed(event)
+        )
+
         programmes: list[Programme] = []
         for chunk_start, chunk_end in chunks:
             # Resolve templates
@@ -290,6 +309,14 @@ class EventFillerGenerator:
             subtitle = None
             if template.subtitle:
                 subtitle = self._resolver.resolve(template.subtitle, context)
+
+            # Prepend "Postponed: " label if applicable
+            if should_prepend:
+                title = f"{POSTPONED_LABEL}{title}"
+                if subtitle:
+                    subtitle = f"{POSTPONED_LABEL}{subtitle}"
+                if description:
+                    description = f"{POSTPONED_LABEL}{description}"
 
             # Resolve art URL if present
             # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues

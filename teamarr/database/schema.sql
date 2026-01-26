@@ -280,8 +280,13 @@ CREATE TABLE IF NOT EXISTS settings (
     -- Rules evaluated in priority order; first match wins; non-matching streams get priority 999
     stream_ordering_rules JSON DEFAULT '[]',
 
+    -- Postponed Event Label
+    -- When true, prepends "Postponed: " to channel name, EPG title, subtitle, and description
+    -- for events with status.state = "postponed"
+    prepend_postponed_label BOOLEAN DEFAULT 1,
+
     -- Schema Version
-    schema_version INTEGER DEFAULT 38
+    schema_version INTEGER DEFAULT 43
 );
 
 -- Insert default settings
@@ -319,9 +324,8 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
     -- Channel Settings
     channel_start_number INTEGER,            -- Starting channel number for this group
     channel_group_id INTEGER,                -- Dispatcharr channel group to assign (when mode='static')
-    channel_group_mode TEXT DEFAULT 'static' -- How to assign channel group
-        CHECK(channel_group_mode IN ('static', 'sport', 'league')),
-    channel_profile_ids TEXT,                -- JSON array: profile IDs and/or "{sport}", "{league}"
+    channel_group_mode TEXT DEFAULT 'static', -- 'static' or pattern like '{sport}', '{league}', '{sport} | {league}'
+    channel_profile_ids TEXT,                -- JSON array: profile IDs and/or patterns like "{sport}", "{league}"
 
     -- Duplicate Event Handling (uses global lifecycle settings)
     duplicate_event_handling TEXT DEFAULT 'consolidate'
