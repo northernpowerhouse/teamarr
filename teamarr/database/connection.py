@@ -9,6 +9,8 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
+from teamarr.database.checkpoint_v43 import apply_checkpoint_v43
+
 logger = logging.getLogger(__name__)
 
 # Default database path
@@ -459,23 +461,60 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     except Exception:
         current_version = 2
 
-    # Migration: Add description_template to templates table (pre-versioning)
+    # ==========================================================================
+    # CHECKPOINT v43: Consolidated migration for versions 2-43
+    # ==========================================================================
+    # Instead of running 43 individual procedural migrations, we use a single
+    # idempotent checkpoint that ensures the v43 schema state regardless of
+    # starting version. This is safer and handles partial migrations better.
+    #
+    # The checkpoint replaces all v3-v43 migrations below. The old migration
+    # code is preserved but will be skipped since version becomes 43.
+    # ==========================================================================
+    if current_version < 43:
+        logger.info("[MIGRATE] Applying v43 checkpoint (from v%d)", current_version)
+        apply_checkpoint_v43(conn, current_version)
+        current_version = 43
+        logger.info("[MIGRATE] Checkpoint complete, now at v43")
+
+    # ==========================================================================
+    # LEGACY MIGRATIONS (v3-v43) - BYPASSED BY CHECKPOINT
+    # ==========================================================================
+    #
+    # STATUS: DEPRECATED - Scheduled for removal
+    # ADDED: v2.1.0 (checkpoint system introduced)
+    # REMOVAL: After 2-3 releases once checkpoint stability is confirmed by users
+    #
+    # The ~500 lines of migration code below are NEVER EXECUTED because the
+    # checkpoint above sets current_version = 43, causing all `if current_version < N`
+    # blocks to be skipped.
+    #
+    # This code is preserved temporarily as:
+    # 1. A safety fallback if checkpoint has bugs (revert checkpoint, code still works)
+    # 2. Reference documentation of what each version migration did
+    # 3. Battle-testing period for the new checkpoint system
+    #
+    # TO REMOVE THIS CODE:
+    # 1. Confirm checkpoint has been stable for 2-3 releases
+    # 2. Delete everything from here to "# === END LEGACY MIGRATIONS ===" marker
+    # 3. Delete the legacy helper functions at the bottom of this file
+    # 4. Update MIGRATIONS.md to note the removal
+    #
+    # ==========================================================================
+
+    # Legacy: Pre-versioning column additions (now handled by checkpoint)
+    # These are safe to run multiple times due to _add_column_if_not_exists
     _add_column_if_not_exists(
         conn, "templates", "description_template", "TEXT DEFAULT '{matchup} | {venue_full}'"
     )
-
-    # Migration: Add tsdb_api_key to settings table (pre-versioning)
     _add_column_if_not_exists(conn, "settings", "tsdb_api_key", "TEXT")
-
-    # Migration: Add origin_match_method to epg_matched_streams (for cache hit origin tracking)
     _add_column_if_not_exists(conn, "epg_matched_streams", "origin_match_method", "TEXT")
-
-    # Migration: Add excluded columns to epg_matched_streams (unconditionally, to handle edge cases)
-    # These columns track matched-but-excluded streams (wrong league, etc.)
     _add_column_if_not_exists(
         conn, "epg_matched_streams", "excluded", "BOOLEAN DEFAULT 0"
     )
     _add_column_if_not_exists(conn, "epg_matched_streams", "exclusion_reason", "TEXT")
+
+    # LEGACY v3-v43 migrations follow (all skipped because version is now 43)
 
     # Version 3: teams.league (TEXT) -> teams.primary_league + teams.leagues (JSON array)
     if current_version < 3:
@@ -1002,6 +1041,21 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE settings SET schema_version = 43 WHERE id = 1")
         logger.info("[MIGRATE] Schema upgraded to version 43 (legacy column cleanup)")
         current_version = 43
+
+    # === END LEGACY MIGRATIONS ===
+    # Everything above this line (back to "LEGACY MIGRATIONS" header) can be
+    # deleted once checkpoint_v43 stability is confirmed after 2-3 releases.
+
+
+# =============================================================================
+# LEGACY MIGRATION HELPER FUNCTIONS
+# =============================================================================
+# STATUS: DEPRECATED - Scheduled for removal with legacy migrations above
+#
+# These helper functions are only called by the legacy v3-v43 migrations.
+# They are preserved as part of the safety fallback.
+# Delete these when removing the legacy migration code above.
+# =============================================================================
 
 
 def _migrate_cleanup_legacy_columns(conn: sqlite3.Connection) -> None:
