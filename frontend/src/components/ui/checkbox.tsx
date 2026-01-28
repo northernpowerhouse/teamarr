@@ -28,7 +28,7 @@ const Checkbox = React.forwardRef<HTMLButtonElement, CheckboxProps>(
           "disabled:cursor-not-allowed disabled:opacity-50",
           "flex items-center justify-center transition-colors",
           // Unchecked state: visible border
-          !checked && "border-muted-foreground/50 bg-transparent hover:border-primary hover:bg-primary/5",
+          !checked && "border-muted-foreground/70 bg-transparent hover:border-primary hover:bg-primary/10",
           // Checked state: filled background
           checked && "bg-primary border-primary text-primary-foreground",
           className
