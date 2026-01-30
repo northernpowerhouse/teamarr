@@ -53,7 +53,7 @@ export function StreamTimezoneSelector({
       onChange={(e) => onChange(e.target.value || null)}
       disabled={disabled}
     >
-      <option value="">Auto-detect from stream</option>
+      <option value="">Auto-detect from stream (Default)</option>
       {TIMEZONE_OPTIONS.map((tz) => (
         <option key={tz.value} value={tz.value}>
           {tz.label}
