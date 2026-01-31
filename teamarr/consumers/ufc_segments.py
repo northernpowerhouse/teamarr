@@ -246,6 +246,83 @@ def get_segment_display_suffix(segment: str | None) -> str:
     return ""
 
 
+def determine_segment_from_time(
+    stream_time: time,
+    event: Event,
+    extracted_tz: str | None = None,
+    group_tz: str | None = None,
+) -> str | None:
+    """Determine segment from stream time when no keyword detected.
+
+    Matches stream time to the closest ESPN segment start time.
+    Used when a stream has a time in its name but no segment keyword.
+
+    Args:
+        stream_time: Time extracted from stream name
+        event: UFC Event with segment_times from ESPN (UTC)
+        extracted_tz: IANA timezone name extracted from stream (tier 1)
+        group_tz: Group-configured stream_timezone (tier 2)
+
+    Returns:
+        Segment code or None if can't determine
+    """
+    from teamarr.utilities.tz import get_user_timezone
+
+    if not event.segment_times:
+        return None
+
+    # Three-tier timezone resolution
+    effective_tz: ZoneInfo | None = None
+    tz_source = "user"
+
+    if extracted_tz:
+        try:
+            effective_tz = ZoneInfo(extracted_tz)
+            tz_source = f"stream ({extracted_tz})"
+        except (KeyError, ValueError):
+            pass
+
+    if not effective_tz and group_tz:
+        try:
+            effective_tz = ZoneInfo(group_tz)
+            tz_source = f"group ({group_tz})"
+        except (KeyError, ValueError):
+            pass
+
+    if not effective_tz:
+        effective_tz = get_user_timezone()
+        tz_source = "user"
+
+    # Get reference date from first available segment
+    ref_dt = next(iter(event.segment_times.values()))
+    event_date = ref_dt.date()
+
+    # Convert stream time to UTC for comparison
+    stream_dt_local = datetime.combine(event_date, stream_time, tzinfo=effective_tz)
+    stream_dt_utc = stream_dt_local.astimezone(ZoneInfo("UTC"))
+
+    # Find closest segment
+    best_segment = None
+    best_distance = float("inf")
+
+    for segment_code, segment_dt in event.segment_times.items():
+        distance = abs((stream_dt_utc - segment_dt).total_seconds())
+        if distance < best_distance:
+            best_distance = distance
+            best_segment = segment_code
+
+    if best_segment:
+        logger.info(
+            "[UFC_SEGMENTS] Determined segment '%s' from time %s (tz=%s, dist=%d min)",
+            best_segment,
+            stream_time,
+            tz_source,
+            best_distance // 60,
+        )
+
+    return best_segment
+
+
 def disambiguate_prelims_by_time(
     detected_segment: str,
     stream_time: time | None,
@@ -471,20 +548,31 @@ def expand_ufc_segments(
 
         # Use pre-detected segment from classifier, or detect from stream name
         segment = match.get("card_segment") or get_stream_segment(stream)
-
-        # Default to main_card if no segment detected
-        if not segment:
-            segment = "main_card"
+        stream_name = stream.get("name", "")
 
         # Combined streams go to main_card
         if segment == "combined":
+            segment = "main_card"
+
+        # If no segment keyword detected, try to determine from time
+        if not segment:
+            stream_time, extracted_tz = extract_time_and_tz_from_stream(stream_name)
+            if stream_time:
+                segment = determine_segment_from_time(
+                    stream_time,
+                    event,
+                    extracted_tz=extracted_tz,
+                    group_tz=stream_timezone,
+                )
+
+        # Default to main_card if still no segment
+        if not segment:
             segment = "main_card"
 
         # Disambiguate "prelims" using time if available
         # Streams labeled "prelims" might actually be early prelims based on time
         # Uses three-tier TZ: extracted from stream > group setting > user TZ
         if segment == "prelims":
-            stream_name = stream.get("name", "")
             stream_time, extracted_tz = extract_time_and_tz_from_stream(stream_name)
             if stream_time:
                 segment = disambiguate_prelims_by_time(
