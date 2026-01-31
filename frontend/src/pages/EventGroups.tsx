@@ -17,6 +17,7 @@ import {
   ArrowUpDown,
   Plus,
   RotateCcw,
+  Library,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -883,10 +884,16 @@ export function EventGroups() {
             Configure event-based EPG from M3U stream groups
           </p>
         </div>
-        <Button size="sm" onClick={() => navigate("/event-groups/import")}>
-          <Download className="h-4 w-4 mr-1" />
-          Import
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => navigate("/detection-library")}>
+            <Library className="h-4 w-4 mr-1" />
+            Detection Library
+          </Button>
+          <Button size="sm" onClick={() => navigate("/event-groups/import")}>
+            <Download className="h-4 w-4 mr-1" />
+            Import
+          </Button>
+        </div>
       </div>
 
       {/* Stats Tiles - V1 Style: Grid with 4 equal columns filling width */}

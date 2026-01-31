@@ -190,7 +190,7 @@ def list_categories():
             },
             {
                 "id": "exclusions",
-                "name": "Exclusions",
+                "name": "Global Exclusions",
                 "description": "Patterns to exclude from matching (weigh-ins, etc.)",
                 "has_target": False,
             },

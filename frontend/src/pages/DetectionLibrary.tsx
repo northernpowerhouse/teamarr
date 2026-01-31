@@ -43,8 +43,22 @@ import {
   type DetectionKeyword,
   type DetectionKeywordCreate,
 } from "@/api/detectionKeywords"
+import {
+  useAliases,
+  useCreateAlias,
+  useDeleteAlias,
+  exportAliases,
+  useImportAliases,
+} from "@/api/aliases"
+import { TeamPicker } from "@/components/TeamPicker"
+import { LeaguePicker } from "@/components/LeaguePicker"
+import type { TeamFilterEntry } from "@/api/types"
 
-const CATEGORY_ORDER: CategoryType[] = [
+// Tab types - detection keyword categories plus team_aliases
+type TabType = CategoryType | "team_aliases"
+
+const TAB_ORDER: TabType[] = [
+  "team_aliases",
   "combat_sports",
   "league_hints",
   "sport_hints",
@@ -54,26 +68,47 @@ const CATEGORY_ORDER: CategoryType[] = [
   "separators",
 ]
 
+const TAB_NAMES: Record<TabType, string> = {
+  team_aliases: "Team Aliases",
+  combat_sports: "Combat Sports",
+  league_hints: "League Hints",
+  sport_hints: "Sport Hints",
+  placeholders: "Placeholders",
+  card_segments: "Card Segments",
+  exclusions: "Global Exclusions",
+  separators: "Separators",
+}
+
 export function DetectionLibrary() {
-  const [activeCategory, setActiveCategory] = useState<CategoryType>("combat_sports")
+  const [activeTab, setActiveTab] = useState<TabType>("team_aliases")
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [editingKeyword, setEditingKeyword] = useState<DetectionKeyword | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<DetectionKeyword | null>(null)
+  const [deleteAliasConfirm, setDeleteAliasConfirm] = useState<{ id: number; alias: string } | null>(null)
   const [isImporting, setIsImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Detection keywords queries (only fetch when on a keyword tab)
+  const isKeywordTab = activeTab !== "team_aliases"
   const categoriesQuery = useDetectionCategories()
-  const keywordsQuery = useDetectionKeywords(activeCategory)
+  const keywordsQuery = useDetectionKeywords(isKeywordTab ? (activeTab as CategoryType) : undefined)
   const createMutation = useCreateDetectionKeyword()
   const updateMutation = useUpdateDetectionKeyword()
   const deleteMutation = useDeleteDetectionKeyword()
   const importMutation = useBulkImportDetectionKeywords()
 
+  // Aliases queries
+  const aliasesQuery = useAliases()
+  const createAliasMutation = useCreateAlias()
+  const deleteAliasMutation = useDeleteAlias()
+  const importAliasesMutation = useImportAliases()
+
   const categories = categoriesQuery.data?.categories || []
   const keywords = keywordsQuery.data?.keywords || []
-  const activeInfo = categories.find((c) => c.id === activeCategory)
+  const aliases = aliasesQuery.data?.aliases || []
+  const activeInfo = categories.find((c) => c.id === activeTab)
 
-  // Form state for add/edit
+  // Keyword form state
   const [formData, setFormData] = useState<{
     keyword: string
     is_regex: boolean
@@ -90,6 +125,21 @@ export function DetectionLibrary() {
     description: "",
   })
 
+  // Alias form state
+  const [aliasForm, setAliasForm] = useState<{
+    alias: string
+    league: string
+    team_id: string
+    team_name: string
+  }>({
+    alias: "",
+    league: "",
+    team_id: "",
+    team_name: "",
+  })
+  const [aliasSelectedTeams, setAliasSelectedTeams] = useState<TeamFilterEntry[]>([])
+  const [showAliasDialog, setShowAliasDialog] = useState(false)
+
   const resetForm = () => {
     setFormData({
       keyword: "",
@@ -101,9 +151,34 @@ export function DetectionLibrary() {
     })
   }
 
+  const resetAliasForm = () => {
+    setAliasForm({ alias: "", league: "", team_id: "", team_name: "" })
+    setAliasSelectedTeams([])
+  }
+
+  // Handle team selection from TeamPicker
+  const handleAliasTeamSelect = (teams: TeamFilterEntry[]) => {
+    setAliasSelectedTeams(teams)
+    const team = teams[0]
+    if (team) {
+      setAliasForm((f) => ({
+        ...f,
+        team_id: team.team_id,
+        team_name: team.name || "",
+      }))
+    } else {
+      setAliasForm((f) => ({ ...f, team_id: "", team_name: "" }))
+    }
+  }
+
   const openAddDialog = () => {
-    resetForm()
-    setShowAddDialog(true)
+    if (activeTab === "team_aliases") {
+      resetAliasForm()
+      setShowAliasDialog(true)
+    } else {
+      resetForm()
+      setShowAddDialog(true)
+    }
   }
 
   const openEditDialog = (keyword: DetectionKeyword) => {
@@ -121,7 +196,7 @@ export function DetectionLibrary() {
   const handleCreate = async () => {
     try {
       const data: DetectionKeywordCreate = {
-        category: activeCategory,
+        category: activeTab as CategoryType,
         keyword: formData.keyword.trim(),
         is_regex: formData.is_regex,
         target_value: formData.target_value.trim() || null,
@@ -135,6 +210,22 @@ export function DetectionLibrary() {
       resetForm()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create keyword")
+    }
+  }
+
+  const handleCreateAlias = async () => {
+    try {
+      await createAliasMutation.mutateAsync({
+        alias: aliasForm.alias.trim(),
+        league: aliasForm.league,
+        team_id: aliasForm.team_id,
+        team_name: aliasForm.team_name,
+      })
+      toast.success(`Created alias "${aliasForm.alias}"`)
+      setShowAliasDialog(false)
+      resetAliasForm()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create alias")
     }
   }
 
@@ -173,6 +264,17 @@ export function DetectionLibrary() {
     }
   }
 
+  const handleDeleteAlias = async () => {
+    if (!deleteAliasConfirm) return
+    try {
+      await deleteAliasMutation.mutateAsync(deleteAliasConfirm.id)
+      toast.success(`Deleted alias "${deleteAliasConfirm.alias}"`)
+      setDeleteAliasConfirm(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete alias")
+    }
+  }
+
   const handleToggleEnabled = async (keyword: DetectionKeyword) => {
     try {
       await updateMutation.mutateAsync({
@@ -187,19 +289,33 @@ export function DetectionLibrary() {
 
   const handleExport = async () => {
     try {
-      const data = await exportDetectionKeywords(activeCategory)
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `detection-keywords-${activeCategory}.json`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-      toast.success(`Exported ${data.count} keywords`)
+      if (activeTab === "team_aliases") {
+        const data = await exportAliases()
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = "team-aliases.json"
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        toast.success(`Exported ${data.length} aliases`)
+      } else {
+        const data = await exportDetectionKeywords(activeTab as CategoryType)
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = `detection-keywords-${activeTab}.json`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        toast.success(`Exported ${data.count} keywords`)
+      }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to export keywords")
+      toast.error(err instanceof Error ? err.message : "Failed to export")
     }
   }
 
@@ -216,19 +332,26 @@ export function DetectionLibrary() {
       const text = await file.text()
       const imported = JSON.parse(text)
 
-      // Handle both array format and export format
-      const keywords = Array.isArray(imported) ? imported : imported.keywords
-      if (!Array.isArray(keywords)) {
-        throw new Error("Invalid format: expected keywords array")
-      }
-
-      const result = await importMutation.mutateAsync({ keywords })
-      toast.success(`Imported: ${result.created} created, ${result.updated} updated`)
-      if (result.failed > 0) {
-        toast.warning(`${result.failed} keywords failed to import`)
+      if (activeTab === "team_aliases") {
+        const aliases = Array.isArray(imported) ? imported : imported.aliases
+        if (!Array.isArray(aliases)) {
+          throw new Error("Invalid format: expected aliases array")
+        }
+        const result = await importAliasesMutation.mutateAsync(aliases)
+        toast.success(`Imported: ${result.created} created, ${result.skipped} skipped`)
+      } else {
+        const keywords = Array.isArray(imported) ? imported : imported.keywords
+        if (!Array.isArray(keywords)) {
+          throw new Error("Invalid format: expected keywords array")
+        }
+        const result = await importMutation.mutateAsync({ keywords })
+        toast.success(`Imported: ${result.created} created, ${result.updated} updated`)
+        if (result.failed > 0) {
+          toast.warning(`${result.failed} keywords failed to import`)
+        }
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to import keywords")
+      toast.error(err instanceof Error ? err.message : "Failed to import")
     } finally {
       setIsImporting(false)
       if (fileInputRef.current) {
@@ -261,7 +384,7 @@ export function DetectionLibrary() {
         <div>
           <h1 className="text-xl font-bold">Detection Library</h1>
           <p className="text-sm text-muted-foreground">
-            Manage detection patterns for stream classification
+            Manage detection patterns and team aliases for stream classification
           </p>
         </div>
         <div className="flex gap-2">
@@ -279,7 +402,7 @@ export function DetectionLibrary() {
           </Button>
           <Button size="sm" onClick={openAddDialog}>
             <Plus className="h-4 w-4 mr-1" />
-            Add Keyword
+            {activeTab === "team_aliases" ? "Add Alias" : "Add Keyword"}
           </Button>
         </div>
         <input
@@ -291,141 +414,194 @@ export function DetectionLibrary() {
         />
       </div>
 
-      {/* Category Tabs */}
-      <div className="flex gap-1 border-b border-border">
-        {CATEGORY_ORDER.map((catId) => {
-          const cat = categories.find((c) => c.id === catId)
-          if (!cat) return null
-          return (
-            <button
-              key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-t transition-colors ${
-                activeCategory === cat.id
-                  ? "bg-card text-foreground border border-border border-b-card -mb-px"
-                  : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-              }`}
-            >
-              {cat.name}
-            </button>
-          )
-        })}
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-border overflow-x-auto">
+        {TAB_ORDER.map((tabId) => (
+          <button
+            key={tabId}
+            onClick={() => setActiveTab(tabId)}
+            className={`px-3 py-1.5 text-sm font-medium rounded-t transition-colors whitespace-nowrap ${
+              activeTab === tabId
+                ? "bg-card text-foreground border border-border border-b-card -mb-px"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+            }`}
+          >
+            {TAB_NAMES[tabId]}
+          </button>
+        ))}
       </div>
 
-      {/* Category Description */}
-      {activeInfo && (
-        <div className="text-sm text-muted-foreground bg-secondary/30 px-3 py-2 rounded">
-          {activeInfo.description}
-          {activeInfo.has_target && activeInfo.target_description && (
-            <span className="ml-2 text-primary">
-              Target: {activeInfo.target_description}
-            </span>
-          )}
-        </div>
-      )}
+      {/* Tab Description */}
+      <div className="text-sm text-muted-foreground bg-secondary/30 px-3 py-2 rounded">
+        {activeTab === "team_aliases" ? (
+          "Map alternate team names to their official names for better stream matching"
+        ) : activeInfo ? (
+          <>
+            {activeInfo.description}
+            {activeInfo.has_target && activeInfo.target_description && (
+              <span className="ml-2 text-primary">
+                Target: {activeInfo.target_description}
+              </span>
+            )}
+          </>
+        ) : null}
+      </div>
 
-      {/* Keywords Table */}
+      {/* Content */}
       <div className="border border-border rounded-lg overflow-hidden">
-        {keywordsQuery.isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : keywords.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            No keywords in this category. Add one to get started.
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[40%]">Keyword/Pattern</TableHead>
-                {activeInfo?.has_target && <TableHead className="w-[20%]">Target</TableHead>}
-                <TableHead className="w-[80px]">Type</TableHead>
-                <TableHead className="w-[80px]">Priority</TableHead>
-                <TableHead className="w-[80px]">Status</TableHead>
-                <TableHead className="w-[120px] text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {keywords.map((kw) => (
-                <TableRow key={kw.id} className={!kw.enabled ? "opacity-50" : ""}>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <code className="text-sm font-mono bg-muted px-1 rounded">
-                        {kw.keyword}
-                      </code>
-                      {kw.description && (
-                        <span className="text-xs text-muted-foreground mt-0.5">
-                          {kw.description}
-                        </span>
-                      )}
-                    </div>
-                  </TableCell>
-                  {activeInfo?.has_target && (
-                    <TableCell>
-                      {kw.target_value ? (
-                        <code className="text-sm font-mono">{kw.target_value}</code>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                  )}
-                  <TableCell>
-                    <Badge variant={kw.is_regex ? "info" : "secondary"}>
-                      {kw.is_regex ? "regex" : "text"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm">{kw.priority}</span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={kw.enabled ? "success" : "secondary"}>
-                      {kw.enabled ? "On" : "Off"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => handleToggleEnabled(kw)}
-                        title={kw.enabled ? "Disable" : "Enable"}
-                      >
-                        {kw.enabled ? (
-                          <ToggleRight className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <ToggleLeft className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => openEditDialog(kw)}
-                        title="Edit"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => setDeleteConfirm(kw)}
-                        title="Delete"
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
+        {activeTab === "team_aliases" ? (
+          // Aliases Table
+          aliasesQuery.isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : aliases.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No team aliases configured. Add one to get started.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[30%]">Alias</TableHead>
+                  <TableHead className="w-[30%]">Maps To</TableHead>
+                  <TableHead className="w-[20%]">League</TableHead>
+                  <TableHead className="w-[80px] text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {aliases.map((alias) => (
+                  <TableRow key={alias.id}>
+                    <TableCell>
+                      <code className="text-sm font-mono bg-muted px-1 rounded">
+                        {alias.alias}
+                      </code>
+                    </TableCell>
+                    <TableCell>{alias.team_name}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{alias.league}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setDeleteAliasConfirm({ id: alias.id, alias: alias.alias })}
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )
+        ) : (
+          // Keywords Table
+          keywordsQuery.isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : keywords.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No keywords in this category. Add one to get started.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[40%]">Keyword/Pattern</TableHead>
+                  {activeInfo?.has_target && <TableHead className="w-[20%]">Target</TableHead>}
+                  <TableHead className="w-[80px]">Type</TableHead>
+                  <TableHead className="w-[80px]">Priority</TableHead>
+                  <TableHead className="w-[80px]">Status</TableHead>
+                  <TableHead className="w-[120px] text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {keywords.map((kw) => (
+                  <TableRow key={kw.id} className={!kw.enabled ? "opacity-50" : ""}>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <code className="text-sm font-mono bg-muted px-1 rounded">
+                          {kw.keyword}
+                        </code>
+                        {kw.description && (
+                          <span className="text-xs text-muted-foreground mt-0.5">
+                            {kw.description}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    {activeInfo?.has_target && (
+                      <TableCell>
+                        {kw.target_value ? (
+                          <code className="text-sm font-mono">{kw.target_value}</code>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    )}
+                    <TableCell>
+                      <Badge variant={kw.is_regex ? "info" : "secondary"}>
+                        {kw.is_regex ? "regex" : "text"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm">{kw.priority}</span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={kw.enabled ? "success" : "secondary"}>
+                        {kw.enabled ? "On" : "Off"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => handleToggleEnabled(kw)}
+                          title={kw.enabled ? "Disable" : "Enable"}
+                        >
+                          {kw.enabled ? (
+                            <ToggleRight className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <ToggleLeft className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => openEditDialog(kw)}
+                          title="Edit"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setDeleteConfirm(kw)}
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )
         )}
       </div>
 
-      {/* Add/Edit Dialog */}
+      {/* Add Keyword Dialog */}
       <Dialog
         open={showAddDialog || editingKeyword !== null}
         onOpenChange={(open) => {
@@ -548,7 +724,80 @@ export function DetectionLibrary() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation */}
+      {/* Add Alias Dialog */}
+      <Dialog open={showAliasDialog} onOpenChange={(open) => !open && setShowAliasDialog(false)}>
+        <DialogContent onClose={() => setShowAliasDialog(false)}>
+          <DialogHeader>
+            <DialogTitle>Add Team Alias</DialogTitle>
+            <DialogDescription>
+              Map an alternate team name to its official name
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Alias Text</label>
+              <Input
+                value={aliasForm.alias}
+                onChange={(e) => setAliasForm((f) => ({ ...f, alias: e.target.value }))}
+                placeholder="e.g., Niners, Bolts, Leafs"
+              />
+              <p className="text-xs text-muted-foreground">
+                The alternate name that appears in stream names
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">League</label>
+              <LeaguePicker
+                selectedLeagues={aliasForm.league ? [aliasForm.league] : []}
+                onSelectionChange={(leagues) => {
+                  const league = leagues[0] || ""
+                  setAliasForm((f) => ({ ...f, league, team_id: "", team_name: "" }))
+                  setAliasSelectedTeams([])
+                }}
+                singleSelect
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Maps To Team</label>
+              {!aliasForm.league ? (
+                <p className="text-sm text-muted-foreground py-2">Select a league first</p>
+              ) : (
+                <TeamPicker
+                  leagues={[aliasForm.league]}
+                  selectedTeams={aliasSelectedTeams}
+                  onSelectionChange={handleAliasTeamSelect}
+                  singleSelect
+                  placeholder="Search for team..."
+                />
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAliasDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateAlias}
+              disabled={
+                !aliasForm.alias.trim() ||
+                !aliasForm.team_id ||
+                createAliasMutation.isPending
+              }
+            >
+              {createAliasMutation.isPending && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Keyword Confirmation */}
       <Dialog
         open={deleteConfirm !== null}
         onOpenChange={(open) => !open && setDeleteConfirm(null)}
@@ -570,6 +819,34 @@ export function DetectionLibrary() {
               disabled={deleteMutation.isPending}
             >
               {deleteMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Alias Confirmation */}
+      <Dialog
+        open={deleteAliasConfirm !== null}
+        onOpenChange={(open) => !open && setDeleteAliasConfirm(null)}
+      >
+        <DialogContent onClose={() => setDeleteAliasConfirm(null)}>
+          <DialogHeader>
+            <DialogTitle>Delete Alias</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete alias "{deleteAliasConfirm?.alias}"? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteAliasConfirm(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteAlias}
+              disabled={deleteAliasMutation.isPending}
+            >
+              {deleteAliasMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Delete
             </Button>
           </DialogFooter>
