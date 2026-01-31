@@ -367,8 +367,13 @@ class EventFillerGenerator:
         )
 
         # Fetch team stats if service is available
-        home_stats = self._get_team_stats(event.home_team.id, event.league)
-        away_stats = self._get_team_stats(event.away_team.id, event.league)
+        # Skip for combat sports - fighters don't have team stats endpoints
+        if event.sport in ("mma", "boxing"):
+            home_stats = None
+            away_stats = None
+        else:
+            home_stats = self._get_team_stats(event.home_team.id, event.league)
+            away_stats = self._get_team_stats(event.away_team.id, event.league)
 
         # Build odds from event data (home team perspective)
         odds = self._build_odds(event.odds_data, is_home=True) if event.odds_data else None

@@ -257,6 +257,8 @@ PLACEHOLDER_PATTERNS: list[str] = [
     r"^espn\+?\s*\d+\s*[-:]?\s*$",
     r"^dazn\s*\d+\s*[-:]?\s*$",
     r"^paramount\+?\s*\d+\s*[-:]?\s*$",
+    # UFC + number + separator + nothing after = placeholder (channel number, not event)
+    r"^ufc\s*\d+\s*[-:|]\s*$",
     # Generic numbered channels
     r"^channel\s*\d+\s*$",
     r"^ch\s*\d+\s*$",

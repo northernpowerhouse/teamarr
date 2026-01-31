@@ -266,14 +266,19 @@ def disambiguate_prelims_by_time(
     dist_to_early = time_distance(stream_secs, early_secs)
     dist_to_prelims = time_distance(stream_secs, prelims_secs)
 
-    # If stream time is closer to early_prelims, reassign
-    if dist_to_early < dist_to_prelims:
+    # Only reassign if stream time is within 90 minutes of early_prelims
+    # AND closer to early than prelims. This prevents aggressive disambiguation
+    # when stream times are in a different timezone than user's local time.
+    max_tolerance_secs = 90 * 60  # 90 minutes
+
+    if dist_to_early < dist_to_prelims and dist_to_early <= max_tolerance_secs:
         logger.info(
             "[UFC_SEGMENTS] Disambiguated 'prelims' to 'early_prelims' based on time "
-            "(stream=%s, early=%s, prelims=%s)",
+            "(stream=%s, early=%s, prelims=%s, dist=%d min)",
             stream_time,
             early_time,
             prelims_time,
+            dist_to_early // 60,
         )
         return "early_prelims"
 
