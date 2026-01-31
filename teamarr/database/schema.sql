@@ -1182,6 +1182,53 @@ CREATE INDEX IF NOT EXISTS idx_team_aliases_alias ON team_aliases(alias);
 
 
 -- =============================================================================
+-- DETECTION_KEYWORDS TABLE
+-- User-defined detection keywords for stream classification
+-- Extends the built-in patterns in DetectionKeywordService
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS detection_keywords (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Keyword category determines how it's used in classification
+    category TEXT NOT NULL CHECK(category IN (
+        'combat_sports',    -- Keywords that indicate EVENT_CARD category
+        'league_hints',     -- Patterns that map to league code(s)
+        'sport_hints',      -- Patterns that map to sport name
+        'placeholders',     -- Patterns for placeholder/filler streams
+        'card_segments',    -- Patterns for UFC card segments (prelims, main)
+        'exclusions',       -- Patterns to exclude from matching (weigh-ins, etc.)
+        'separators'        -- Game separators (vs, @, at)
+    )),
+
+    -- The keyword or pattern to match
+    keyword TEXT NOT NULL,          -- Plain text keyword or regex pattern
+    is_regex BOOLEAN DEFAULT 0,     -- If true, keyword is treated as regex
+
+    -- Target value (meaning depends on category)
+    -- league_hints: league code or JSON array of codes (e.g., "nfl" or '["eng.2","eng.3"]')
+    -- sport_hints: sport name (e.g., "Hockey")
+    -- card_segments: segment name (e.g., "main_card")
+    -- Others: unused (NULL)
+    target_value TEXT,
+
+    -- Control flags
+    enabled BOOLEAN DEFAULT 1,
+    priority INTEGER DEFAULT 0,     -- Higher priority checked first (within category)
+
+    -- Optional metadata
+    description TEXT,               -- User notes about this keyword
+
+    UNIQUE(category, keyword)
+);
+
+CREATE INDEX IF NOT EXISTS idx_detection_keywords_category ON detection_keywords(category);
+CREATE INDEX IF NOT EXISTS idx_detection_keywords_enabled ON detection_keywords(enabled);
+
+
+-- =============================================================================
 -- CONDITION_PRESETS TABLE
 -- Saved condition configurations for template descriptions
 -- =============================================================================
