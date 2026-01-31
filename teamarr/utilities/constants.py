@@ -403,7 +403,10 @@ LEAGUE_HINT_PATTERNS: list[tuple[str, str | list[str]]] = [
     (r"\bpremier\s+league[:\s-]", "eng.1"),
     # Other top European leagues
     (r"\bla\s+liga[:\s-]", "esp.1"),
-    (r"\bbundesliga[:\s-]", "ger.1"),
+    # German Bundesliga - specific divisions first, then umbrella
+    (r"\b2\.?\s*bundesliga[:\s-]", "ger.2"),  # 2. Bundesliga
+    (r"\b3\.?\s*liga[:\s-]", "ger.3"),  # 3. Liga
+    (r"\bbundesliga[:\s-]", ["ger.1", "ger.2"]),  # Umbrella for all Bundesliga
     (r"\bserie\s+a[:\s-]", "ita.1"),
     (r"\bligue\s+1[:\s-]", "fra.1"),
     (r"\buefa\s+champions\s+league[:\s-]", "uefa.champions"),
