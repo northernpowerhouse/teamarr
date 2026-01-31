@@ -1,13 +1,13 @@
 ---
-title: EPG Generation
+title: EPG
 parent: Settings
 grand_parent: User Guide
-nav_order: 5
+nav_order: 4
 ---
 
-# EPG Generation Settings
+# EPG Settings
 
-Configure EPG output, scheduling, and default game durations.
+Configure EPG output, scheduling, channel reset, and default game durations.
 
 ## Output Settings
 
@@ -47,6 +47,28 @@ Standard cron format for scheduling. Common presets are available:
 ### Run Now
 
 Manually trigger an EPG generation run.
+
+## Scheduled Channel Reset
+
+For users experiencing stale channel logos in Jellyfin. Schedule a periodic purge of all Teamarr channels before your media server's guide refresh. Leave disabled if you're not having issues.
+
+### Enable Scheduled Channel Reset
+
+Toggle whether to enable periodic channel reset.
+
+### Reset Schedule (Cron Expression)
+
+Standard cron format for scheduling the reset. Common presets are available:
+
+| Preset | Expression |
+|--------|------------|
+| Daily 2:30 AM | `30 2 * * *` |
+| Daily 3:30 AM | `30 3 * * *` |
+| Daily 4:30 AM | `30 4 * * *` |
+| Daily 5:30 AM | `30 5 * * *` |
+
+{: .note }
+Set this to run shortly before your media server's scheduled guide refresh. Channels will be recreated on the next EPG generation.
 
 ## Default Durations
 

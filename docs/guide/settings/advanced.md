@@ -1,13 +1,13 @@
 ---
-title: Advanced
+title: System
 parent: Settings
 grand_parent: User Guide
 nav_order: 7
 ---
 
-# Advanced Settings
+# System Settings
 
-Update notifications, backup/restore, local caching, scheduled maintenance, and API configuration.
+Update notifications, backup/restore, local caching, and API configuration.
 
 ## Update Notifications
 
@@ -68,39 +68,6 @@ Manually refresh the cache to pull the latest team and league data. This fetches
 
 {: .note }
 Cache refresh runs automatically on first startup. Manual refresh is useful after adding new leagues or when team rosters change significantly.
-
-## Scheduled Channel Reset
-
-For users experiencing stale channel logos in Jellyfin. Schedule a periodic purge of all Teamarr channels before your media server's guide refresh.
-
-{: .note }
-Leave this disabled if you're not experiencing logo caching issues.
-
-### How It Works
-
-1. Enable scheduled reset and set a cron schedule (e.g., `30 3 * * *` for 3:30 AM daily)
-2. When the reset schedule fires, Teamarr purges all its channels from Dispatcharr
-3. On the next EPG generation, channels are recreated with fresh data
-4. Set your Jellyfin guide refresh to run shortly after (e.g., 4:00 AM)
-
-### Settings
-
-| Setting | Description |
-|---------|-------------|
-| **Enable Scheduled Channel Reset** | Toggle the scheduled reset on/off |
-| **Reset Schedule (Cron Expression)** | When to run the reset (standard cron format) |
-
-### Preset Schedules
-
-Quick buttons for common schedules (half-hour to avoid conflicts with typical on-the-hour tasks):
-- **Daily 2:30 AM** - `30 2 * * *`
-- **Daily 3:30 AM** - `30 3 * * *`
-- **Daily 4:30 AM** - `30 4 * * *`
-- **Daily 5:30 AM** - `30 5 * * *`
-
-### Use Case
-
-Some media servers (notably Jellyfin) cache channel logos aggressively. When logos change, the old cached version persists unless the channel is deleted during a guide refresh. This feature solves that by scheduling a complete channel purge before your media server refreshes its guide data.
 
 ## TheSportsDB API Key
 
