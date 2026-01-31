@@ -486,7 +486,9 @@ class TeamMatcher:
                     continue
 
             # Check for sport mismatch from stream (if detected)
-            if ctx.classified.sport_hint:
+            # Skip when league hint is present - league is more specific and avoids
+            # sport naming inconsistencies (e.g., "Football" vs "soccer")
+            if ctx.classified.sport_hint and not ctx.classified.league_hint:
                 if event.sport.lower() != ctx.classified.sport_hint.lower():
                     continue
 
@@ -637,7 +639,9 @@ class TeamMatcher:
                     continue
 
             # Check for sport mismatch from stream (if detected)
-            if ctx.classified.sport_hint:
+            # Skip when league hint is present - league is more specific and avoids
+            # sport naming inconsistencies (e.g., "Football" vs "soccer")
+            if ctx.classified.sport_hint and not ctx.classified.league_hint:
                 if event.sport.lower() != ctx.classified.sport_hint.lower():
                     continue
 

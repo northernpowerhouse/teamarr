@@ -54,3 +54,6 @@ data/
 # Local dev scripts
 dev.sh
 .gitattributes
+
+# Plans and status (local only)
+plans/
