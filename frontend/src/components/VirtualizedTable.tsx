@@ -7,14 +7,6 @@
 
 import { useRef } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import {
-  Table,
-  TableBody,
-  TableHead,
-  TableHeader,
-  TableRow,
-  TableCell,
-} from "@/components/ui/table"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,7 +15,7 @@ import {
 export interface Column<T> {
   /** Column header text */
   header: string
-  /** CSS width (e.g., "w-[30%]", "w-[100px]") */
+  /** CSS width (e.g., "w-56", "w-20", "flex-1 min-w-0") */
   width: string
   /** Render function for cell content */
   render: (item: T, index: number) => React.ReactNode
@@ -67,18 +59,14 @@ export function VirtualizedTable<T>({
 
   return (
     <div className={`flex flex-col flex-1 min-h-0 ${className}`}>
-      {/* Fixed header */}
-      <Table className="table-fixed w-full">
-        <TableHeader>
-          <TableRow>
-            {columns.map((col, i) => (
-              <TableHead key={i} className={col.width}>
-                {col.header}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-      </Table>
+      {/* Fixed header - uses same flex layout as rows */}
+      <div className="flex items-center border-b border-border bg-muted/50 text-sm font-medium text-muted-foreground">
+        {columns.map((col, i) => (
+          <div key={i} className={`${col.width} px-4 py-3`}>
+            {col.header}
+          </div>
+        ))}
+      </div>
 
       {/* Virtualized body */}
       <div ref={parentRef} className="flex-1 overflow-auto">
@@ -89,34 +77,29 @@ export function VirtualizedTable<T>({
             position: "relative",
           }}
         >
-          <Table className="table-fixed w-full">
-            <TableBody>
-              {virtualizer.getVirtualItems().map((virtualRow) => {
-                const item = data[virtualRow.index]
-                return (
-                  <TableRow
-                    key={getRowKey(item, virtualRow.index)}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      height: `${virtualRow.size}px`,
-                      transform: `translateY(${virtualRow.start}px)`,
-                      display: "table",
-                      tableLayout: "fixed",
-                    }}
-                  >
-                    {columns.map((col, i) => (
-                      <TableCell key={i} className={col.width}>
-                        {col.render(item, virtualRow.index)}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const item = data[virtualRow.index]
+            return (
+              <div
+                key={getRowKey(item, virtualRow.index)}
+                className="flex items-center border-b border-border hover:bg-muted/50"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                {columns.map((col, i) => (
+                  <div key={i} className={`${col.width} px-4 py-2 overflow-hidden`}>
+                    {col.render(item, virtualRow.index)}
+                  </div>
+                ))}
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>

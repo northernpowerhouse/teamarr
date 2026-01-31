@@ -788,7 +788,7 @@ def get_epg_content(
 def get_matched_streams(
     run_id: int | None = Query(None, description="Processing run ID (defaults to latest)"),
     group_id: int | None = Query(None, description="Filter by event group ID"),
-    limit: int = Query(500, ge=1, le=2000, description="Max results"),
+    limit: int = Query(500, ge=1, le=10000, description="Max results"),
 ):
     """Get matched streams from an EPG generation run.
 
@@ -812,7 +812,7 @@ def get_failed_matches(
     run_id: int | None = Query(None, description="Processing run ID (defaults to latest)"),
     group_id: int | None = Query(None, description="Filter by event group ID"),
     reason: str | None = Query(None, description="Filter by failure reason"),
-    limit: int = Query(500, ge=1, le=2000, description="Max results"),
+    limit: int = Query(500, ge=1, le=10000, description="Max results"),
 ):
     """Get failed matches from an EPG generation run.
 

@@ -80,6 +80,23 @@ function formatDateRange(start: string | null, end: string | null): string {
   return `${formatDate(start)} - ${formatDate(end)}`
 }
 
+function getFailedReasonLabel(reason: string): string {
+  const labels: Record<string, string> = {
+    teams_not_parsed: "Could not parse teams",
+    team1_not_found: "Team 1 not found",
+    team2_not_found: "Team 2 not found",
+    both_teams_not_found: "Neither team found",
+    no_common_league: "No common league",
+    no_league_detected: "No league detected",
+    ambiguous_league: "Ambiguous league",
+    no_event_found: "No event found",
+    no_event_card_match: "No event card match",
+    date_mismatch: "Date mismatch",
+    unmatched: "Unmatched",
+  }
+  return labels[reason] || reason
+}
+
 function getMatchMethodBadge(method: string | null) {
   switch (method) {
     case "cache":
@@ -98,23 +115,6 @@ function getMatchMethodBadge(method: string | null) {
       return <Badge variant="success">Direct</Badge>
     default:
       return <Badge variant="outline">{method ?? "Unknown"}</Badge>
-  }
-}
-
-function getFailReasonBadge(reason: string) {
-  switch (reason) {
-    case "unmatched":
-      return <Badge variant="destructive">Unmatched</Badge>
-    case "excluded_league":
-      return <Badge variant="warning">Excluded League</Badge>
-    case "filtered_include":
-      return <Badge variant="secondary">Filtered (Include)</Badge>
-    case "filtered_exclude":
-      return <Badge variant="secondary">Filtered (Exclude)</Badge>
-    case "exception":
-      return <Badge variant="outline">Exception</Badge>
-    default:
-      return <Badge variant="outline">{reason}</Badge>
   }
 }
 
@@ -943,7 +943,7 @@ export function EPG() {
           setMatchedModalRunId(null)
           setMatchedFilter("")
           setMatchedGroupFilter("all")
-        }} className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+        }} className="max-w-6xl h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-600" />
@@ -977,26 +977,25 @@ export function EPG() {
             </select>
           </div>
 
-          <div className="flex-1 overflow-auto">
-            {matchedLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : filteredMatchedStreams.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                {(matchedData?.streams.length ?? 0) === 0
-                  ? "No matched streams for this run."
-                  : "No streams match your filter."}
-              </div>
-            ) : (
-              <VirtualizedTable<MatchedStream>
-                data={filteredMatchedStreams}
+          {matchedLoading ? (
+            <div className="flex-1 flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : filteredMatchedStreams.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-muted-foreground">
+              {(matchedData?.streams.length ?? 0) === 0
+                ? "No matched streams for this run."
+                : "No streams match your filter."}
+            </div>
+          ) : (
+            <VirtualizedTable<MatchedStream>
+              data={filteredMatchedStreams}
                 getRowKey={(item) => item.id}
                 rowHeight={56}
                 columns={[
                   {
                     header: "Stream Name",
-                    width: "w-[28%]",
+                    width: "flex-1 min-w-0",
                     render: (stream) => (
                       <span className="font-medium truncate block" title={stream.stream_name}>
                         {stream.stream_name}
@@ -1005,7 +1004,7 @@ export function EPG() {
                   },
                   {
                     header: "Event",
-                    width: "w-[23%]",
+                    width: "w-56",
                     render: (stream) => (
                       <div>
                         <div className="truncate" title={stream.event_name || `${stream.away_team} @ ${stream.home_team}`}>
@@ -1021,14 +1020,14 @@ export function EPG() {
                   },
                   {
                     header: "League",
-                    width: "w-[70px]",
+                    width: "w-20",
                     render: (stream) => (
                       <Badge variant="secondary">{getLeagueDisplay(stream.league)}</Badge>
                     ),
                   },
                   {
                     header: "Method",
-                    width: "w-[100px]",
+                    width: "w-28",
                     render: (stream) => (
                       <div>
                         {getMatchMethodBadge(stream.match_method)}
@@ -1040,7 +1039,7 @@ export function EPG() {
                   },
                   {
                     header: "Group",
-                    width: "w-[18%]",
+                    width: "w-40",
                     render: (stream) => (
                       <span className="text-muted-foreground text-sm truncate block" title={stream.group_name ?? undefined}>
                         {stream.group_name}
@@ -1049,7 +1048,7 @@ export function EPG() {
                   },
                   {
                     header: "Fix",
-                    width: "w-[60px]",
+                    width: "w-12",
                     render: (stream) => (
                       <Button
                         variant="ghost"
@@ -1064,7 +1063,6 @@ export function EPG() {
                 ]}
               />
             )}
-          </div>
 
           <DialogFooter>
             <div className="text-sm text-muted-foreground">
@@ -1095,7 +1093,7 @@ export function EPG() {
           setFailedModalRunId(null)
           setFailedFilter("")
           setFailedGroupFilter("all")
-        }} className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+        }} className="max-w-6xl h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <XCircle className="h-5 w-5 text-red-600" />
@@ -1129,26 +1127,25 @@ export function EPG() {
             </select>
           </div>
 
-          <div className="flex-1 overflow-auto">
-            {failedLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : filteredFailedMatches.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                {(failedData?.failures.length ?? 0) === 0
-                  ? "No failed matches for this run."
-                  : "No streams match your filter."}
-              </div>
-            ) : (
-              <VirtualizedTable<FailedMatch>
-                data={filteredFailedMatches}
+          {failedLoading ? (
+            <div className="flex-1 flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : filteredFailedMatches.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-muted-foreground">
+              {(failedData?.failures.length ?? 0) === 0
+                ? "No failed matches for this run."
+                : "No streams match your filter."}
+            </div>
+          ) : (
+            <VirtualizedTable<FailedMatch>
+              data={filteredFailedMatches}
                 getRowKey={(item) => item.id}
                 rowHeight={56}
                 columns={[
                   {
                     header: "Stream Name",
-                    width: "w-[30%]",
+                    width: "flex-1 min-w-0",
                     render: (failure) => (
                       <span className="font-medium truncate block" title={failure.stream_name}>
                         {failure.stream_name}
@@ -1157,37 +1154,14 @@ export function EPG() {
                   },
                   {
                     header: "Reason",
-                    width: "w-[100px]",
+                    width: "w-44",
                     render: (failure) => (
-                      <div>
-                        {getFailReasonBadge(failure.reason)}
-                        {failure.exclusion_reason && (
-                          <div className="text-xs text-muted-foreground mt-1 truncate" title={failure.exclusion_reason}>
-                            {failure.exclusion_reason}
-                          </div>
-                        )}
-                      </div>
+                      <span className="text-sm">{getFailedReasonLabel(failure.reason)}</span>
                     ),
                   },
                   {
-                    header: "Detected Teams",
-                    width: "w-[25%]",
-                    render: (failure) =>
-                      failure.extracted_team1 || failure.extracted_team2 ? (
-                        <div className="text-sm">
-                          {failure.extracted_team1 && <div className="truncate" title={failure.extracted_team1}>{failure.extracted_team1}</div>}
-                          {failure.extracted_team2 && <div className="text-muted-foreground truncate" title={failure.extracted_team2}>vs {failure.extracted_team2}</div>}
-                          {failure.detected_league && (
-                            <Badge variant="outline" className="mt-1">{getLeagueDisplay(failure.detected_league)}</Badge>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      ),
-                  },
-                  {
                     header: "Group",
-                    width: "w-[18%]",
+                    width: "w-48",
                     render: (failure) => (
                       <span className="text-muted-foreground text-sm truncate block" title={failure.group_name ?? undefined}>
                         {failure.group_name}
@@ -1196,7 +1170,7 @@ export function EPG() {
                   },
                   {
                     header: "Fix",
-                    width: "w-[60px]",
+                    width: "w-12",
                     render: (failure) => (
                       <Button
                         variant="ghost"
@@ -1211,7 +1185,6 @@ export function EPG() {
                 ]}
               />
             )}
-          </div>
 
           <DialogFooter>
             <div className="text-sm text-muted-foreground">
@@ -1230,9 +1203,9 @@ export function EPG() {
         </DialogContent>
       </Dialog>
 
-      {/* Event Matcher Dialog */}
+      {/* Event Matcher Modal */}
       <Dialog open={eventMatcherOpen} onOpenChange={setEventMatcherOpen}>
-        <DialogContent onClose={() => setEventMatcherOpen(false)} className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+        <DialogContent className="max-w-xl h-[80vh] flex flex-col" onClose={() => setEventMatcherOpen(false)}>
           <DialogHeader>
             <DialogTitle>
               {matcherStream?.current_event_id ? "Correct Stream Match" : "Match Stream to Event"}
@@ -1370,7 +1343,7 @@ export function EPG() {
             </div>
           </div>
 
-          <DialogFooter className="flex justify-between sm:justify-between">
+          <DialogFooter className="flex justify-between sm:justify-between mt-4">
             <Button
               variant="destructive"
               onClick={handleMarkAsNoEvent}

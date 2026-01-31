@@ -2230,6 +2230,11 @@ class EventGroupProcessor:
                 parsed_team2 = getattr(result, "parsed_team2", None)
                 detected_league = getattr(result, "detected_league", None)
 
+                # Get detailed failure reason if available
+                failed_reason = "unmatched"
+                if result.failed_reason:
+                    failed_reason = result.failed_reason.value
+
                 failed_list.append(
                     FailedMatch(
                         run_id=run_id,
@@ -2237,7 +2242,7 @@ class EventGroupProcessor:
                         group_name=group_name,
                         stream_id=stream_id,
                         stream_name=result.stream_name,
-                        reason="unmatched",
+                        reason=failed_reason,
                         parsed_team1=parsed_team1,
                         parsed_team2=parsed_team2,
                         detected_league=detected_league,
