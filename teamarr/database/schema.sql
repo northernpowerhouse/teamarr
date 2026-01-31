@@ -249,6 +249,11 @@ CREATE TABLE IF NOT EXISTS settings (
     scheduler_enabled BOOLEAN DEFAULT 1,
     scheduler_interval_minutes INTEGER DEFAULT 15,
 
+    -- Scheduled Channel Reset (for Jellyfin logo cache issues)
+    -- When enabled, purges all Teamarr channels from Dispatcharr on the specified schedule
+    channel_reset_enabled BOOLEAN DEFAULT 0,
+    channel_reset_cron TEXT DEFAULT NULL,
+
     -- Stream Filtering (global defaults for event groups)
     -- Require event pattern: only match streams that look like events (have vs/@/at/date patterns)
     stream_filter_require_event_pattern BOOLEAN DEFAULT 1,

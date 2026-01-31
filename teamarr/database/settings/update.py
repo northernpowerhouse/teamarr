@@ -93,6 +93,8 @@ def update_scheduler_settings(
     conn: Connection,
     enabled: bool | None = None,
     interval_minutes: int | None = None,
+    channel_reset_enabled: bool | None = None,
+    channel_reset_cron: str | None | object = _NOT_PROVIDED,
 ) -> bool:
     """Update scheduler settings.
 
@@ -100,6 +102,8 @@ def update_scheduler_settings(
         conn: Database connection
         enabled: Enable/disable scheduler
         interval_minutes: Minutes between runs
+        channel_reset_enabled: Enable scheduled channel reset
+        channel_reset_cron: Cron expression for channel reset (None = clear)
 
     Returns:
         True if updated
@@ -113,6 +117,13 @@ def update_scheduler_settings(
     if interval_minutes is not None:
         updates.append("scheduler_interval_minutes = ?")
         values.append(interval_minutes)
+    if channel_reset_enabled is not None:
+        updates.append("channel_reset_enabled = ?")
+        values.append(int(channel_reset_enabled))
+    # channel_reset_cron: _NOT_PROVIDED = don't update, None = clear, str = set
+    if channel_reset_cron is not _NOT_PROVIDED:
+        updates.append("channel_reset_cron = ?")
+        values.append(channel_reset_cron)  # None becomes SQL NULL
 
     if not updates:
         return False

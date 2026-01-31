@@ -91,6 +91,8 @@ def get_settings():
         scheduler=SchedulerSettingsModel(
             enabled=settings.scheduler.enabled,
             interval_minutes=settings.scheduler.interval_minutes,
+            channel_reset_enabled=settings.scheduler.channel_reset_enabled,
+            channel_reset_cron=settings.scheduler.channel_reset_cron,
         ),
         epg=EPGSettingsModel(
             team_schedule_days_ahead=settings.epg.team_schedule_days_ahead,

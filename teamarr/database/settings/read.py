@@ -103,6 +103,10 @@ def get_all_settings(conn: Connection) -> AllSettings:
         scheduler=SchedulerSettings(
             enabled=bool(row["scheduler_enabled"]),
             interval_minutes=row["scheduler_interval_minutes"] or 15,
+            channel_reset_enabled=bool(row["channel_reset_enabled"])
+            if row["channel_reset_enabled"] is not None
+            else False,
+            channel_reset_cron=row["channel_reset_cron"],
         ),
         epg=EPGSettings(
             team_schedule_days_ahead=row["team_schedule_days_ahead"] or 30,
@@ -229,7 +233,9 @@ def get_scheduler_settings(conn: Connection) -> SchedulerSettings:
         SchedulerSettings object
     """
     cursor = conn.execute(
-        "SELECT scheduler_enabled, scheduler_interval_minutes FROM settings WHERE id = 1"
+        """SELECT scheduler_enabled, scheduler_interval_minutes,
+                  channel_reset_enabled, channel_reset_cron
+           FROM settings WHERE id = 1"""
     )
     row = cursor.fetchone()
 
@@ -239,6 +245,10 @@ def get_scheduler_settings(conn: Connection) -> SchedulerSettings:
     return SchedulerSettings(
         enabled=bool(row["scheduler_enabled"]),
         interval_minutes=row["scheduler_interval_minutes"] or 15,
+        channel_reset_enabled=bool(row["channel_reset_enabled"])
+        if row["channel_reset_enabled"] is not None
+        else False,
+        channel_reset_cron=row["channel_reset_cron"],
     )
 
 

@@ -7,6 +7,7 @@ from teamarr.database import get_db
 from .models import (
     LifecycleSettingsModel,
     SchedulerSettingsModel,
+    SchedulerSettingsUpdate,
     SchedulerStatusResponse,
 )
 
@@ -108,12 +109,16 @@ def get_scheduler_settings():
     return SchedulerSettingsModel(
         enabled=settings.enabled,
         interval_minutes=settings.interval_minutes,
+        channel_reset_enabled=settings.channel_reset_enabled,
+        channel_reset_cron=settings.channel_reset_cron,
     )
 
 
 @router.put("/settings/scheduler", response_model=SchedulerSettingsModel)
-def update_scheduler_settings(update: SchedulerSettingsModel):
+def update_scheduler_settings(update: SchedulerSettingsUpdate):
     """Update scheduler settings."""
+    from croniter import croniter
+
     from teamarr.consumers.scheduler import (
         start_lifecycle_scheduler,
         stop_lifecycle_scheduler,
@@ -123,23 +128,36 @@ def update_scheduler_settings(update: SchedulerSettingsModel):
         update_scheduler_settings,
     )
 
-    if update.interval_minutes < 1:
+    if update.interval_minutes is not None and update.interval_minutes < 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="interval_minutes must be at least 1",
         )
+
+    # Validate cron expression if provided
+    if update.channel_reset_cron:
+        try:
+            croniter(update.channel_reset_cron)
+        except (KeyError, ValueError) as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid cron expression: {e}",
+            ) from None
 
     with get_db() as conn:
         update_scheduler_settings(
             conn,
             enabled=update.enabled,
             interval_minutes=update.interval_minutes,
+            channel_reset_enabled=update.channel_reset_enabled,
+            channel_reset_cron=update.channel_reset_cron,
         )
 
-    # Apply scheduler state change immediately
-    stop_lifecycle_scheduler()
-    if update.enabled:
-        start_lifecycle_scheduler(get_db)
+    # Apply scheduler state change immediately if enabled was updated
+    if update.enabled is not None:
+        stop_lifecycle_scheduler()
+        if update.enabled:
+            start_lifecycle_scheduler(get_db)
 
     with get_db() as conn:
         settings = get_scheduler_settings(conn)
@@ -147,6 +165,8 @@ def update_scheduler_settings(update: SchedulerSettingsModel):
     return SchedulerSettingsModel(
         enabled=settings.enabled,
         interval_minutes=settings.interval_minutes,
+        channel_reset_enabled=settings.channel_reset_enabled,
+        channel_reset_cron=settings.channel_reset_cron,
     )
 
 

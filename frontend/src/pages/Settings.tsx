@@ -2119,6 +2119,118 @@ export function Settings() {
         </CardContent>
       </Card>
 
+      {/* Scheduled Channel Reset */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Scheduled Channel Reset</CardTitle>
+          <CardDescription>
+            For users experiencing stale channel logos in Jellyfin/Emby. Schedule a periodic
+            purge of all Teamarr channels before your media server&apos;s guide refresh.
+            Leave disabled if you&apos;re not having issues.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={scheduler?.channel_reset_enabled ?? false}
+              onCheckedChange={(checked) =>
+                scheduler && setScheduler({ ...scheduler, channel_reset_enabled: checked })
+              }
+            />
+            <Label>Enable Scheduled Channel Reset</Label>
+          </div>
+
+          {scheduler?.channel_reset_enabled && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="reset-cron">Reset Schedule (Cron Expression)</Label>
+                <Input
+                  id="reset-cron"
+                  value={scheduler?.channel_reset_cron ?? ""}
+                  onChange={(e) =>
+                    scheduler && setScheduler({ ...scheduler, channel_reset_cron: e.target.value })
+                  }
+                  className="font-mono"
+                  placeholder="0 3 * * *"
+                />
+                <CronPreview expression={scheduler?.channel_reset_cron ?? ""} />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    scheduler && setScheduler({ ...scheduler, channel_reset_cron: "0 3 * * *" })
+                  }
+                >
+                  Daily 3 AM
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    scheduler && setScheduler({ ...scheduler, channel_reset_cron: "0 4 * * *" })
+                  }
+                >
+                  Daily 4 AM
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    scheduler && setScheduler({ ...scheduler, channel_reset_cron: "0 5 * * *" })
+                  }
+                >
+                  Daily 5 AM
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    scheduler && setScheduler({ ...scheduler, channel_reset_cron: "0 6 * * *" })
+                  }
+                >
+                  Daily 6 AM
+                </Button>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Set this to run shortly before your media server&apos;s scheduled guide refresh.
+                Channels will be recreated on the next EPG generation.
+              </p>
+            </>
+          )}
+
+          <Button
+            onClick={async () => {
+              if (!scheduler) return
+              try {
+                await updateScheduler.mutateAsync({
+                  channel_reset_enabled: scheduler.channel_reset_enabled,
+                  channel_reset_cron: scheduler.channel_reset_cron,
+                })
+                toast.success("Channel reset settings saved")
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Failed to save")
+              }
+            }}
+            disabled={updateScheduler.isPending}
+          >
+            {updateScheduler.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-1" />
+            )}
+            Save
+          </Button>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">

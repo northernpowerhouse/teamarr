@@ -26,6 +26,16 @@ export interface LifecycleSettings {
 export interface SchedulerSettings {
   enabled: boolean
   interval_minutes: number
+  // Scheduled channel reset (for Jellyfin logo cache issues)
+  channel_reset_enabled: boolean
+  channel_reset_cron: string | null
+}
+
+export interface SchedulerSettingsUpdate {
+  enabled?: boolean
+  interval_minutes?: number
+  channel_reset_enabled?: boolean
+  channel_reset_cron?: string | null
 }
 
 export interface EPGSettings {
@@ -265,7 +275,7 @@ export async function getSchedulerSettings(): Promise<SchedulerSettings> {
 }
 
 export async function updateSchedulerSettings(
-  data: SchedulerSettings
+  data: SchedulerSettingsUpdate
 ): Promise<SchedulerSettings> {
   return api.put("/settings/scheduler", data)
 }

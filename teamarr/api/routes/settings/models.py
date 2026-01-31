@@ -144,6 +144,18 @@ class SchedulerSettingsModel(BaseModel):
 
     enabled: bool = True
     interval_minutes: int = 15
+    # Scheduled channel reset (for Jellyfin logo cache issues)
+    channel_reset_enabled: bool = False
+    channel_reset_cron: str | None = None
+
+
+class SchedulerSettingsUpdate(BaseModel):
+    """Update model for scheduler settings (all fields optional)."""
+
+    enabled: bool | None = None
+    interval_minutes: int | None = None
+    channel_reset_enabled: bool | None = None
+    channel_reset_cron: str | None = None
 
 
 class SchedulerStatusResponse(BaseModel):

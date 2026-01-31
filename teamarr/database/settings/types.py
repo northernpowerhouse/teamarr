@@ -55,6 +55,9 @@ class SchedulerSettings:
 
     enabled: bool = True
     interval_minutes: int = 15
+    # Scheduled channel reset (for Jellyfin logo cache issues)
+    channel_reset_enabled: bool = False
+    channel_reset_cron: str | None = None
 
 
 @dataclass
