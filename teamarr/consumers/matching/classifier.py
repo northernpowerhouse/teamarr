@@ -16,9 +16,6 @@ from re import Pattern
 
 from teamarr.consumers.matching.normalizer import NormalizedStream, normalize_stream
 from teamarr.services.detection_keywords import DetectionKeywordService
-from teamarr.utilities.constants import (
-    EVENT_CARD_KEYWORDS,  # Legacy - used by extract_event_card_hint
-)
 
 logger = logging.getLogger(__name__)
 
@@ -876,6 +873,8 @@ def detect_sport_hint(text: str) -> str | None:
 def is_event_card(text: str, league_event_type: str | None = None) -> bool:
     """Check if stream is a combat sports event card (UFC, MMA, Boxing).
 
+    Uses detect_event_type() which checks event_type_keywords.
+
     Args:
         text: Normalized stream name
         league_event_type: Optional event_type from leagues table
@@ -890,7 +889,9 @@ def is_event_card(text: str, league_event_type: str | None = None) -> bool:
     if league_event_type == "event_card":
         return True
 
-    return DetectionKeywordService.is_combat_sport(text)
+    # Use event type detection - checks EVENT_CARD keywords
+    detected = DetectionKeywordService.detect_event_type(text)
+    return detected == "EVENT_CARD"
 
 
 def extract_event_card_hint(text: str) -> str | None:
@@ -915,8 +916,19 @@ def extract_event_card_hint(text: str) -> str | None:
     if org_match:
         return org_match.group(1).upper()
 
-    # Boxing event names are less standardized - look for main event patterns
-    if any(kw in text.lower() for kw in EVENT_CARD_KEYWORDS.get("boxing", [])):
+    # Boxing event names - check for boxing-specific keywords
+    text_lower = text.lower()
+    boxing_keywords = [
+        "boxing",
+        "pbc",
+        "premier boxing",
+        "top rank",
+        "matchroom",
+        "golden boy",
+        "showtime boxing",
+        "dazn boxing",
+    ]
+    if any(kw in text_lower for kw in boxing_keywords):
         # Try to extract fighter names or event name
         # For now, just return a generic hint
         return "BOXING_EVENT"

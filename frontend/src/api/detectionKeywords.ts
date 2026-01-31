@@ -4,7 +4,7 @@ const API_BASE = "/api/v1/detection-keywords"
 
 // Types
 export type CategoryType =
-  | "combat_sports"
+  | "event_type_keywords"
   | "league_hints"
   | "sport_hints"
   | "placeholders"

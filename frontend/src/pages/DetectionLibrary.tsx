@@ -57,22 +57,23 @@ import type { TeamFilterEntry } from "@/api/types"
 // Tab types - detection keyword categories plus team_aliases
 type TabType = CategoryType | "team_aliases"
 
+// Detection Library tabs: Classification concerns only
+// Extraction patterns (placeholders, card_segments, exclusions, separators)
+// moved to Custom Regex section in Event Group form
 const TAB_ORDER: TabType[] = [
   "team_aliases",
-  "combat_sports",
+  "event_type_keywords",
   "league_hints",
   "sport_hints",
-  "placeholders",
-  "card_segments",
-  "exclusions",
-  "separators",
 ]
 
+// Full mapping for type safety (includes categories shown in Custom Regex UI)
 const TAB_NAMES: Record<TabType, string> = {
   team_aliases: "Team Aliases",
-  combat_sports: "Combat Sports",
+  event_type_keywords: "Event Type Detection",
   league_hints: "League Hints",
   sport_hints: "Sport Hints",
+  // Extraction categories (shown in Custom Regex, not Detection Library)
   placeholders: "Placeholders",
   card_segments: "Card Segments",
   exclusions: "Combat Exclusions",

@@ -388,6 +388,12 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
     custom_regex_fighters_enabled BOOLEAN DEFAULT 0,
     custom_regex_event_name TEXT,            -- Custom pattern to extract event name (?P<event_name>...)
     custom_regex_event_name_enabled BOOLEAN DEFAULT 0,
+
+    -- Custom Regex organized by event type (replaces flat custom_regex_* columns)
+    -- Structure: {"team_vs_team": {"teams": {"pattern": "...", "enabled": true}, ...},
+    --             "event_card": {"fighters": {...}, "event_name": {...}, ...}}
+    custom_regex_config JSON,
+
     skip_builtin_filter BOOLEAN DEFAULT 0,   -- Skip built-in stream filtering (placeholder, unsupported sports, event patterns)
 
     -- Team Filtering (canonical team selection, inherited by children)
@@ -1194,13 +1200,13 @@ CREATE TABLE IF NOT EXISTS detection_keywords (
 
     -- Keyword category determines how it's used in classification
     category TEXT NOT NULL CHECK(category IN (
-        'combat_sports',    -- Keywords that indicate EVENT_CARD category
-        'league_hints',     -- Patterns that map to league code(s)
-        'sport_hints',      -- Patterns that map to sport name
-        'placeholders',     -- Patterns for placeholder/filler streams
-        'card_segments',    -- Patterns for UFC card segments (prelims, main)
-        'exclusions',       -- Patterns to exclude from matching (weigh-ins, etc.)
-        'separators'        -- Game separators (vs, @, at)
+        'event_type_keywords',  -- Keywords that detect event type (target_value = EVENT_CARD, etc.)
+        'league_hints',         -- Patterns that map to league code(s)
+        'sport_hints',          -- Patterns that map to sport name
+        'placeholders',         -- Patterns for placeholder/filler streams
+        'card_segments',        -- Patterns for UFC card segments (prelims, main)
+        'exclusions',           -- Patterns to exclude from matching (weigh-ins, etc.)
+        'separators'            -- Game separators (vs, @, at)
     )),
 
     -- The keyword or pattern to match
@@ -1466,3 +1472,24 @@ CREATE TABLE IF NOT EXISTS epg_failed_matches (
 CREATE INDEX IF NOT EXISTS idx_failed_matches_run ON epg_failed_matches(run_id);
 CREATE INDEX IF NOT EXISTS idx_failed_matches_group ON epg_failed_matches(group_id);
 CREATE INDEX IF NOT EXISTS idx_failed_matches_reason ON epg_failed_matches(reason);
+
+
+-- =============================================================================
+-- SCHEMA MIGRATIONS
+-- Run on every startup - must be idempotent (safe to run multiple times)
+-- =============================================================================
+
+-- v47: Add custom_regex_config column to event_epg_groups (JSON subcategories)
+-- This replaces the flat custom_regex_* columns with organized event-type structure
+-- Old columns kept for migration/backwards compatibility
+
+-- Add custom_regex_config column if it doesn't exist (SQLite workaround)
+-- Note: SQLite will fail silently if column exists - this is expected behavior
+-- We wrap in a trigger-like check by using a temp table
+
+-- v47: Migrate combat_sports category to event_type_keywords
+-- Set target_value to EVENT_CARD for existing combat_sports keywords
+UPDATE detection_keywords
+SET category = 'event_type_keywords',
+    target_value = COALESCE(target_value, 'EVENT_CARD')
+WHERE category = 'combat_sports';

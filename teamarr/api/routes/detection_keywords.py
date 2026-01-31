@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/v1/detection-keywords", tags=["Detection Keyword
 
 # Valid categories for detection keywords
 CategoryType = Literal[
-    "combat_sports",
+    "event_type_keywords",  # Keywords that detect event type (target_value = EVENT_CARD, etc.)
     "league_hints",
     "sport_hints",
     "placeholders",
@@ -156,10 +156,11 @@ def list_categories():
     return {
         "categories": [
             {
-                "id": "combat_sports",
-                "name": "Combat Sports",
-                "description": "Keywords that indicate EVENT_CARD category (UFC, Boxing, MMA)",
-                "has_target": False,
+                "id": "event_type_keywords",
+                "name": "Event Type Detection",
+                "description": "Keywords that detect event type (routed to type-specific pipeline)",
+                "has_target": True,
+                "target_description": "Event type: EVENT_CARD, TEAM_VS_TEAM, FIELD_EVENT",
             },
             {
                 "id": "league_hints",

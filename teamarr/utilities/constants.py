@@ -520,15 +520,24 @@ SPORT_HINT_PATTERNS: list[tuple[str, str]] = [
 
 
 # =============================================================================
-# COMBAT SPORTS KEYWORDS
-# Keywords that identify combat sports event card streams (UFC, MMA, Boxing).
-# Used to classify streams as EVENT_CARD category.
+# EVENT TYPE DETECTION KEYWORDS
+# Keywords that identify stream event type for routing to the correct pipeline.
 #
-# These are unified across all combat sports - the specific league/org is
-# determined by league hint detection, not by which keyword matched.
+# Event Types:
+#   - EVENT_CARD: Combat sports (UFC, Boxing, MMA) - fighter-based matching
+#   - TEAM_VS_TEAM: Team sports - detected via separators, not keywords
+#   - FIELD_EVENT: Individual sports (future) - athlete-based matching
+#
+# Structure: {event_type: [keywords]}
+# Keywords are checked with word boundary matching to avoid false positives.
 # =============================================================================
 
-COMBAT_SPORTS_KEYWORDS: list[str] = [
+EVENT_TYPE_KEYWORDS: dict[str, list[str]] = {
+    # =========================================================================
+    # EVENT_CARD - Combat sports events (UFC, Boxing, MMA)
+    # These keywords indicate event card format with fighters, rounds, etc.
+    # =========================================================================
+    "EVENT_CARD": [
     # -------------------------------------------------------------------------
     # MMA Organizations
     # -------------------------------------------------------------------------
@@ -585,26 +594,28 @@ COMBAT_SPORTS_KEYWORDS: list[str] = [
     # -------------------------------------------------------------------------
     # Boxing Sanctioning Bodies (indicates boxing event)
     # -------------------------------------------------------------------------
-    "wbc",  # World Boxing Council
-    "wba",  # World Boxing Association
-    "ibf",  # International Boxing Federation
-    "wbo",  # World Boxing Organization
-    "ibo",  # International Boxing Organization
-]
+        "wbc",  # World Boxing Council
+        "wba",  # World Boxing Association
+        "ibf",  # International Boxing Federation
+        "wbo",  # World Boxing Organization
+        "ibo",  # International Boxing Organization
+    ],
+    # =========================================================================
+    # TEAM_VS_TEAM - Team sports (detected via separators, no keywords needed)
+    # This is the default for streams with game separators (vs, @, at)
+    # =========================================================================
+    "TEAM_VS_TEAM": [],  # No keywords - detected by separators presence
+    # =========================================================================
+    # FIELD_EVENT - Individual sports (future expansion)
+    # Track & field, swimming, gymnastics, etc.
+    # =========================================================================
+    "FIELD_EVENT": [],  # Future: keywords for individual sports events
+}
 
 
 # Legacy alias for backwards compatibility during transition
-# TODO: Remove after DetectionKeywordService migration
-EVENT_CARD_KEYWORDS: dict[str, list[str]] = {
-    "ufc": [k for k in COMBAT_SPORTS_KEYWORDS if k in [
-        "ufc", "fight night", "ufc fn", "main card", "prelims", "early prelims",
-        "dana white", "contender series", "dwcs",
-    ]],
-    "boxing": [k for k in COMBAT_SPORTS_KEYWORDS if k in [
-        "boxing", "main event", "undercard", "premier boxing", "top rank",
-        "matchroom", "dazn boxing", "showtime boxing", "golden boy",
-    ]],
-}
+# TODO: Remove after classifier migration is complete (bead 11c.8)
+COMBAT_SPORTS_KEYWORDS: list[str] = EVENT_TYPE_KEYWORDS["EVENT_CARD"]
 
 
 # =============================================================================

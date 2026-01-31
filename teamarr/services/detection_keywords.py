@@ -22,7 +22,7 @@ from typing import ClassVar
 from teamarr.utilities.constants import (
     CARD_SEGMENT_PATTERNS,
     COMBAT_SPORTS_EXCLUDE_PATTERNS,
-    COMBAT_SPORTS_KEYWORDS,
+    EVENT_TYPE_KEYWORDS,
     GAME_SEPARATORS,
     LEAGUE_HINT_PATTERNS,
     PLACEHOLDER_PATTERNS,
@@ -70,7 +70,7 @@ class DetectionKeywordService:
     """
 
     # Class-level caches for compiled patterns
-    _combat_keywords: ClassVar[list[str] | None] = None
+    _event_type_keywords: ClassVar[dict[str, list[str]] | None] = None
     _league_hints: ClassVar[list[tuple[Pattern[str], str | list[str]]] | None] = None
     _sport_hints: ClassVar[list[tuple[Pattern[str], str]] | None] = None
     _placeholder_patterns: ClassVar[list[Pattern[str]] | None] = None
@@ -83,34 +83,63 @@ class DetectionKeywordService:
     # ==========================================================================
 
     @classmethod
+    def get_event_type_keywords(cls) -> dict[str, list[str]]:
+        """Get keywords organized by event type.
+
+        Merges built-in keywords with user-defined keywords from database.
+        User keywords with higher priority come first within each event type.
+
+        Returns:
+            Dict mapping event_type -> list of lowercase keywords
+            e.g., {'EVENT_CARD': ['ufc', 'bellator', ...], 'TEAM_VS_TEAM': [], ...}
+        """
+        if cls._event_type_keywords is None:
+            cls._event_type_keywords = {}
+
+            # Initialize with built-in keywords
+            for event_type, keywords in EVENT_TYPE_KEYWORDS.items():
+                cls._event_type_keywords[event_type] = list(keywords)
+
+            # Load user-defined keywords from database
+            user_keywords = _load_user_keywords("event_type_keywords")
+            user_by_type: dict[str, list[str]] = {}
+            for kw in user_keywords:
+                event_type = kw["target_value"] or "EVENT_CARD"  # Default to EVENT_CARD
+                if event_type not in user_by_type:
+                    user_by_type[event_type] = []
+                user_by_type[event_type].append(kw["keyword"].lower())
+
+            # Merge: user keywords first (by priority), then built-in not in user list
+            for event_type, user_kw_list in user_by_type.items():
+                if event_type not in cls._event_type_keywords:
+                    cls._event_type_keywords[event_type] = []
+                built_in = cls._event_type_keywords.get(event_type, [])
+                user_set = set(user_kw_list)
+                cls._event_type_keywords[event_type] = user_kw_list + [
+                    kw for kw in built_in if kw.lower() not in user_set
+                ]
+
+            total = sum(len(kws) for kws in cls._event_type_keywords.values())
+            user_total = sum(len(kws) for kws in user_by_type.values())
+            logger.debug(
+                "[DETECT_SVC] Loaded %d event type keywords across %d types (%d user)",
+                total,
+                len(cls._event_type_keywords),
+                user_total,
+            )
+        return cls._event_type_keywords
+
+    @classmethod
     def get_combat_keywords(cls) -> list[str]:
         """Get keywords that indicate combat sports (EVENT_CARD category).
 
-        Merges built-in keywords with user-defined keywords from database.
-        User keywords with higher priority come first.
+        This is a convenience method that returns EVENT_CARD keywords.
+        For full event type support, use get_event_type_keywords().
 
         Returns:
             List of lowercase keywords (e.g., ['ufc', 'bellator', 'main card', ...])
         """
-        if cls._combat_keywords is None:
-            # Start with built-in keywords
-            built_in = set(COMBAT_SPORTS_KEYWORDS)
-
-            # Add user-defined keywords (higher priority come first)
-            user_keywords = _load_user_keywords("combat_sports")
-            user_kw_list = [kw["keyword"].lower() for kw in user_keywords]
-
-            # Merge: user keywords first (by priority), then built-in not in user list
-            cls._combat_keywords = user_kw_list + [
-                kw for kw in COMBAT_SPORTS_KEYWORDS if kw.lower() not in user_kw_list
-            ]
-            logger.debug(
-                "[DETECT_SVC] Loaded %d combat sports keywords (%d user, %d built-in)",
-                len(cls._combat_keywords),
-                len(user_kw_list),
-                len(built_in),
-            )
-        return cls._combat_keywords
+        return cls.get_event_type_keywords().get("EVENT_CARD", [])
 
     @classmethod
     def get_league_hints(cls) -> list[tuple[Pattern[str], str | list[str]]]:
@@ -405,26 +434,53 @@ class DetectionKeywordService:
     # Detection Methods
     # ==========================================================================
 
-    # Class-level cache for compiled combat keywords patterns
-    _combat_keyword_patterns: ClassVar[list[Pattern[str]] | None] = None
+    # Class-level cache for compiled event type keyword patterns
+    _event_type_patterns: ClassVar[dict[str, list[Pattern[str]]] | None] = None
 
     @classmethod
-    def _get_combat_keyword_patterns(cls) -> list[Pattern[str]]:
-        """Get compiled word-boundary patterns for combat keywords."""
-        if cls._combat_keyword_patterns is None:
-            cls._combat_keyword_patterns = []
-            for keyword in cls.get_combat_keywords():
-                # Use word boundaries to avoid matching 'wbo' in 'Cowboys'
-                pattern = re.compile(rf"\b{re.escape(keyword)}\b", re.IGNORECASE)
-                cls._combat_keyword_patterns.append(pattern)
-        return cls._combat_keyword_patterns
+    def _get_event_type_patterns(cls) -> dict[str, list[Pattern[str]]]:
+        """Get compiled word-boundary patterns organized by event type."""
+        if cls._event_type_patterns is None:
+            cls._event_type_patterns = {}
+            for event_type, keywords in cls.get_event_type_keywords().items():
+                cls._event_type_patterns[event_type] = []
+                for keyword in keywords:
+                    # Use word boundaries to avoid matching 'wbo' in 'Cowboys'
+                    pattern = re.compile(rf"\b{re.escape(keyword)}\b", re.IGNORECASE)
+                    cls._event_type_patterns[event_type].append(pattern)
+        return cls._event_type_patterns
+
+    @classmethod
+    def detect_event_type(cls, text: str) -> str | None:
+        """Detect event type from stream name.
+
+        Checks keywords for each event type using word boundary matching.
+        TEAM_VS_TEAM is detected via separators, not keywords.
+
+        Args:
+            text: Stream name to check
+
+        Returns:
+            Event type ('EVENT_CARD', 'FIELD_EVENT', etc.) or None
+        """
+        # Check each event type's keywords (skip TEAM_VS_TEAM - detected via separators)
+        for event_type, patterns in cls._get_event_type_patterns().items():
+            if event_type == "TEAM_VS_TEAM":
+                continue  # TEAM_VS_TEAM detected via separators, not keywords
+            for pattern in patterns:
+                if pattern.search(text):
+                    return event_type
+        return None
 
     @classmethod
     def is_combat_sport(cls, text: str) -> bool:
-        """Check if text contains combat sports keywords.
+        """Check if text contains combat sports keywords (EVENT_CARD type).
 
         Uses word boundary matching to avoid false positives like
         'wbo' matching within 'Cowboys'.
+
+        This is a convenience method - equivalent to:
+            detect_event_type(text) == 'EVENT_CARD'
 
         Args:
             text: Stream name or text to check
@@ -432,10 +488,7 @@ class DetectionKeywordService:
         Returns:
             True if any combat sports keyword is found
         """
-        for pattern in cls._get_combat_keyword_patterns():
-            if pattern.search(text):
-                return True
-        return False
+        return cls.detect_event_type(text) == "EVENT_CARD"
 
     @classmethod
     def detect_league(cls, text: str) -> str | list[str] | None:
@@ -540,8 +593,8 @@ class DetectionKeywordService:
         Call this after updating patterns in the database (Phase 2)
         or when constants change during testing.
         """
-        cls._combat_keywords = None
-        cls._combat_keyword_patterns = None
+        cls._event_type_keywords = None
+        cls._event_type_patterns = None
         cls._league_hints = None
         cls._sport_hints = None
         cls._placeholder_patterns = None
@@ -557,8 +610,11 @@ class DetectionKeywordService:
         Returns:
             Dict with counts of loaded patterns by category
         """
+        event_type_keywords = cls.get_event_type_keywords()
+        total_event_keywords = sum(len(kws) for kws in event_type_keywords.values())
         return {
-            "combat_keywords": len(cls.get_combat_keywords()),
+            "event_type_keywords": total_event_keywords,
+            "event_card_keywords": len(event_type_keywords.get("EVENT_CARD", [])),
             "league_hints": len(cls.get_league_hints()),
             "sport_hints": len(cls.get_sport_hints()),
             "placeholder_patterns": len(cls.get_placeholder_patterns()),
