@@ -311,6 +311,11 @@ class ESPNProvider(UFCParserMixin, TournamentParserMixin, SportsProvider):
     # When get_event() is called for these, we return None immediately to avoid 404s
     LEAGUES_WITHOUT_SUMMARY = {"ufc"}
 
+    # Leagues without teams endpoint support
+    # Combat sports (MMA, boxing) have individual fighters, not teams
+    # Calling /teams endpoint returns 404 - skip to avoid log spam
+    LEAGUES_WITHOUT_TEAMS = {"ufc", "boxing"}
+
     def get_event(self, event_id: str, league: str) -> Event | None:
         """Fetch single event with full details from summary endpoint."""
         # Some leagues don't have summary endpoints - scoreboard is the only source
@@ -615,6 +620,11 @@ class ESPNProvider(UFCParserMixin, TournamentParserMixin, SportsProvider):
         Returns:
             List of Team objects for this league
         """
+        # Combat sports don't have teams - skip to avoid 404 spam
+        if league in self.LEAGUES_WITHOUT_TEAMS:
+            logger.debug("[ESPN] Teams endpoint not available for %s (individual sport)", league)
+            return []
+
         # Get sport/league from database (source of truth)
         sport_league = self._get_sport_league_from_db(league)
         data = self._client.get_teams(league, sport_league)
