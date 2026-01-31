@@ -1,18 +1,29 @@
 import { Link, NavLink, Outlet } from "react-router-dom"
-import { Moon, Sun } from "lucide-react"
+import {
+  Moon,
+  Sun,
+  LayoutDashboard,
+  FileCode,
+  Users,
+  Layers,
+  CalendarDays,
+  Tv,
+  Settings,
+} from "lucide-react"
+import type { LucideIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Toaster } from "sonner"
 import { useQuery } from "@tanstack/react-query"
 import { useUpdateCheckSettings, useCheckForUpdates } from "../hooks/useSettings"
 
-const NAV_ITEMS = [
-  { to: "/", label: "Dashboard" },
-  { to: "/templates", label: "Templates" },
-  { to: "/teams", label: "Teams" },
-  { to: "/event-groups", label: "Event Groups" },
-  { to: "/epg", label: "EPG" },
-  { to: "/channels", label: "Channels" },
-  { to: "/settings", label: "Settings" },
+const NAV_ITEMS: { to: string; label: string; icon: LucideIcon }[] = [
+  { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/templates", label: "Templates", icon: FileCode },
+  { to: "/teams", label: "Teams", icon: Users },
+  { to: "/event-groups", label: "Event Groups", icon: Layers },
+  { to: "/epg", label: "EPG", icon: CalendarDays },
+  { to: "/channels", label: "Channels", icon: Tv },
+  { to: "/settings", label: "Settings", icon: Settings },
 ]
 
 async function fetchHealth(): Promise<{ status: string; version: string }> {
@@ -77,21 +88,25 @@ export function MainLayout() {
 
             {/* Nav Links */}
             <div className="flex items-center gap-1">
-              {NAV_ITEMS.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    `px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                      isActive
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                    }`
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              ))}
+              {NAV_ITEMS.map((item) => {
+                const Icon = item.icon
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      `flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                        isActive
+                          ? "bg-primary/10 text-primary"
+                          : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                      }`
+                    }
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </NavLink>
+                )
+              })}
             </div>
 
             {/* Right side */}
