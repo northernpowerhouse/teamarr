@@ -143,6 +143,10 @@ export function EventGroupForm() {
   const [regexExpanded, setRegexExpanded] = useState(false)
   const [teamFilterExpanded, setTeamFilterExpanded] = useState(false)
 
+  // Custom Regex event type tab
+  type EventTypeTab = "team_vs_team" | "event_card"
+  const [regexEventType, setRegexEventType] = useState<EventTypeTab>("team_vs_team")
+
   // Test Patterns modal
   const [testPatternsOpen, setTestPatternsOpen] = useState(false)
 
@@ -171,6 +175,10 @@ export function EventGroupForm() {
     custom_regex_time_enabled: formData.custom_regex_time_enabled ?? false,
     custom_regex_league: formData.custom_regex_league ?? null,
     custom_regex_league_enabled: formData.custom_regex_league_enabled ?? false,
+    custom_regex_fighters: formData.custom_regex_fighters ?? null,
+    custom_regex_fighters_enabled: formData.custom_regex_fighters_enabled ?? false,
+    custom_regex_event_name: formData.custom_regex_event_name ?? null,
+    custom_regex_event_name_enabled: formData.custom_regex_event_name_enabled ?? false,
   }), [formData])
 
   const handlePatternsApply = useCallback((patterns: PatternState) => {
@@ -214,6 +222,11 @@ export function EventGroupForm() {
         custom_regex_time_enabled: group.custom_regex_time_enabled,
         custom_regex_league: group.custom_regex_league,
         custom_regex_league_enabled: group.custom_regex_league_enabled,
+        // EVENT_CARD specific
+        custom_regex_fighters: group.custom_regex_fighters,
+        custom_regex_fighters_enabled: group.custom_regex_fighters_enabled,
+        custom_regex_event_name: group.custom_regex_event_name,
+        custom_regex_event_name_enabled: group.custom_regex_event_name_enabled,
         skip_builtin_filter: group.skip_builtin_filter,
         // Team filtering
         include_teams: group.include_teams,
@@ -1176,112 +1189,260 @@ export function EventGroupForm() {
                   </div>
                 </div>
 
-                {/* Team Matching Subsection */}
+                {/* Extraction Patterns by Event Type */}
                 <div className="space-y-4">
                   <div className="border-b pb-2">
-                    <h4 className="font-medium text-sm">Team Matching</h4>
+                    <h4 className="font-medium text-sm">Extraction Patterns</h4>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Override built-in matching with custom regex patterns. Enable individual fields as needed.
+                      Configure custom extraction patterns by event type. Each type has its own pipeline.
                     </p>
                   </div>
 
-                  {/* Teams Pattern */}
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <Checkbox
-                        checked={formData.custom_regex_teams_enabled || false}
-                        onCheckedChange={() =>
-                          setFormData({ ...formData, custom_regex_teams_enabled: !formData.custom_regex_teams_enabled })
-                        }
-                      />
-                      <span className="text-sm font-normal">Teams Pattern</span>
-                    </label>
-                    <Input
-                      value={formData.custom_regex_teams || ""}
-                      onChange={(e) =>
-                        setFormData({ ...formData, custom_regex_teams: e.target.value || null })
-                      }
-                      placeholder="(?P<team1>[A-Z]{2,3})\s*[@vs]+\s*(?P<team2>[A-Z]{2,3})"
-                      disabled={!formData.custom_regex_teams_enabled}
-                      className={cn("font-mono text-sm", !formData.custom_regex_teams_enabled && "opacity-50")}
-                    />
+                  {/* Event Type Tabs */}
+                  <div className="flex gap-1 p-1 bg-muted rounded-lg">
+                    <button
+                      type="button"
+                      onClick={() => setRegexEventType("team_vs_team")}
+                      className={cn(
+                        "flex-1 px-3 py-1.5 text-sm rounded-md transition-colors",
+                        regexEventType === "team_vs_team"
+                          ? "bg-background shadow text-foreground"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      Team vs Team
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRegexEventType("event_card")}
+                      className={cn(
+                        "flex-1 px-3 py-1.5 text-sm rounded-md transition-colors",
+                        regexEventType === "event_card"
+                          ? "bg-background shadow text-foreground"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      Combat / Event Card
+                    </button>
                   </div>
 
-                  {/* Date Pattern */}
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <Checkbox
-                        checked={formData.custom_regex_date_enabled || false}
-                        onCheckedChange={() =>
-                          setFormData({ ...formData, custom_regex_date_enabled: !formData.custom_regex_date_enabled })
-                        }
-                      />
-                      <span className="text-sm font-normal">Date Pattern</span>
-                    </label>
-                    <Input
-                      value={formData.custom_regex_date || ""}
-                      onChange={(e) =>
-                        setFormData({ ...formData, custom_regex_date: e.target.value || null })
-                      }
-                      placeholder="(?P<date>\d{1,2}/\d{1,2})"
-                      disabled={!formData.custom_regex_date_enabled}
-                      className={cn("font-mono text-sm", !formData.custom_regex_date_enabled && "opacity-50")}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Extract date from stream name. Use named group: (?P&lt;date&gt;...)
-                    </p>
-                  </div>
+                  {/* Team vs Team Patterns */}
+                  {regexEventType === "team_vs_team" && (
+                    <div className="space-y-4">
+                      <p className="text-xs text-muted-foreground border-l-2 border-muted pl-3">
+                        Patterns for team sports (NFL, NBA, NHL, Soccer, etc.) with "Team A vs Team B" format.
+                      </p>
 
-                  {/* Time Pattern */}
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <Checkbox
-                        checked={formData.custom_regex_time_enabled || false}
-                        onCheckedChange={() =>
-                          setFormData({ ...formData, custom_regex_time_enabled: !formData.custom_regex_time_enabled })
-                        }
-                      />
-                      <span className="text-sm font-normal">Time Pattern</span>
-                    </label>
-                    <Input
-                      value={formData.custom_regex_time || ""}
-                      onChange={(e) =>
-                        setFormData({ ...formData, custom_regex_time: e.target.value || null })
-                      }
-                      placeholder="(?P<time>\d{1,2}:\d{2}\s*(?:AM|PM)?)"
-                      disabled={!formData.custom_regex_time_enabled}
-                      className={cn("font-mono text-sm", !formData.custom_regex_time_enabled && "opacity-50")}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Extract time from stream name. Use named group: (?P&lt;time&gt;...)
-                    </p>
-                  </div>
+                      {/* Teams Pattern */}
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <Checkbox
+                            checked={formData.custom_regex_teams_enabled || false}
+                            onCheckedChange={() =>
+                              setFormData({ ...formData, custom_regex_teams_enabled: !formData.custom_regex_teams_enabled })
+                            }
+                          />
+                          <span className="text-sm font-normal">Teams Pattern</span>
+                        </label>
+                        <Input
+                          value={formData.custom_regex_teams || ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, custom_regex_teams: e.target.value || null })
+                          }
+                          placeholder="(?P<team1>[A-Z]{2,3})\s*[@vs]+\s*(?P<team2>[A-Z]{2,3})"
+                          disabled={!formData.custom_regex_teams_enabled}
+                          className={cn("font-mono text-sm", !formData.custom_regex_teams_enabled && "opacity-50")}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Use named groups: (?P&lt;team1&gt;...) and (?P&lt;team2&gt;...)
+                        </p>
+                      </div>
 
-                  {/* League Pattern */}
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <Checkbox
-                        checked={formData.custom_regex_league_enabled || false}
-                        onCheckedChange={() =>
-                          setFormData({ ...formData, custom_regex_league_enabled: !formData.custom_regex_league_enabled })
-                        }
-                      />
-                      <span className="text-sm font-normal">League Pattern</span>
-                    </label>
-                    <Input
-                      value={formData.custom_regex_league || ""}
-                      onChange={(e) =>
-                        setFormData({ ...formData, custom_regex_league: e.target.value || null })
-                      }
-                      placeholder="(?P<league>NHL|NBA|NFL|MLB)"
-                      disabled={!formData.custom_regex_league_enabled}
-                      className={cn("font-mono text-sm", !formData.custom_regex_league_enabled && "opacity-50")}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Extract league code from stream name. Use named group: (?P&lt;league&gt;...)
-                    </p>
-                  </div>
+                      {/* Date Pattern */}
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <Checkbox
+                            checked={formData.custom_regex_date_enabled || false}
+                            onCheckedChange={() =>
+                              setFormData({ ...formData, custom_regex_date_enabled: !formData.custom_regex_date_enabled })
+                            }
+                          />
+                          <span className="text-sm font-normal">Date Pattern</span>
+                        </label>
+                        <Input
+                          value={formData.custom_regex_date || ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, custom_regex_date: e.target.value || null })
+                          }
+                          placeholder="(?P<date>\d{1,2}/\d{1,2})"
+                          disabled={!formData.custom_regex_date_enabled}
+                          className={cn("font-mono text-sm", !formData.custom_regex_date_enabled && "opacity-50")}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Use named group: (?P&lt;date&gt;...)
+                        </p>
+                      </div>
 
+                      {/* Time Pattern */}
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <Checkbox
+                            checked={formData.custom_regex_time_enabled || false}
+                            onCheckedChange={() =>
+                              setFormData({ ...formData, custom_regex_time_enabled: !formData.custom_regex_time_enabled })
+                            }
+                          />
+                          <span className="text-sm font-normal">Time Pattern</span>
+                        </label>
+                        <Input
+                          value={formData.custom_regex_time || ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, custom_regex_time: e.target.value || null })
+                          }
+                          placeholder="(?P<time>\d{1,2}:\d{2}\s*(?:AM|PM)?)"
+                          disabled={!formData.custom_regex_time_enabled}
+                          className={cn("font-mono text-sm", !formData.custom_regex_time_enabled && "opacity-50")}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Use named group: (?P&lt;time&gt;...)
+                        </p>
+                      </div>
+
+                      {/* League Pattern */}
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <Checkbox
+                            checked={formData.custom_regex_league_enabled || false}
+                            onCheckedChange={() =>
+                              setFormData({ ...formData, custom_regex_league_enabled: !formData.custom_regex_league_enabled })
+                            }
+                          />
+                          <span className="text-sm font-normal">League Pattern</span>
+                        </label>
+                        <Input
+                          value={formData.custom_regex_league || ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, custom_regex_league: e.target.value || null })
+                          }
+                          placeholder="(?P<league>NHL|NBA|NFL|MLB)"
+                          disabled={!formData.custom_regex_league_enabled}
+                          className={cn("font-mono text-sm", !formData.custom_regex_league_enabled && "opacity-50")}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Use named group: (?P&lt;league&gt;...)
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Event Card Patterns (UFC, Boxing, MMA) */}
+                  {regexEventType === "event_card" && (
+                    <div className="space-y-4">
+                      <p className="text-xs text-muted-foreground border-l-2 border-muted pl-3">
+                        Patterns for combat sports (UFC, Boxing, MMA) with event card format.
+                      </p>
+
+                      {/* Fighters Pattern */}
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <Checkbox
+                            checked={formData.custom_regex_fighters_enabled || false}
+                            onCheckedChange={() =>
+                              setFormData({ ...formData, custom_regex_fighters_enabled: !formData.custom_regex_fighters_enabled })
+                            }
+                          />
+                          <span className="text-sm font-normal">Fighters Pattern</span>
+                        </label>
+                        <Input
+                          value={formData.custom_regex_fighters || ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, custom_regex_fighters: e.target.value || null })
+                          }
+                          placeholder="(?P<fighter1>\w+)\s+vs\.?\s+(?P<fighter2>\w+)"
+                          disabled={!formData.custom_regex_fighters_enabled}
+                          className={cn("font-mono text-sm", !formData.custom_regex_fighters_enabled && "opacity-50")}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Use named groups: (?P&lt;fighter1&gt;...) and (?P&lt;fighter2&gt;...)
+                        </p>
+                      </div>
+
+                      {/* Event Name Pattern */}
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <Checkbox
+                            checked={formData.custom_regex_event_name_enabled || false}
+                            onCheckedChange={() =>
+                              setFormData({ ...formData, custom_regex_event_name_enabled: !formData.custom_regex_event_name_enabled })
+                            }
+                          />
+                          <span className="text-sm font-normal">Event Name Pattern</span>
+                        </label>
+                        <Input
+                          value={formData.custom_regex_event_name || ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, custom_regex_event_name: e.target.value || null })
+                          }
+                          placeholder="(?P<event_name>UFC\s*\d+|Bellator\s*\d+)"
+                          disabled={!formData.custom_regex_event_name_enabled}
+                          className={cn("font-mono text-sm", !formData.custom_regex_event_name_enabled && "opacity-50")}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Use named group: (?P&lt;event_name&gt;...)
+                        </p>
+                      </div>
+
+                      {/* Date Pattern (shared) */}
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <Checkbox
+                            checked={formData.custom_regex_date_enabled || false}
+                            onCheckedChange={() =>
+                              setFormData({ ...formData, custom_regex_date_enabled: !formData.custom_regex_date_enabled })
+                            }
+                          />
+                          <span className="text-sm font-normal">Date Pattern</span>
+                        </label>
+                        <Input
+                          value={formData.custom_regex_date || ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, custom_regex_date: e.target.value || null })
+                          }
+                          placeholder="(?P<date>\d{1,2}/\d{1,2})"
+                          disabled={!formData.custom_regex_date_enabled}
+                          className={cn("font-mono text-sm", !formData.custom_regex_date_enabled && "opacity-50")}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Use named group: (?P&lt;date&gt;...)
+                        </p>
+                      </div>
+
+                      {/* Time Pattern (shared) */}
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <Checkbox
+                            checked={formData.custom_regex_time_enabled || false}
+                            onCheckedChange={() =>
+                              setFormData({ ...formData, custom_regex_time_enabled: !formData.custom_regex_time_enabled })
+                            }
+                          />
+                          <span className="text-sm font-normal">Time Pattern</span>
+                        </label>
+                        <Input
+                          value={formData.custom_regex_time || ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, custom_regex_time: e.target.value || null })
+                          }
+                          placeholder="(?P<time>\d{1,2}:\d{2}\s*(?:AM|PM)?)"
+                          disabled={!formData.custom_regex_time_enabled}
+                          className={cn("font-mono text-sm", !formData.custom_regex_time_enabled && "opacity-50")}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Use named group: (?P&lt;time&gt;...)
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             )}

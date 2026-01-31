@@ -43,6 +43,11 @@ export interface EventGroup {
   custom_regex_time_enabled: boolean
   custom_regex_league: string | null
   custom_regex_league_enabled: boolean
+  // EVENT_CARD specific regex (UFC, Boxing, MMA)
+  custom_regex_fighters: string | null
+  custom_regex_fighters_enabled: boolean
+  custom_regex_event_name: string | null
+  custom_regex_event_name_enabled: boolean
   skip_builtin_filter: boolean
   // Team filtering (canonical team selection, inherited by children)
   include_teams: TeamFilterEntry[] | null
@@ -108,6 +113,11 @@ export interface EventGroupCreate {
   custom_regex_time_enabled?: boolean
   custom_regex_league?: string | null
   custom_regex_league_enabled?: boolean
+  // EVENT_CARD specific regex (UFC, Boxing, MMA)
+  custom_regex_fighters?: string | null
+  custom_regex_fighters_enabled?: boolean
+  custom_regex_event_name?: string | null
+  custom_regex_event_name_enabled?: boolean
   skip_builtin_filter?: boolean
   // Team filtering (canonical team selection, inherited by children)
   include_teams?: TeamFilterEntry[] | null
