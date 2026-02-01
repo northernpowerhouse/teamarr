@@ -444,6 +444,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_event_epg_groups_name_account
 
 
 -- =============================================================================
+-- GROUP_TEMPLATES TABLE
+-- Multi-template assignment per group with sport/league specificity
+-- Resolution order: leagues match > sports match > default (both NULL)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS group_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    template_id INTEGER NOT NULL,
+    sports JSON,                              -- NULL = any, or ["mma", "boxing"]
+    leagues JSON,                             -- NULL = any, or ["ufc", "bellator"]
+
+    FOREIGN KEY (group_id) REFERENCES event_epg_groups(id) ON DELETE CASCADE,
+    FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_templates_group_id ON group_templates(group_id);
+
+
+-- =============================================================================
 -- MANAGED_CHANNELS TABLE
 -- Dynamically created channels for event-based EPG
 -- =============================================================================
@@ -1493,3 +1513,12 @@ UPDATE detection_keywords
 SET category = 'event_type_keywords',
     target_value = COALESCE(target_value, 'EVENT_CARD')
 WHERE category = 'combat_sports';
+
+-- v48: Migrate group.template_id to group_templates table
+-- Creates a default template assignment (sports=NULL, leagues=NULL) for each group
+-- that has a template_id set but no entries in group_templates yet
+INSERT INTO group_templates (group_id, template_id, sports, leagues)
+SELECT id, template_id, NULL, NULL
+FROM event_epg_groups
+WHERE template_id IS NOT NULL
+  AND id NOT IN (SELECT DISTINCT group_id FROM group_templates);

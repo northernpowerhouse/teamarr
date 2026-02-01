@@ -27,6 +27,7 @@ import { ChannelProfileSelector } from "@/components/ChannelProfileSelector"
 import { StreamProfileSelector } from "@/components/StreamProfileSelector"
 import { StreamTimezoneSelector } from "@/components/StreamTimezoneSelector"
 import { TestPatternsModal, type PatternState } from "@/components/TestPatternsModal"
+import { TemplateAssignmentModal } from "@/components/TemplateAssignmentModal"
 
 // Group mode
 type GroupMode = "single" | "multi" | null
@@ -149,6 +150,9 @@ export function EventGroupForm() {
 
   // Test Patterns modal
   const [testPatternsOpen, setTestPatternsOpen] = useState(false)
+
+  // Template Assignment modal (for multi-league groups)
+  const [templateModalOpen, setTemplateModalOpen] = useState(false)
 
   // Channel profile default state - true = use global default, false = custom selection
   const [useDefaultProfiles, setUseDefaultProfiles] = useState(true)
@@ -613,26 +617,49 @@ export function EventGroupForm() {
                 {!isChildGroup && (
                   <div className="space-y-2">
                     <Label htmlFor="template">Event Template</Label>
-                    <Select
-                      id="template"
-                      value={formData.template_id?.toString() || ""}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          template_id: e.target.value ? Number(e.target.value) : null,
-                        })
-                      }
-                    >
-                      <option value="">Unassigned</option>
-                      {eventTemplates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      Only event-type templates are shown
-                    </p>
+                    {/* Multi-league groups: show "Manage Templates" button */}
+                    {formData.leagues.length > 1 ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full justify-start"
+                          onClick={() => setTemplateModalOpen(true)}
+                          disabled={!isEdit}
+                        >
+                          Manage Templates...
+                        </Button>
+                        <p className="text-xs text-muted-foreground">
+                          {isEdit
+                            ? "Assign different templates per sport/league"
+                            : "Save group first to manage templates"}
+                        </p>
+                      </>
+                    ) : (
+                      /* Single-league groups: simple dropdown */
+                      <>
+                        <Select
+                          id="template"
+                          value={formData.template_id?.toString() || ""}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              template_id: e.target.value ? Number(e.target.value) : null,
+                            })
+                          }
+                        >
+                          <option value="">Unassigned</option>
+                          {eventTemplates.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Only event-type templates are shown
+                        </p>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -1676,6 +1703,17 @@ export function EventGroupForm() {
         initialPatterns={currentPatterns}
         onApply={handlePatternsApply}
       />
+
+      {/* Template Assignment Modal — for multi-league groups */}
+      {isEdit && formData.leagues.length > 1 && (
+        <TemplateAssignmentModal
+          open={templateModalOpen}
+          onOpenChange={setTemplateModalOpen}
+          groupId={Number(groupId)}
+          groupName={formData.display_name || formData.name}
+          groupLeagues={formData.leagues}
+        />
+      )}
     </div>
   )
 }

@@ -1923,3 +1923,210 @@ def reorder_groups(request: ReorderGroupsRequest):
         updated_count=updated,
         message=f"Updated sort order for {updated} groups",
     )
+
+
+# =============================================================================
+# GROUP TEMPLATES - Multi-template assignment per group
+# =============================================================================
+
+
+class GroupTemplateCreate(BaseModel):
+    """Create a template assignment for a group."""
+
+    template_id: int
+    sports: list[str] | None = None  # NULL = any, or ["mma", "boxing"]
+    leagues: list[str] | None = None  # NULL = any, or ["ufc", "bellator"]
+
+
+class GroupTemplateUpdate(BaseModel):
+    """Update a template assignment."""
+
+    template_id: int | None = None
+    sports: list[str] | None = None
+    leagues: list[str] | None = None
+
+
+class GroupTemplateResponse(BaseModel):
+    """Template assignment response."""
+
+    id: int
+    group_id: int
+    template_id: int
+    sports: list[str] | None = None
+    leagues: list[str] | None = None
+    template_name: str | None = None
+
+
+@router.get("/{group_id}/templates", response_model=list[GroupTemplateResponse])
+def get_group_templates(group_id: int):
+    """Get all template assignments for a group.
+
+    Returns templates ordered by specificity (leagues first, then sports, then default).
+    """
+    from teamarr.database.groups import get_group_templates as db_get_templates
+
+    with get_db() as conn:
+        # Verify group exists
+        row = conn.execute(
+            "SELECT id FROM event_epg_groups WHERE id = ?", (group_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Group {group_id} not found",
+            )
+
+        templates = db_get_templates(conn, group_id)
+
+    return [
+        GroupTemplateResponse(
+            id=t.id,
+            group_id=t.group_id,
+            template_id=t.template_id,
+            sports=t.sports,
+            leagues=t.leagues,
+            template_name=t.template_name,
+        )
+        for t in templates
+    ]
+
+
+@router.post(
+    "/{group_id}/templates",
+    response_model=GroupTemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_group_template(group_id: int, request: GroupTemplateCreate):
+    """Add a template assignment to a group.
+
+    Templates are resolved by specificity:
+    1. leagues match (most specific)
+    2. sports match
+    3. default (both NULL)
+    """
+    from teamarr.database.groups import add_group_template as db_add_template
+
+    with get_db() as conn:
+        # Verify group exists
+        row = conn.execute(
+            "SELECT id FROM event_epg_groups WHERE id = ?", (group_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Group {group_id} not found",
+            )
+
+        # Verify template exists
+        row = conn.execute(
+            "SELECT id, name FROM templates WHERE id = ?", (request.template_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Template {request.template_id} not found",
+            )
+        template_name = row["name"]
+
+        assignment_id = db_add_template(
+            conn,
+            group_id,
+            request.template_id,
+            request.sports,
+            request.leagues,
+        )
+
+    return GroupTemplateResponse(
+        id=assignment_id,
+        group_id=group_id,
+        template_id=request.template_id,
+        sports=request.sports,
+        leagues=request.leagues,
+        template_name=template_name,
+    )
+
+
+@router.put("/{group_id}/templates/{assignment_id}", response_model=GroupTemplateResponse)
+def update_group_template(group_id: int, assignment_id: int, request: GroupTemplateUpdate):
+    """Update a template assignment."""
+    from teamarr.database.groups import update_group_template as db_update_template
+
+    with get_db() as conn:
+        # Verify assignment exists and belongs to this group
+        row = conn.execute(
+            "SELECT * FROM group_templates WHERE id = ? AND group_id = ?",
+            (assignment_id, group_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Template assignment {assignment_id} not found in group {group_id}",
+            )
+
+        # Build update kwargs
+        kwargs = {}
+        if request.template_id is not None:
+            # Verify new template exists
+            t_row = conn.execute(
+                "SELECT id FROM templates WHERE id = ?", (request.template_id,)
+            ).fetchone()
+            if not t_row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Template {request.template_id} not found",
+                )
+            kwargs["template_id"] = request.template_id
+
+        # Use ... sentinel to distinguish "not provided" from "set to null"
+        if "sports" in request.model_fields_set:
+            kwargs["sports"] = request.sports
+        if "leagues" in request.model_fields_set:
+            kwargs["leagues"] = request.leagues
+
+        if kwargs:
+            db_update_template(conn, assignment_id, **kwargs)
+
+        # Fetch updated record
+        row = conn.execute(
+            """SELECT gt.*, t.name as template_name
+               FROM group_templates gt
+               LEFT JOIN templates t ON gt.template_id = t.id
+               WHERE gt.id = ?""",
+            (assignment_id,),
+        ).fetchone()
+
+    import json
+
+    sports = json.loads(row["sports"]) if row["sports"] else None
+    leagues = json.loads(row["leagues"]) if row["leagues"] else None
+
+    return GroupTemplateResponse(
+        id=row["id"],
+        group_id=row["group_id"],
+        template_id=row["template_id"],
+        sports=sports,
+        leagues=leagues,
+        template_name=row["template_name"],
+    )
+
+
+@router.delete("/{group_id}/templates/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_group_template(group_id: int, assignment_id: int):
+    """Delete a template assignment."""
+    from teamarr.database.groups import delete_group_template as db_delete_template
+
+    with get_db() as conn:
+        # Verify assignment exists and belongs to this group
+        row = conn.execute(
+            "SELECT id FROM group_templates WHERE id = ? AND group_id = ?",
+            (assignment_id, group_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Template assignment {assignment_id} not found in group {group_id}",
+            )
+
+        db_delete_template(conn, assignment_id)
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

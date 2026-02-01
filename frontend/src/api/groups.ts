@@ -127,3 +127,56 @@ export async function clearGroupsMatchCache(
 ): Promise<ClearCacheResponse> {
   return api.post("/groups/cache/clear", { group_ids: groupIds })
 }
+
+// =============================================================================
+// Group Templates - Multi-template assignment per group
+// =============================================================================
+
+export interface GroupTemplate {
+  id: number
+  group_id: number
+  template_id: number
+  sports: string[] | null
+  leagues: string[] | null
+  template_name: string | null
+}
+
+export interface GroupTemplateCreate {
+  template_id: number
+  sports?: string[]
+  leagues?: string[]
+}
+
+export interface GroupTemplateUpdate {
+  template_id?: number
+  sports?: string[]
+  leagues?: string[]
+}
+
+export async function getGroupTemplates(
+  groupId: number
+): Promise<GroupTemplate[]> {
+  return api.get(`/groups/${groupId}/templates`)
+}
+
+export async function addGroupTemplate(
+  groupId: number,
+  data: GroupTemplateCreate
+): Promise<GroupTemplate> {
+  return api.post(`/groups/${groupId}/templates`, data)
+}
+
+export async function updateGroupTemplate(
+  groupId: number,
+  assignmentId: number,
+  data: GroupTemplateUpdate
+): Promise<GroupTemplate> {
+  return api.put(`/groups/${groupId}/templates/${assignmentId}`, data)
+}
+
+export async function deleteGroupTemplate(
+  groupId: number,
+  assignmentId: number
+): Promise<void> {
+  return api.delete(`/groups/${groupId}/templates/${assignmentId}`)
+}

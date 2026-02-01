@@ -1159,3 +1159,256 @@ def delete_group_xmltv(conn: Connection, group_id: int) -> bool:
         logger.debug("[DELETED] XMLTV for group id=%d", group_id)
         return True
     return False
+
+
+# =============================================================================
+# GROUP_TEMPLATES - Multi-template assignment per group
+# =============================================================================
+
+
+@dataclass
+class GroupTemplate:
+    """Template assignment for a group with optional sport/league filters."""
+
+    id: int
+    group_id: int
+    template_id: int
+    sports: list[str] | None = None  # NULL = any, or ["mma", "boxing"]
+    leagues: list[str] | None = None  # NULL = any, or ["ufc", "bellator"]
+    # Joined fields (for display)
+    template_name: str | None = None
+
+
+def _row_to_group_template(row) -> GroupTemplate:
+    """Convert database row to GroupTemplate."""
+    sports = None
+    if row["sports"]:
+        try:
+            sports = json.loads(row["sports"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    leagues = None
+    if row["leagues"]:
+        try:
+            leagues = json.loads(row["leagues"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return GroupTemplate(
+        id=row["id"],
+        group_id=row["group_id"],
+        template_id=row["template_id"],
+        sports=sports,
+        leagues=leagues,
+        template_name=row.get("template_name"),
+    )
+
+
+def get_group_templates(conn: Connection, group_id: int) -> list[GroupTemplate]:
+    """Get all template assignments for a group.
+
+    Args:
+        conn: Database connection
+        group_id: Group ID
+
+    Returns:
+        List of GroupTemplate objects ordered by specificity (leagues first)
+    """
+    cursor = conn.execute(
+        """SELECT gt.*, t.name as template_name
+           FROM group_templates gt
+           LEFT JOIN templates t ON gt.template_id = t.id
+           WHERE gt.group_id = ?
+           ORDER BY
+               CASE WHEN gt.leagues IS NOT NULL THEN 0 ELSE 1 END,
+               CASE WHEN gt.sports IS NOT NULL THEN 0 ELSE 1 END""",
+        (group_id,),
+    )
+    return [_row_to_group_template(row) for row in cursor.fetchall()]
+
+
+def add_group_template(
+    conn: Connection,
+    group_id: int,
+    template_id: int,
+    sports: list[str] | None = None,
+    leagues: list[str] | None = None,
+) -> int:
+    """Add a template assignment to a group.
+
+    Args:
+        conn: Database connection
+        group_id: Group ID
+        template_id: Template ID to assign
+        sports: Optional list of sports this template applies to
+        leagues: Optional list of leagues this template applies to
+
+    Returns:
+        ID of the new assignment
+    """
+    sports_json = json.dumps(sports) if sports else None
+    leagues_json = json.dumps(leagues) if leagues else None
+
+    cursor = conn.execute(
+        """INSERT INTO group_templates (group_id, template_id, sports, leagues)
+           VALUES (?, ?, ?, ?)""",
+        (group_id, template_id, sports_json, leagues_json),
+    )
+    conn.commit()
+    logger.debug(
+        "[GROUP_TEMPLATES] Added template %d to group %d (sports=%s, leagues=%s)",
+        template_id,
+        group_id,
+        sports,
+        leagues,
+    )
+    return cursor.lastrowid
+
+
+def update_group_template(
+    conn: Connection,
+    assignment_id: int,
+    template_id: int | None = None,
+    sports: list[str] | None = ...,  # Use ... as sentinel for "not provided"
+    leagues: list[str] | None = ...,
+) -> bool:
+    """Update a template assignment.
+
+    Args:
+        conn: Database connection
+        assignment_id: ID of the assignment to update
+        template_id: New template ID (if provided)
+        sports: New sports filter (None to clear, ... to keep existing)
+        leagues: New leagues filter (None to clear, ... to keep existing)
+
+    Returns:
+        True if updated
+    """
+    updates = []
+    params = []
+
+    if template_id is not None:
+        updates.append("template_id = ?")
+        params.append(template_id)
+
+    if sports is not ...:
+        updates.append("sports = ?")
+        params.append(json.dumps(sports) if sports else None)
+
+    if leagues is not ...:
+        updates.append("leagues = ?")
+        params.append(json.dumps(leagues) if leagues else None)
+
+    if not updates:
+        return False
+
+    params.append(assignment_id)
+    cursor = conn.execute(
+        f"UPDATE group_templates SET {', '.join(updates)} WHERE id = ?",
+        params,
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def delete_group_template(conn: Connection, assignment_id: int) -> bool:
+    """Delete a template assignment.
+
+    Args:
+        conn: Database connection
+        assignment_id: ID of the assignment to delete
+
+    Returns:
+        True if deleted
+    """
+    cursor = conn.execute("DELETE FROM group_templates WHERE id = ?", (assignment_id,))
+    conn.commit()
+    if cursor.rowcount > 0:
+        logger.debug("[GROUP_TEMPLATES] Deleted assignment %d", assignment_id)
+        return True
+    return False
+
+
+def delete_group_templates(conn: Connection, group_id: int) -> int:
+    """Delete all template assignments for a group.
+
+    Args:
+        conn: Database connection
+        group_id: Group ID
+
+    Returns:
+        Number of assignments deleted
+    """
+    cursor = conn.execute("DELETE FROM group_templates WHERE group_id = ?", (group_id,))
+    conn.commit()
+    return cursor.rowcount
+
+
+def get_template_for_event(
+    conn: Connection,
+    group_id: int,
+    event_sport: str,
+    event_league: str,
+) -> int | None:
+    """Resolve the best template for an event based on specificity.
+
+    Resolution order (most specific wins):
+    1. leagues match - event.league in template's leagues array
+    2. sports match - event.sport in template's sports array
+    3. default - template with both sports and leagues NULL
+
+    Args:
+        conn: Database connection
+        group_id: Group ID
+        event_sport: Event's sport code (e.g., "mma", "football")
+        event_league: Event's league code (e.g., "ufc", "nfl")
+
+    Returns:
+        Template ID or None if no template configured
+    """
+    templates = get_group_templates(conn, group_id)
+
+    if not templates:
+        # Fall back to group's legacy template_id
+        row = conn.execute(
+            "SELECT template_id FROM event_epg_groups WHERE id = ?",
+            (group_id,),
+        ).fetchone()
+        return row["template_id"] if row else None
+
+    # 1. Check for league match (most specific)
+    for t in templates:
+        if t.leagues and event_league in t.leagues:
+            logger.debug(
+                "[GROUP_TEMPLATES] Resolved template %d for event (league=%s match)",
+                t.template_id,
+                event_league,
+            )
+            return t.template_id
+
+    # 2. Check for sport match
+    for t in templates:
+        if t.sports and event_sport in t.sports:
+            logger.debug(
+                "[GROUP_TEMPLATES] Resolved template %d for event (sport=%s match)",
+                t.template_id,
+                event_sport,
+            )
+            return t.template_id
+
+    # 3. Check for default (both NULL)
+    for t in templates:
+        if t.sports is None and t.leagues is None:
+            logger.debug(
+                "[GROUP_TEMPLATES] Resolved template %d for event (default)",
+                t.template_id,
+            )
+            return t.template_id
+
+    # No match found - fall back to group's legacy template_id
+    row = conn.execute(
+        "SELECT template_id FROM event_epg_groups WHERE id = ?",
+        (group_id,),
+    ).fetchone()
+    return row["template_id"] if row else None
