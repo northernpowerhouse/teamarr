@@ -185,6 +185,83 @@ def extract_card_segment_display(ctx: TemplateContext, game_ctx: GameContext | N
 
 
 # =============================================================================
+# Segment Time Variables
+# =============================================================================
+
+
+@register_variable(
+    name="main_card_time",
+    category=Category.COMBAT,
+    suffix_rules=SuffixRules.ALL,
+    description="Main card start time (e.g., '10:00 PM EST')",
+)
+def extract_main_card_time(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
+    """Extract main card start time from ESPN segment data."""
+    from teamarr.utilities.tz import format_time
+
+    if not game_ctx or not game_ctx.event:
+        return ""
+
+    event = game_ctx.event
+    if event.sport != "mma" or not event.segment_times:
+        return ""
+
+    main_card_dt = event.segment_times.get("main_card")
+    if not main_card_dt:
+        return ""
+
+    return format_time(main_card_dt)
+
+
+@register_variable(
+    name="prelims_time",
+    category=Category.COMBAT,
+    suffix_rules=SuffixRules.ALL,
+    description="Prelims start time (e.g., '8:00 PM EST')",
+)
+def extract_prelims_time(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
+    """Extract prelims start time from ESPN segment data."""
+    from teamarr.utilities.tz import format_time
+
+    if not game_ctx or not game_ctx.event:
+        return ""
+
+    event = game_ctx.event
+    if event.sport != "mma" or not event.segment_times:
+        return ""
+
+    prelims_dt = event.segment_times.get("prelims")
+    if not prelims_dt:
+        return ""
+
+    return format_time(prelims_dt)
+
+
+@register_variable(
+    name="early_prelims_time",
+    category=Category.COMBAT,
+    suffix_rules=SuffixRules.ALL,
+    description="Early prelims start time (e.g., '6:00 PM EST')",
+)
+def extract_early_prelims_time(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
+    """Extract early prelims start time from ESPN segment data."""
+    from teamarr.utilities.tz import format_time
+
+    if not game_ctx or not game_ctx.event:
+        return ""
+
+    event = game_ctx.event
+    if event.sport != "mma" or not event.segment_times:
+        return ""
+
+    early_dt = event.segment_times.get("early_prelims")
+    if not early_dt:
+        return ""
+
+    return format_time(early_dt)
+
+
+# =============================================================================
 # Bout Card Variables - All fighter pairings on the card
 # =============================================================================
 
