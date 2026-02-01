@@ -419,3 +419,24 @@ class EventSearchResult(BaseModel):
     home_team: str | None = None
     away_team: str | None = None
     status: str | None = None
+
+
+class GameDataCacheStats(BaseModel):
+    """Game data cache statistics."""
+
+    total_entries: int
+    active_entries: int
+    expired_entries: int
+    hits: int
+    misses: int
+    hit_rate: float
+    pending_writes: int
+    pending_deletes: int
+
+
+class GameDataCacheClearResponse(BaseModel):
+    """Response after clearing game data cache."""
+
+    success: bool
+    entries_cleared: int
+    message: str

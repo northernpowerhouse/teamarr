@@ -7,6 +7,8 @@ import {
   refreshCache,
   getEPGAnalysis,
   getEPGContent,
+  getGameDataCacheStats,
+  clearGameDataCache,
 } from "@/api/epg"
 import type { EPGGenerateRequest } from "@/api/epg"
 
@@ -71,5 +73,26 @@ export function useEPGContent(maxLines = 2000) {
     queryKey: ["epgContent", maxLines],
     queryFn: () => getEPGContent(maxLines),
     staleTime: 60000,
+  })
+}
+
+// Game Data Cache hooks (schedules, scores, odds)
+
+export function useGameDataCacheStats() {
+  return useQuery({
+    queryKey: ["gameDataCacheStats"],
+    queryFn: getGameDataCacheStats,
+    refetchInterval: 30000, // Refresh every 30s
+  })
+}
+
+export function useClearGameDataCache() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: clearGameDataCache,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gameDataCacheStats"] })
+    },
   })
 }

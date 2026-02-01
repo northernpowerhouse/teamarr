@@ -66,7 +66,7 @@ import { StreamOrderingManager } from "@/components/StreamOrderingManager"
 import { getLeagues, getSports } from "@/api/teams"
 import { downloadBackup, restoreBackup } from "@/api/backup"
 import { useQuery } from "@tanstack/react-query"
-import { useCacheStatus, useRefreshCache } from "@/hooks/useEPG"
+import { useCacheStatus, useRefreshCache, useGameDataCacheStats, useClearGameDataCache } from "@/hooks/useEPG"
 import { useDateFormat } from "@/hooks/useDateFormat"
 import type {
   DispatcharrSettings,
@@ -153,6 +153,8 @@ export function Settings() {
   const schedulerStatus = useSchedulerStatus()
   const { data: cacheStatus, refetch: refetchCache } = useCacheStatus()
   const refreshCacheMutation = useRefreshCache()
+  const { data: gameDataCacheStats } = useGameDataCacheStats()
+  const clearGameDataCacheMutation = useClearGameDataCache()
   const { startGeneration, isGenerating } = useGenerationProgress()
 
   const updateDispatcharr = useUpdateDispatcharrSettings()
@@ -2276,16 +2278,16 @@ export function Settings() {
         </CardContent>
       </Card>
 
-      {/* Local Caching */}
+      {/* Team & League Directory */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Database className="h-5 w-5" />
-                Local Caching
+                Team & League Directory
               </CardTitle>
-              <CardDescription>Cache of teams and leagues from ESPN and TheSportsDB</CardDescription>
+              <CardDescription>Catalog of teams and leagues from ESPN and TheSportsDB</CardDescription>
             </div>
             {cacheStatus?.is_stale && (
               <Badge variant="warning">Stale</Badge>
@@ -2338,7 +2340,68 @@ export function Settings() {
             {(refreshCacheMutation.isPending || cacheStatus?.refresh_in_progress) && (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             )}
-            {cacheStatus?.refresh_in_progress ? "Refreshing..." : "Refresh Cache"}
+            {cacheStatus?.refresh_in_progress ? "Refreshing..." : "Refresh Directory"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Game Data Cache */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Game Data Cache</CardTitle>
+          <CardDescription>Cached schedules, scores, and odds from providers</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold">{gameDataCacheStats?.active_entries ?? 0}</div>
+              <div className="text-xs text-muted-foreground">Active Entries</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold">
+                {gameDataCacheStats?.hit_rate !== undefined
+                  ? `${Math.round(gameDataCacheStats.hit_rate * 100)}%`
+                  : "-"}
+              </div>
+              <div className="text-xs text-muted-foreground">Hit Rate</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold">{gameDataCacheStats?.pending_writes ?? 0}</div>
+              <div className="text-xs text-muted-foreground">Pending Writes</div>
+            </div>
+          </div>
+
+          <div className="rounded-md bg-amber-500/10 border border-amber-500/20 p-3">
+            <div className="flex gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+              <div className="text-sm text-amber-500">
+                <p className="font-medium">Warning</p>
+                <p className="text-xs">
+                  Clearing this cache will force all sports data to be re-fetched from ESPN and TheSportsDB.
+                  The next EPG generation may be slower and could hit rate limits.
+                  Use this if you see incorrect scores or game results.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <Button
+            variant="destructive"
+            onClick={() => {
+              clearGameDataCacheMutation.mutate(undefined, {
+                onSuccess: (data) => toast.success(data.message),
+                onError: () => toast.error("Failed to clear game data cache"),
+              })
+            }}
+            disabled={clearGameDataCacheMutation.isPending}
+            className="w-full"
+          >
+            {clearGameDataCacheMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4 mr-2" />
+            )}
+            Clear Game Data Cache
           </Button>
         </CardContent>
       </Card>

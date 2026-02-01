@@ -365,3 +365,30 @@ export async function correctStreamMatch(
 ): Promise<MatchCorrectionResponse> {
   return api.post("/epg/streams/correct", request)
 }
+
+// Game Data Cache (schedules, scores, odds from providers)
+
+export interface GameDataCacheStats {
+  total_entries: number
+  active_entries: number
+  expired_entries: number
+  hits: number
+  misses: number
+  hit_rate: number
+  pending_writes: number
+  pending_deletes: number
+}
+
+export interface GameDataCacheClearResponse {
+  success: boolean
+  entries_cleared: number
+  message: string
+}
+
+export async function getGameDataCacheStats(): Promise<GameDataCacheStats> {
+  return api.get("/game-data-cache/stats")
+}
+
+export async function clearGameDataCache(): Promise<GameDataCacheClearResponse> {
+  return api.post("/game-data-cache/clear", {})
+}
