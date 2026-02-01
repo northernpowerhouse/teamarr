@@ -752,8 +752,8 @@ export function EventGroupForm() {
             </CardContent>
           </Card>}
 
-          {/* Stream Timezone - hidden for child groups */}
-          {!isChildGroup && <Card>
+          {/* Stream Timezone */}
+          <Card>
             <CardHeader>
               <CardTitle>Stream Timezone</CardTitle>
               <CardDescription>
@@ -769,7 +769,7 @@ export function EventGroupForm() {
                 Optional. Timezone markers (e.g., "ET", "PT") are auto-detected. Set this only if your provider omits them and uses a different timezone than yours.
               </p>
             </CardContent>
-          </Card>}
+          </Card>
 
           {/* Channel Settings - hidden for child groups */}
           {!isChildGroup && <Card>
