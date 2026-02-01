@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from datetime import date
 from zoneinfo import ZoneInfo
 
+from rapidfuzz import fuzz
+
 from teamarr.consumers.matching.classifier import ClassifiedStream, StreamCategory
 from teamarr.consumers.matching.result import (
     FailedReason,
@@ -23,8 +25,13 @@ from teamarr.consumers.matching.result import (
 from teamarr.consumers.stream_match_cache import StreamMatchCache, event_to_cache_data
 from teamarr.core.types import Event
 from teamarr.services.sports_data import SportsDataService
+from teamarr.utilities.fuzzy_match import normalize_text
 
 logger = logging.getLogger(__name__)
+
+# Minimum fuzzy match score for fighter name matching (0-100)
+# Same threshold used for team matching in team_matcher.py
+FIGHTER_MATCH_THRESHOLD = 75
 
 
 @dataclass
@@ -195,7 +202,6 @@ class EventCardMatcher:
         league: str,
     ) -> MatchOutcome:
         """Match stream to an event card."""
-        stream_lower = ctx.stream_name.lower()
         event_hint = ctx.classified.event_hint
 
         # Strategy 1: Match by event number (UFC 315)
@@ -233,34 +239,63 @@ class EventCardMatcher:
                 )
 
         # Strategy 2: Fighter name matching (fallback)
-        # Try to find fighter names in stream
-        for event in events:
-            home_name = event.home_team.name.lower() if event.home_team else ""
-            away_name = event.away_team.name.lower() if event.away_team else ""
+        # Only attempt if fighters were extracted during classification via separator detection
+        # This prevents false positives on streams without explicit fighter names
+        extracted_fighter1 = ctx.classified.team1
+        extracted_fighter2 = ctx.classified.team2
 
-            # Check for last names (more reliable)
-            home_parts = home_name.split()
-            away_parts = away_name.split()
+        if extracted_fighter1 or extracted_fighter2:
+            # Use fuzzy matching (same approach as team_vs_team)
+            for event in events:
+                home_name = event.home_team.name if event.home_team else ""
+                away_name = event.away_team.name if event.away_team else ""
 
-            # Try last name first, then full name
-            for parts in [home_parts, away_parts]:
-                if len(parts) >= 1:
-                    last_name = parts[-1]
-                    if len(last_name) >= 4 and last_name in stream_lower:
-                        logger.debug(
-                            "[MATCHED] event_card stream=%s -> %s (method=fighter_name, '%s')",
-                            ctx.stream_name[:40],
-                            event.name,
-                            last_name,
-                        )
-                        return MatchOutcome.matched(
-                            MatchMethod.FUZZY,
-                            event,
-                            detected_league=league,
-                            confidence=0.75,
-                            stream_name=ctx.stream_name,
-                            stream_id=ctx.stream_id,
-                        )
+                if not home_name and not away_name:
+                    continue
+
+                # Normalize names for comparison
+                home_norm = normalize_text(home_name)
+                away_norm = normalize_text(away_name)
+
+                best_score = 0
+                matched_fighter = None
+
+                # Score extracted fighters against event fighters
+                for fighter in [extracted_fighter1, extracted_fighter2]:
+                    if not fighter:
+                        continue
+                    fighter_norm = normalize_text(fighter)
+
+                    # Try against both event fighters
+                    for _event_fighter, event_fighter_norm in [
+                        (home_name, home_norm),
+                        (away_name, away_norm),
+                    ]:
+                        if not event_fighter_norm:
+                            continue
+                        score = fuzz.token_set_ratio(fighter_norm, event_fighter_norm)
+                        if score > best_score:
+                            best_score = score
+                            matched_fighter = fighter
+
+                if best_score >= FIGHTER_MATCH_THRESHOLD:
+                    confidence = best_score / 100.0
+                    logger.debug(
+                        "[MATCHED] event_card stream=%s -> %s (method=fuzzy_fighter, "
+                        "'%s' score=%d)",
+                        ctx.stream_name[:40],
+                        event.name,
+                        matched_fighter,
+                        best_score,
+                    )
+                    return MatchOutcome.matched(
+                        MatchMethod.FUZZY,
+                        event,
+                        detected_league=league,
+                        confidence=confidence,
+                        stream_name=ctx.stream_name,
+                        stream_id=ctx.stream_id,
+                    )
 
         # No match found
         logger.debug(

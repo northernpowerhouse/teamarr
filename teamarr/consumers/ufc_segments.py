@@ -40,6 +40,10 @@ SEGMENT_DISPLAY_NAMES: dict[str, str] = {
 # Segment codes ordered from earliest to latest
 SEGMENT_ORDER = ["early_prelims", "prelims", "main_card"]
 
+# Maximum distance (in minutes) for time-based segment detection
+# If stream time is more than this far from any segment, ignore the time
+MAX_SEGMENT_TIME_DISTANCE_MINUTES = 60
+
 
 def canonicalize_segment(detected: str, event: Event) -> str:
     """Validate detected segment against ESPN's segment_times.
@@ -312,12 +316,23 @@ def determine_segment_from_time(
             best_segment = segment_code
 
     if best_segment:
+        best_distance_min = best_distance // 60
+        # Reject if time is too far from any segment
+        if best_distance_min > MAX_SEGMENT_TIME_DISTANCE_MINUTES:
+            logger.debug(
+                "[UFC_SEGMENTS] Time %s too far from any segment (dist=%d min > %d max), ignoring",
+                stream_time,
+                best_distance_min,
+                MAX_SEGMENT_TIME_DISTANCE_MINUTES,
+            )
+            return None
+
         logger.info(
             "[UFC_SEGMENTS] Determined segment '%s' from time %s (tz=%s, dist=%d min)",
             best_segment,
             stream_time,
             tz_source,
-            best_distance // 60,
+            best_distance_min,
         )
 
     return best_segment
