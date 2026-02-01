@@ -1092,18 +1092,25 @@ export function EventGroupForm() {
                   onChange={(ids) => setFormData({ ...formData, channel_profile_ids: ids })}
                   disabled={useDefaultProfiles}
                 />
+            </CardContent>
+          </Card>}
 
-                {/* Stream Profile */}
-                <div className="mt-4 pt-4 border-t">
-                  <Label className="text-sm font-medium mb-2 block">Stream Profile</Label>
-                  <StreamProfileSelector
-                    value={formData.stream_profile_id ?? null}
-                    onChange={(id) => setFormData({ ...formData, stream_profile_id: id })}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    How streams are processed (ffmpeg, VLC, proxy, etc). Leave empty to use global default.
-                  </p>
-                </div>
+          {/* Stream Profile - hidden for child groups */}
+          {!isChildGroup && <Card>
+            <CardHeader>
+              <CardTitle>Stream Profile</CardTitle>
+              <CardDescription>
+                How streams are processed when played
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <StreamProfileSelector
+                value={formData.stream_profile_id ?? null}
+                onChange={(id) => setFormData({ ...formData, stream_profile_id: id })}
+              />
+              <p className="text-xs text-muted-foreground mt-2">
+                How streams are processed (ffmpeg, VLC, proxy, etc). Leave empty to use global default.
+              </p>
             </CardContent>
           </Card>}
 
