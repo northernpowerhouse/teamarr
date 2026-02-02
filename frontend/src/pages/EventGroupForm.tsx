@@ -149,9 +149,18 @@ export function EventGroupForm() {
   // Filter state for channel groups
   const [channelGroupFilter, setChannelGroupFilter] = useState("")
 
-  // Collapsible section states
+  // Collapsible section states - all start collapsed
+  const [basicSettingsExpanded, setBasicSettingsExpanded] = useState(false)
+  const [leagueSelectionExpanded, setLeagueSelectionExpanded] = useState(false)
+  const [streamTimezoneExpanded, setStreamTimezoneExpanded] = useState(false)
+  const [channelSettingsExpanded, setChannelSettingsExpanded] = useState(false)
+  const [channelGroupExpanded, setChannelGroupExpanded] = useState(false)
+  const [channelProfilesExpanded, setChannelProfilesExpanded] = useState(false)
+  const [streamProfileExpanded, setStreamProfileExpanded] = useState(false)
   const [regexExpanded, setRegexExpanded] = useState(false)
   const [teamFilterExpanded, setTeamFilterExpanded] = useState(false)
+  const [multiSportExpanded, setMultiSportExpanded] = useState(false)
+  const [streamSourceExpanded, setStreamSourceExpanded] = useState(false)
 
   // Custom Regex event type tab
   type EventTypeTab = "team_vs_team" | "event_card"
@@ -634,10 +643,20 @@ export function EventGroupForm() {
 
           {/* Basic Info - hidden for child groups (inherited from parent) */}
           {!isChildGroup && <Card>
-            <CardHeader>
-              <CardTitle>Basic Settings</CardTitle>
+            <CardHeader
+              className="cursor-pointer hover:bg-muted/50 rounded-t-lg"
+              onClick={() => setBasicSettingsExpanded(!basicSettingsExpanded)}
+            >
+              <div className="flex items-center gap-2">
+                {basicSettingsExpanded ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
+                <CardTitle>Basic Settings</CardTitle>
+              </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            {basicSettingsExpanded && <CardContent className="space-y-4">
               <div className={cn("grid gap-4", isChildGroup ? "grid-cols-1" : "grid-cols-2")}>
                 <div className="space-y-2">
                   <Label htmlFor="name">Group Name</Label>
@@ -794,19 +813,33 @@ export function EventGroupForm() {
                 />
                 <Label className="font-normal">Enabled</Label>
               </div>
-            </CardContent>
+            </CardContent>}
           </Card>}
 
           {/* League Selection - combined soccer mode + other sports for multi-league groups */}
           {showSoccerMode && !isChildGroup && (
             <Card>
-              <CardHeader>
-                <CardTitle>League Selection</CardTitle>
-                <CardDescription>
-                  Configure which leagues this group will match
-                </CardDescription>
+              <CardHeader
+                className="cursor-pointer hover:bg-muted/50 rounded-t-lg"
+                onClick={() => setLeagueSelectionExpanded(!leagueSelectionExpanded)}
+              >
+                <div className="flex items-center gap-2">
+                  {leagueSelectionExpanded ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  )}
+                  <div>
+                    <CardTitle>League Selection</CardTitle>
+                    {leagueSelectionExpanded && (
+                      <CardDescription>
+                        Configure which leagues this group will match
+                      </CardDescription>
+                    )}
+                  </div>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-6">
+              {leagueSelectionExpanded && <CardContent className="space-y-6">
                 {/* Non-Soccer Sports Section */}
                 <div className="space-y-3">
                   <Label className="text-base font-medium">Non-Soccer Sports</Label>
@@ -866,19 +899,33 @@ export function EventGroupForm() {
                     onFollowedTeamsChange={setSoccerFollowedTeams}
                   />
                 </div>
-              </CardContent>
+              </CardContent>}
             </Card>
           )}
 
           {/* Stream Timezone */}
           <Card>
-            <CardHeader>
-              <CardTitle>Stream Timezone</CardTitle>
-              <CardDescription>
-                Timezone used in stream names for date matching
-              </CardDescription>
+            <CardHeader
+              className="cursor-pointer hover:bg-muted/50 rounded-t-lg"
+              onClick={() => setStreamTimezoneExpanded(!streamTimezoneExpanded)}
+            >
+              <div className="flex items-center gap-2">
+                {streamTimezoneExpanded ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
+                <div>
+                  <CardTitle>Stream Timezone</CardTitle>
+                  {streamTimezoneExpanded && (
+                    <CardDescription>
+                      Timezone used in stream names for date matching
+                    </CardDescription>
+                  )}
+                </div>
+              </div>
             </CardHeader>
-            <CardContent>
+            {streamTimezoneExpanded && <CardContent>
               <StreamTimezoneSelector
                 value={formData.stream_timezone ?? null}
                 onChange={(tz) => setFormData({ ...formData, stream_timezone: tz })}
@@ -886,15 +933,25 @@ export function EventGroupForm() {
               <p className="text-xs text-muted-foreground mt-2">
                 Optional. Timezone markers (e.g., "ET", "PT") are auto-detected. Set this only if your provider omits them and uses a different timezone than yours.
               </p>
-            </CardContent>
+            </CardContent>}
           </Card>
 
           {/* Channel Settings - hidden for child groups */}
           {!isChildGroup && <Card>
-            <CardHeader>
-              <CardTitle>Channel Settings</CardTitle>
+            <CardHeader
+              className="cursor-pointer hover:bg-muted/50 rounded-t-lg"
+              onClick={() => setChannelSettingsExpanded(!channelSettingsExpanded)}
+            >
+              <div className="flex items-center gap-2">
+                {channelSettingsExpanded ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
+                <CardTitle>Channel Settings</CardTitle>
+              </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            {channelSettingsExpanded && <CardContent className="space-y-4">
               {/* Channel Assignment Mode - V1 style tile cards */}
               <div className="space-y-2">
                 <Label>Channel Assignment Mode</Label>
@@ -985,18 +1042,32 @@ export function EventGroupForm() {
                   How to handle multiple streams matching the same event
                 </p>
               </div>
-            </CardContent>
+            </CardContent>}
           </Card>}
 
           {/* Channel Group Assignment - hidden for child groups */}
           {!isChildGroup && <Card>
-            <CardHeader>
-              <CardTitle>Channel Group</CardTitle>
-              <CardDescription>
-                Managed channels will be assigned to the selected group in Dispatcharr
-              </CardDescription>
+            <CardHeader
+              className="cursor-pointer hover:bg-muted/50 rounded-t-lg"
+              onClick={() => setChannelGroupExpanded(!channelGroupExpanded)}
+            >
+              <div className="flex items-center gap-2">
+                {channelGroupExpanded ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
+                <div>
+                  <CardTitle>Channel Group</CardTitle>
+                  {channelGroupExpanded && (
+                    <CardDescription>
+                      Managed channels will be assigned to the selected group in Dispatcharr
+                    </CardDescription>
+                  )}
+                </div>
+              </div>
             </CardHeader>
-            <CardContent>
+            {channelGroupExpanded && <CardContent>
                 <div className="flex flex-col gap-3">
                   {/* Existing group option with nested group list */}
                   <div>
@@ -1190,18 +1261,32 @@ export function EventGroupForm() {
                     </div>
                   </div>
                 </div>
-            </CardContent>
+            </CardContent>}
           </Card>}
 
           {/* Channel Profiles - hidden for child groups */}
           {!isChildGroup && <Card>
-            <CardHeader>
-              <CardTitle>Channel Profiles</CardTitle>
-              <CardDescription>
-                Managed channels will be added to the selected profiles in Dispatcharr
-              </CardDescription>
+            <CardHeader
+              className="cursor-pointer hover:bg-muted/50 rounded-t-lg"
+              onClick={() => setChannelProfilesExpanded(!channelProfilesExpanded)}
+            >
+              <div className="flex items-center gap-2">
+                {channelProfilesExpanded ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
+                <div>
+                  <CardTitle>Channel Profiles</CardTitle>
+                  {channelProfilesExpanded && (
+                    <CardDescription>
+                      Managed channels will be added to the selected profiles in Dispatcharr
+                    </CardDescription>
+                  )}
+                </div>
+              </div>
             </CardHeader>
-            <CardContent>
+            {channelProfilesExpanded && <CardContent>
                 <label className="flex items-center gap-2 mb-2 cursor-pointer">
                   <Checkbox
                     checked={useDefaultProfiles}
@@ -1229,18 +1314,32 @@ export function EventGroupForm() {
                   onChange={(ids) => setFormData({ ...formData, channel_profile_ids: ids })}
                   disabled={useDefaultProfiles}
                 />
-            </CardContent>
+            </CardContent>}
           </Card>}
 
           {/* Stream Profile - hidden for child groups */}
           {!isChildGroup && <Card>
-            <CardHeader>
-              <CardTitle>Stream Profile</CardTitle>
-              <CardDescription>
-                How streams are processed when played
-              </CardDescription>
+            <CardHeader
+              className="cursor-pointer hover:bg-muted/50 rounded-t-lg"
+              onClick={() => setStreamProfileExpanded(!streamProfileExpanded)}
+            >
+              <div className="flex items-center gap-2">
+                {streamProfileExpanded ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
+                <div>
+                  <CardTitle>Stream Profile</CardTitle>
+                  {streamProfileExpanded && (
+                    <CardDescription>
+                      How streams are processed when played
+                    </CardDescription>
+                  )}
+                </div>
+              </div>
             </CardHeader>
-            <CardContent>
+            {streamProfileExpanded && <CardContent>
               <StreamProfileSelector
                 value={formData.stream_profile_id ?? null}
                 onChange={(id) => setFormData({ ...formData, stream_profile_id: id })}
@@ -1248,7 +1347,7 @@ export function EventGroupForm() {
               <p className="text-xs text-muted-foreground mt-2">
                 How streams are processed (ffmpeg, VLC, proxy, etc). Leave empty to use global default.
               </p>
-            </CardContent>
+            </CardContent>}
           </Card>}
 
           {/* Custom Regex - Collapsible section (available for all groups including children) */}
@@ -1264,20 +1363,8 @@ export function EventGroupForm() {
                 ) : (
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 )}
-                <CardTitle className="text-base">Custom Regex</CardTitle>
+                <CardTitle>Custom Regex</CardTitle>
               </button>
-              {isEdit && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setTestPatternsOpen(true)}
-                  className="gap-1.5"
-                >
-                  <FlaskConical className="h-3.5 w-3.5" />
-                  Test Patterns
-                </Button>
-              )}
             </CardHeader>
 
             {regexExpanded && (
@@ -1615,6 +1702,24 @@ export function EventGroupForm() {
                     </div>
                   )}
                 </div>
+
+                {/* Pattern Tester - only in edit mode */}
+                {isEdit && (
+                  <div className="border-t pt-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setTestPatternsOpen(true)}
+                      className="gap-2"
+                    >
+                      <FlaskConical className="h-4 w-4" />
+                      Open Pattern Tester
+                    </Button>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Test your regex patterns against actual stream names from this group
+                    </p>
+                  </div>
+                )}
               </CardContent>
             )}
           </Card>
@@ -1634,14 +1739,7 @@ export function EventGroupForm() {
                     ) : (
                       <ChevronRight className="h-4 w-4 text-muted-foreground" />
                     )}
-                    <CardTitle className="text-base">Team Filtering</CardTitle>
-                    {useDefaultTeamFilter ? (
-                      <Badge variant="outline" className="text-xs">Using default</Badge>
-                    ) : ((formData.include_teams?.length ?? 0) > 0 || (formData.exclude_teams?.length ?? 0) > 0) ? (
-                      <Badge variant="secondary" className="text-xs">
-                        {(formData.include_teams?.length ?? 0) + (formData.exclude_teams?.length ?? 0)} teams
-                      </Badge>
-                    ) : null}
+                    <CardTitle>Team Filtering</CardTitle>
                   </div>
                 </CardHeader>
               </button>
@@ -1774,13 +1872,27 @@ export function EventGroupForm() {
           {/* Multi-Sport Settings - only show for multi-sport parent groups */}
           {!isChildGroup && formData.leagues.length > 1 && (
             <Card>
-              <CardHeader>
-                <CardTitle>Multi-Sport Settings</CardTitle>
-                <CardDescription>
-                  Configure how events from multiple leagues are handled
-                </CardDescription>
+              <CardHeader
+                className="cursor-pointer hover:bg-muted/50 rounded-t-lg"
+                onClick={() => setMultiSportExpanded(!multiSportExpanded)}
+              >
+                <div className="flex items-center gap-2">
+                  {multiSportExpanded ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  )}
+                  <div>
+                    <CardTitle>Multi-Sport Settings</CardTitle>
+                    {multiSportExpanded && (
+                      <CardDescription>
+                        Configure how events from multiple leagues are handled
+                      </CardDescription>
+                    )}
+                  </div>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-4">
+              {multiSportExpanded && <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="overlap_handling">Overlap Handling</Label>
                   <Select
@@ -1799,17 +1911,27 @@ export function EventGroupForm() {
                     How to handle events that overlap in time
                   </p>
                 </div>
-              </CardContent>
+              </CardContent>}
             </Card>
           )}
 
           {/* M3U Source - hidden for child groups */}
           {!isChildGroup && formData.m3u_group_name && (
             <Card>
-              <CardHeader>
-                <CardTitle>Stream Source</CardTitle>
+              <CardHeader
+                className="cursor-pointer hover:bg-muted/50 rounded-t-lg"
+                onClick={() => setStreamSourceExpanded(!streamSourceExpanded)}
+              >
+                <div className="flex items-center gap-2">
+                  {streamSourceExpanded ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  )}
+                  <CardTitle>Stream Source</CardTitle>
+                </div>
               </CardHeader>
-              <CardContent>
+              {streamSourceExpanded && <CardContent>
                 <div className="flex items-center justify-between p-3 border rounded-md bg-muted/30">
                   <div>
                     <div className="font-medium">{formData.m3u_group_name}</div>
@@ -1821,7 +1943,7 @@ export function EventGroupForm() {
                     </div>
                   </div>
                 </div>
-              </CardContent>
+              </CardContent>}
             </Card>
           )}
 
