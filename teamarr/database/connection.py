@@ -1196,6 +1196,20 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("[MIGRATE] Schema upgraded to version 50 (soccer selection modes)")
         current_version = 50
 
+    # ==========================================================================
+    # v51: Soccer League Hierarchy Fields
+    # ==========================================================================
+    # Adds confederation and region fields to leagues table for hierarchical
+    # soccer league selection UI. Values are populated by INSERT OR REPLACE
+    # in schema.sql on next startup.
+    if current_version < 51:
+        _add_column_if_not_exists(conn, "leagues", "confederation", "TEXT")
+        _add_column_if_not_exists(conn, "leagues", "region", "TEXT")
+
+        conn.execute("UPDATE settings SET schema_version = 51 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 51 (soccer league hierarchy)")
+        current_version = 51
+
 
 # =============================================================================
 # LEGACY MIGRATION HELPER FUNCTIONS
