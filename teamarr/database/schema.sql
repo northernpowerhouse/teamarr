@@ -303,7 +303,7 @@ CREATE TABLE IF NOT EXISTS settings (
     update_auto_detect_branch BOOLEAN DEFAULT 1,         -- Auto-detect branch from version string
 
     -- Schema Version
-    schema_version INTEGER DEFAULT 47
+    schema_version INTEGER DEFAULT 50
 );
 
 -- Insert default settings
@@ -334,6 +334,8 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
 
     -- What to scan
     leagues JSON NOT NULL,                   -- ["nfl", "nba"] - leagues to scan for events
+    soccer_mode TEXT DEFAULT NULL            -- NULL (non-soccer), 'all' (auto-subscribe), 'teams' (follow teams), 'manual' (explicit)
+        CHECK(soccer_mode IS NULL OR soccer_mode IN ('all', 'teams', 'manual')),
 
     -- Template
     template_id INTEGER,

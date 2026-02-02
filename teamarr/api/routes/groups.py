@@ -72,6 +72,7 @@ class GroupCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     display_name: str | None = Field(None, max_length=100)  # Optional display name override
     leagues: list[str] = Field(..., min_length=1)
+    soccer_mode: str | None = None  # 'all', 'teams', 'manual', or None (non-soccer)
     group_mode: str = "single"  # "single" or "multi" - persisted to preserve user intent
     parent_group_id: int | None = None
     template_id: int | None = None
@@ -131,6 +132,7 @@ class GroupUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=100)
     display_name: str | None = Field(None, max_length=100)  # Optional display name override
     leagues: list[str] | None = None
+    soccer_mode: str | None = None  # 'all', 'teams', 'manual', or None (non-soccer)
     group_mode: str | None = None  # "single" or "multi" - persisted to preserve user intent
     parent_group_id: int | None = None
     template_id: int | None = None
@@ -199,6 +201,7 @@ class GroupUpdate(BaseModel):
     clear_custom_regex_event_name: bool = False
     clear_include_teams: bool = False
     clear_exclude_teams: bool = False
+    clear_soccer_mode: bool = False
 
     @field_validator("channel_profile_ids", mode="before")
     @classmethod
@@ -213,6 +216,7 @@ class GroupResponse(BaseModel):
     name: str
     display_name: str | None = None  # Optional display name override for UI
     leagues: list[str]
+    soccer_mode: str | None = None  # 'all', 'teams', 'manual', or None (non-soccer)
     group_mode: str = "single"  # "single" or "multi" - persisted to preserve user intent
     parent_group_id: int | None = None
     template_id: int | None = None
@@ -331,6 +335,7 @@ class BulkGroupSettings(BaseModel):
 
     group_mode: str = "single"  # "single" or "multi"
     leagues: list[str] = Field(..., min_length=1)
+    soccer_mode: str | None = None  # 'all', 'teams', 'manual', or None (non-soccer)
     template_id: int | None = None
     channel_group_id: int | None = None
     channel_group_mode: str = "static"  # "static", "sport", "league"
@@ -386,6 +391,7 @@ class BulkGroupUpdateRequest(BaseModel):
 
     # Updateable fields (all optional - only provided fields are applied)
     leagues: list[str] | None = None
+    soccer_mode: str | None = None  # 'all', 'teams', 'manual', or None (non-soccer)
     template_id: int | None = None
     channel_group_id: int | None = None
     channel_group_mode: str | None = None
@@ -403,6 +409,7 @@ class BulkGroupUpdateRequest(BaseModel):
     clear_channel_profile_ids: bool = False
     clear_stream_profile_id: bool = False
     clear_stream_timezone: bool = False
+    clear_soccer_mode: bool = False
 
     @field_validator("channel_profile_ids", mode="before")
     @classmethod
@@ -650,6 +657,7 @@ def create_group(request: GroupCreate):
             name=request.name,
             leagues=request.leagues,
             display_name=request.display_name,
+            soccer_mode=request.soccer_mode,
             group_mode=request.group_mode,
             parent_group_id=request.parent_group_id,
             template_id=request.template_id,
@@ -816,6 +824,7 @@ def create_groups_bulk(request: BulkGroupCreateRequest):
                     conn,
                     name=item.m3u_group_name,
                     leagues=request.settings.leagues,
+                    soccer_mode=request.settings.soccer_mode,
                     group_mode=request.settings.group_mode,
                     template_id=request.settings.template_id,
                     channel_group_id=request.settings.channel_group_id,
@@ -910,6 +919,7 @@ def update_groups_bulk(request: BulkGroupUpdateRequest):
                     conn,
                     group_id,
                     leagues=request.leagues,
+                    soccer_mode=request.soccer_mode,
                     template_id=request.template_id,
                     channel_group_id=request.channel_group_id,
                     channel_group_mode=request.channel_group_mode,
@@ -925,6 +935,7 @@ def update_groups_bulk(request: BulkGroupUpdateRequest):
                     clear_channel_profile_ids=request.clear_channel_profile_ids,
                     clear_stream_profile_id=request.clear_stream_profile_id,
                     clear_stream_timezone=request.clear_stream_timezone,
+                    clear_soccer_mode=request.clear_soccer_mode,
                 )
 
                 results.append(
@@ -1101,6 +1112,7 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
                 name=request.name,
                 display_name=request.display_name,
                 leagues=request.leagues,
+                soccer_mode=request.soccer_mode,
                 group_mode=request.group_mode,
                 parent_group_id=request.parent_group_id,
                 template_id=request.template_id,
@@ -1167,6 +1179,7 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
                 clear_custom_regex_event_name=request.clear_custom_regex_event_name,
                 clear_include_teams=request.clear_include_teams,
                 clear_exclude_teams=request.clear_exclude_teams,
+                clear_soccer_mode=request.clear_soccer_mode,
             )
         except ValueError as e:
             raise HTTPException(

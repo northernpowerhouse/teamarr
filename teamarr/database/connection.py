@@ -3,6 +3,7 @@
 Simple SQLite connection handling with schema initialization.
 """
 
+import json
 import logging
 import sqlite3
 from collections.abc import Generator
@@ -1125,6 +1126,75 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE settings SET schema_version = 49 WHERE id = 1")
         logger.info("[MIGRATE] Schema upgraded to version 49 (combat sports custom regex)")
         current_version = 49
+
+    # ==========================================================================
+    # v50: Soccer Selection Modes
+    # ==========================================================================
+    # Adds soccer_mode column for granular soccer league selection:
+    # - 'all': Subscribe to all soccer leagues, auto-include new ones
+    # - 'teams': Follow selected teams across their competitions
+    # - 'manual': Explicit league selection (preserves trimmed selections)
+    # - NULL: Non-soccer groups
+    #
+    # Migration logic:
+    # - Groups with ALL available soccer leagues -> 'all'
+    # - Groups with a SUBSET of soccer leagues -> 'manual' (preserve user's work)
+    if current_version < 50:
+        _add_column_if_not_exists(conn, "event_epg_groups", "soccer_mode", "TEXT")
+
+        # Get all available soccer leagues from the leagues table
+        # Wrap in try-except for minimal test databases that may not have leagues table
+        all_soccer_leagues: set[str] = set()
+        try:
+            cursor = conn.execute(
+                "SELECT league_code FROM leagues WHERE sport = 'soccer' AND enabled = 1"
+            )
+            all_soccer_leagues = {row[0] for row in cursor.fetchall()}
+        except sqlite3.OperationalError:
+            # Table doesn't exist or missing columns - skip migration logic
+            pass
+
+        total_soccer_count = len(all_soccer_leagues)
+
+        if total_soccer_count > 0:
+            # Migrate existing groups that contain soccer leagues
+            cursor = conn.execute(
+                "SELECT id, leagues FROM event_epg_groups WHERE leagues IS NOT NULL"
+            )
+            for row in cursor.fetchall():
+                group_id = row[0]
+                try:
+                    leagues_json = row[1]
+                    if not leagues_json:
+                        continue
+                    group_leagues = set(json.loads(leagues_json))
+
+                    # Find soccer leagues in this group
+                    group_soccer = group_leagues & all_soccer_leagues
+
+                    if not group_soccer:
+                        # No soccer leagues in this group - leave soccer_mode as NULL
+                        continue
+
+                    if group_soccer == all_soccer_leagues:
+                        # Has ALL soccer leagues -> 'all' mode
+                        conn.execute(
+                            "UPDATE event_epg_groups SET soccer_mode = 'all' WHERE id = ?",
+                            (group_id,),
+                        )
+                    else:
+                        # Has SUBSET of soccer leagues -> 'manual' mode (preserve their selection)
+                        conn.execute(
+                            "UPDATE event_epg_groups SET soccer_mode = 'manual' WHERE id = ?",
+                            (group_id,),
+                        )
+                except (json.JSONDecodeError, TypeError):
+                    # Skip groups with invalid JSON
+                    continue
+
+        conn.execute("UPDATE settings SET schema_version = 50 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 50 (soccer selection modes)")
+        current_version = 50
 
 
 # =============================================================================

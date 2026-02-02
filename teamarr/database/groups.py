@@ -316,6 +316,7 @@ def create_group(
     name: str,
     leagues: list[str],
     display_name: str | None = None,
+    soccer_mode: str | None = None,
     group_mode: str = "single",
     template_id: int | None = None,
     channel_start_number: int | None = None,
@@ -397,11 +398,11 @@ def create_group(
 
     cursor = conn.execute(
         """INSERT INTO event_epg_groups (
-            name, display_name, leagues, group_mode, template_id, channel_start_number,
-            channel_group_id, channel_group_mode, channel_profile_ids, stream_profile_id,
-            stream_timezone, duplicate_event_handling, channel_assignment_mode, sort_order,
-            total_stream_count, parent_group_id, m3u_group_id, m3u_group_name,
-            m3u_account_id, m3u_account_name,
+            name, display_name, leagues, soccer_mode, group_mode, template_id,
+            channel_start_number, channel_group_id, channel_group_mode, channel_profile_ids,
+            stream_profile_id, stream_timezone, duplicate_event_handling,
+            channel_assignment_mode, sort_order, total_stream_count, parent_group_id,
+            m3u_group_id, m3u_group_name, m3u_account_id, m3u_account_name,
             stream_include_regex, stream_include_regex_enabled,
             stream_exclude_regex, stream_exclude_regex_enabled,
             custom_regex_teams, custom_regex_teams_enabled,
@@ -413,11 +414,12 @@ def create_group(
             skip_builtin_filter,
             include_teams, exclude_teams, team_filter_mode,
             channel_sort_order, overlap_handling, enabled
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",  # noqa: E501
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",  # noqa: E501
         (
             name,
             display_name,
             json.dumps(leagues),
+            soccer_mode,
             group_mode,
             template_id,
             channel_start_number,
@@ -476,6 +478,7 @@ def update_group(
     name: str | None = None,
     display_name: str | None = None,
     leagues: list[str] | None = None,
+    soccer_mode: str | None = None,
     group_mode: str | None = None,
     template_id: int | None = None,
     channel_start_number: int | None = None,
@@ -543,6 +546,7 @@ def update_group(
     clear_custom_regex_event_name: bool = False,
     clear_include_teams: bool = False,
     clear_exclude_teams: bool = False,
+    clear_soccer_mode: bool = False,
 ) -> bool:
     """Update an event EPG group.
 
@@ -589,6 +593,12 @@ def update_group(
     if leagues is not None:
         updates.append("leagues = ?")
         values.append(json.dumps(leagues))
+
+    if soccer_mode is not None:
+        updates.append("soccer_mode = ?")
+        values.append(soccer_mode)
+    elif clear_soccer_mode:
+        updates.append("soccer_mode = NULL")
 
     if group_mode is not None:
         updates.append("group_mode = ?")
