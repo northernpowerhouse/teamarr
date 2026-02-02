@@ -159,8 +159,6 @@ export function EventGroupForm() {
   const [streamProfileExpanded, setStreamProfileExpanded] = useState(false)
   const [regexExpanded, setRegexExpanded] = useState(false)
   const [teamFilterExpanded, setTeamFilterExpanded] = useState(false)
-  const [multiSportExpanded, setMultiSportExpanded] = useState(false)
-  const [streamSourceExpanded, setStreamSourceExpanded] = useState(false)
 
   // Custom Regex event type tab
   type EventTypeTab = "team_vs_team" | "event_card"
@@ -297,7 +295,7 @@ export function EventGroupForm() {
 
 
   // Sync selectedLeague/selectedLeagues to formData.leagues during create
-  // This ensures the UI shows correct mode badge and Multi-Sport Settings appear
+  // This ensures the UI shows correct mode badge and Event Overlap settings appear
   useEffect(() => {
     if (!isEdit && groupMode === "single" && selectedLeague) {
       setFormData(prev => ({ ...prev, leagues: [selectedLeague] }))
@@ -806,6 +804,19 @@ export function EventGroupForm() {
                 </div>
               )}
 
+              {/* M3U Source Info */}
+              {formData.m3u_group_name && (
+                <div className="space-y-2 pt-2 border-t">
+                  <Label>Stream Source</Label>
+                  <div className="text-sm text-muted-foreground">
+                    <span className="font-medium text-foreground">{formData.m3u_group_name}</span>
+                    {formData.m3u_account_name && (
+                      <span> · {formData.m3u_account_name}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center gap-2">
                 <Switch
                   checked={formData.enabled}
@@ -1025,22 +1036,51 @@ export function EventGroupForm() {
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="duplicate_handling">Duplicate Event Handling</Label>
-                <Select
-                  id="duplicate_handling"
-                  value={formData.duplicate_event_handling}
-                  onChange={(e) =>
-                    setFormData({ ...formData, duplicate_event_handling: e.target.value })
-                  }
-                >
-                  <option value="consolidate">Consolidate (merge into one channel)</option>
-                  <option value="separate">Separate (one channel per stream)</option>
-                  <option value="ignore">Ignore (skip duplicates)</option>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  How to handle multiple streams matching the same event
-                </p>
+              {/* Duplicate Handling Section */}
+              <div className="space-y-4 pt-2 border-t">
+                <div className="space-y-1">
+                  <h4 className="font-medium text-sm">Duplicate Handling</h4>
+                  <p className="text-xs text-muted-foreground">
+                    How to handle when multiple streams match the same event
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="duplicate_handling">Within This Group</Label>
+                  <Select
+                    id="duplicate_handling"
+                    value={formData.duplicate_event_handling}
+                    onChange={(e) =>
+                      setFormData({ ...formData, duplicate_event_handling: e.target.value })
+                    }
+                  >
+                    <option value="consolidate">Consolidate (merge into one channel)</option>
+                    <option value="separate">Separate (one channel per stream)</option>
+                    <option value="ignore">Ignore (skip duplicates)</option>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    When multiple streams in this group match the same event
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="overlap_handling">Across Other Groups</Label>
+                  <Select
+                    id="overlap_handling"
+                    value={formData.overlap_handling || "add_stream"}
+                    onChange={(e) =>
+                      setFormData({ ...formData, overlap_handling: e.target.value })
+                    }
+                  >
+                    <option value="add_stream">Add streams to other group's channel</option>
+                    <option value="add_only">Add streams only (don't create channel)</option>
+                    <option value="create_all">Keep separate (create own channel)</option>
+                    <option value="skip">Skip (don't add streams or channel)</option>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    When this group's streams match an event that another group already has
+                  </p>
+                </div>
               </div>
             </CardContent>}
           </Card>}
@@ -1866,84 +1906,6 @@ export function EventGroupForm() {
                   )}
                 </CardContent>
               )}
-            </Card>
-          )}
-
-          {/* Multi-Sport Settings - only show for multi-sport parent groups */}
-          {!isChildGroup && formData.leagues.length > 1 && (
-            <Card>
-              <CardHeader
-                className="cursor-pointer hover:bg-muted/50 rounded-t-lg"
-                onClick={() => setMultiSportExpanded(!multiSportExpanded)}
-              >
-                <div className="flex items-center gap-2">
-                  {multiSportExpanded ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  )}
-                  <div>
-                    <CardTitle>Multi-Sport Settings</CardTitle>
-                    {multiSportExpanded && (
-                      <CardDescription>
-                        Configure how events from multiple leagues are handled
-                      </CardDescription>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              {multiSportExpanded && <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="overlap_handling">Overlap Handling</Label>
-                  <Select
-                    id="overlap_handling"
-                    value={formData.overlap_handling || "add_stream"}
-                    onChange={(e) =>
-                      setFormData({ ...formData, overlap_handling: e.target.value })
-                    }
-                  >
-                    <option value="add_stream">Add Stream (default)</option>
-                    <option value="add_only">Add Only</option>
-                    <option value="create_all">Create All</option>
-                    <option value="skip">Skip</option>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    How to handle events that overlap in time
-                  </p>
-                </div>
-              </CardContent>}
-            </Card>
-          )}
-
-          {/* M3U Source - hidden for child groups */}
-          {!isChildGroup && formData.m3u_group_name && (
-            <Card>
-              <CardHeader
-                className="cursor-pointer hover:bg-muted/50 rounded-t-lg"
-                onClick={() => setStreamSourceExpanded(!streamSourceExpanded)}
-              >
-                <div className="flex items-center gap-2">
-                  {streamSourceExpanded ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  )}
-                  <CardTitle>Stream Source</CardTitle>
-                </div>
-              </CardHeader>
-              {streamSourceExpanded && <CardContent>
-                <div className="flex items-center justify-between p-3 border rounded-md bg-muted/30">
-                  <div>
-                    <div className="font-medium">{formData.m3u_group_name}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {formData.m3u_account_name && (
-                        <span>Account: {formData.m3u_account_name} · </span>
-                      )}
-                      Group ID: {formData.m3u_group_id}
-                    </div>
-                  </div>
-                </div>
-              </CardContent>}
             </Card>
           )}
 
