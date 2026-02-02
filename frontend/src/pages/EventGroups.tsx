@@ -15,8 +15,10 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
-  Plus,
   RotateCcw,
+  Library,
+  Crown,
+  Layers,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -51,15 +53,17 @@ import {
   useToggleGroup,
   usePreviewGroup,
   useReorderGroups,
+  usePromoteGroup,
 } from "@/hooks/useGroups"
 import { useTemplates } from "@/hooks/useTemplates"
-import type { EventGroup, PreviewGroupResponse, TeamFilterEntry } from "@/api/types"
-import { getLeagues, getSports } from "@/api/teams"
-import { TeamPicker } from "@/components/TeamPicker"
+import type { EventGroup, PreviewGroupResponse } from "@/api/types"
+import { getLeagues } from "@/api/teams"
 import { LeaguePicker } from "@/components/LeaguePicker"
 import { ChannelProfileSelector } from "@/components/ChannelProfileSelector"
 import { StreamProfileSelector } from "@/components/StreamProfileSelector"
-import { getUniqueSports, filterLeaguesBySport, getLeagueDisplayName, SPORT_EMOJIS } from "@/lib/utils"
+import { StreamTimezoneSelector } from "@/components/StreamTimezoneSelector"
+import { TemplateAssignmentModal } from "@/components/TemplateAssignmentModal"
+import { getLeagueDisplayName, SPORT_EMOJIS } from "@/lib/utils"
 
 // Fetch Dispatcharr channel groups for name lookup
 async function fetchChannelGroups(): Promise<{ id: number; name: string }[]> {
@@ -67,46 +71,6 @@ async function fetchChannelGroups(): Promise<{ id: number; name: string }[]> {
   if (!response.ok) return []
   const data = await response.json()
   return data.groups || []
-}
-
-// ============================================================================
-// Team Alias Types and API Functions
-// ============================================================================
-
-interface TeamAlias {
-  id: number
-  alias: string
-  league: string
-  provider: string
-  team_id: string
-  team_name: string
-  created_at: string | null
-}
-
-async function fetchAliases(): Promise<TeamAlias[]> {
-  const response = await fetch("/api/v1/aliases")
-  if (!response.ok) return []
-  const data = await response.json()
-  return data.aliases || []
-}
-
-async function createAlias(alias: { alias: string; league: string; team_id: string; team_name: string; provider?: string }): Promise<void> {
-  const response = await fetch("/api/v1/aliases", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...alias, provider: alias.provider || "espn" }),
-  })
-  if (!response.ok) {
-    const data = await response.json()
-    throw new Error(data.detail || "Failed to create alias")
-  }
-}
-
-async function deleteAlias(id: number): Promise<void> {
-  const response = await fetch(`/api/v1/aliases/${id}`, { method: "DELETE" })
-  if (!response.ok) {
-    throw new Error("Failed to delete alias")
-  }
 }
 
 // Helper to get display name (prefer display_name over name)
@@ -118,8 +82,6 @@ export function EventGroups() {
   const { data: templates } = useTemplates()
   const { data: leaguesResponse } = useQuery({ queryKey: ["leagues"], queryFn: () => getLeagues() })
   const cachedLeagues = leaguesResponse?.leagues
-  const { data: sportsResponse } = useQuery({ queryKey: ["sports"], queryFn: getSports, staleTime: 1000 * 60 * 60 })
-  const sportsMap = sportsResponse?.sports
   const { data: channelGroups } = useQuery({ queryKey: ["dispatcharr-channel-groups"], queryFn: fetchChannelGroups })
   const deleteMutation = useDeleteGroup()
   const toggleMutation = useToggleGroup()
@@ -128,6 +90,7 @@ export function EventGroups() {
   const reorderMutation = useReorderGroups()
   const clearCacheMutation = useClearGroupMatchCache()
   const clearCachesBulkMutation = useClearGroupsMatchCache()
+  const promoteMutation = usePromoteGroup()
 
   // Drag-and-drop state for AUTO groups
   const [draggedGroupId, setDraggedGroupId] = useState<number | null>(null)
@@ -182,12 +145,14 @@ export function EventGroups() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
   // Filter state
+  const [nameFilter, setNameFilter] = useState("")
   const [leagueFilter, setLeagueFilter] = useState("")
   const [sportFilter, setSportFilter] = useState("")
   const [templateFilter, setTemplateFilter] = useState<number | "">("")
   const [statusFilter, setStatusFilter] = useState<"" | "enabled" | "disabled">("")
 
   const [deleteConfirm, setDeleteConfirm] = useState<EventGroup | null>(null)
+  const [promoteConfirm, setPromoteConfirm] = useState<EventGroup | null>(null)
   const [showBulkDelete, setShowBulkDelete] = useState(false)
   const [showBulkEdit, setShowBulkEdit] = useState(false)
   // Bulk edit form state - checkboxes control which fields to update
@@ -206,104 +171,23 @@ export function EventGroups() {
   const [bulkEditStreamProfileEnabled, setBulkEditStreamProfileEnabled] = useState(false)
   const [bulkEditStreamProfileId, setBulkEditStreamProfileId] = useState<number | null>(null)
   const [bulkEditUseDefaultStreamProfile, setBulkEditUseDefaultStreamProfile] = useState(true)
+  const [bulkEditStreamTimezoneEnabled, setBulkEditStreamTimezoneEnabled] = useState(false)
+  const [bulkEditStreamTimezone, setBulkEditStreamTimezone] = useState<string | null>(null)
+  const [bulkEditClearStreamTimezone, setBulkEditClearStreamTimezone] = useState(false)
   const [bulkEditSortOrderEnabled, setBulkEditSortOrderEnabled] = useState(false)
   const [bulkEditSortOrder, setBulkEditSortOrder] = useState<string>("time")
   const [bulkEditOverlapHandlingEnabled, setBulkEditOverlapHandlingEnabled] = useState(false)
   const [bulkEditOverlapHandling, setBulkEditOverlapHandling] = useState<string>("add_stream")
+
+  // Template assignment modal for bulk/single selection
+  const [showTemplateAssignment, setShowTemplateAssignment] = useState(false)
+  const [templateAssignmentGroupId, setTemplateAssignmentGroupId] = useState<number | undefined>(undefined)
 
   // Column sorting state
   type SortColumn = "name" | "sport" | "template" | "matched" | "status" | null
   type SortDirection = "asc" | "desc"
   const [sortColumn, setSortColumn] = useState<SortColumn>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
-
-  // Team Aliases state
-  const { data: aliases, refetch: refetchAliases } = useQuery({
-    queryKey: ["aliases"],
-    queryFn: fetchAliases,
-  })
-  const [showAliasModal, setShowAliasModal] = useState(false)
-  const [aliasForm, setAliasForm] = useState({ alias: "", league: "", team_id: "", team_name: "" })
-  const [aliasSport, setAliasSport] = useState("")
-  const [aliasSelectedTeams, setAliasSelectedTeams] = useState<TeamFilterEntry[]>([])
-  const [aliasSubmitting, setAliasSubmitting] = useState(false)
-  const [aliasDeleting, setAliasDeleting] = useState<number | null>(null)
-
-  // Get unique sports from cached leagues (normalized, sorted)
-  const aliasSports = useMemo(() => {
-    if (!cachedLeagues) return []
-    return getUniqueSports(cachedLeagues, sportsMap)
-  }, [cachedLeagues, sportsMap])
-
-  // Filter leagues by selected sport (import_enabled first, then alphabetical)
-  const aliasFilteredLeagues = useMemo(() => {
-    if (!aliasSport || !cachedLeagues) return []
-    return filterLeaguesBySport(cachedLeagues, aliasSport, sportsMap)
-  }, [cachedLeagues, aliasSport, sportsMap])
-
-  // Handle sport change in alias modal
-  const handleAliasSportChange = (sport: string) => {
-    setAliasSport(sport)
-    setAliasForm({ ...aliasForm, league: "", team_id: "", team_name: "" })
-    setAliasSelectedTeams([])
-  }
-
-  // Handle league change in alias modal
-  const handleAliasLeagueChange = (league: string) => {
-    setAliasForm({ ...aliasForm, league, team_id: "", team_name: "" })
-    setAliasSelectedTeams([])
-  }
-
-  // Handle team selection from TeamPicker
-  const handleAliasTeamSelect = (teams: TeamFilterEntry[]) => {
-    setAliasSelectedTeams(teams)
-    const team = teams[0]
-    if (team) {
-      setAliasForm({ ...aliasForm, team_id: team.team_id, team_name: team.name || "" })
-    } else {
-      setAliasForm({ ...aliasForm, team_id: "", team_name: "" })
-    }
-  }
-
-  const handleCreateAlias = async () => {
-    if (!aliasForm.alias.trim() || !aliasForm.league || !aliasForm.team_id) {
-      toast.error("Please fill in all fields")
-      return
-    }
-
-    setAliasSubmitting(true)
-    try {
-      await createAlias({
-        alias: aliasForm.alias.trim().toLowerCase(),
-        league: aliasForm.league,
-        team_id: aliasForm.team_id,
-        team_name: aliasForm.team_name,
-      })
-      toast.success(`Alias "${aliasForm.alias}" created`)
-      setShowAliasModal(false)
-      setAliasForm({ alias: "", league: "", team_id: "", team_name: "" })
-      setAliasSport("")
-      setAliasSelectedTeams([])
-      refetchAliases()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create alias")
-    } finally {
-      setAliasSubmitting(false)
-    }
-  }
-
-  const handleDeleteAlias = async (id: number) => {
-    setAliasDeleting(id)
-    try {
-      await deleteAlias(id)
-      toast.success("Alias deleted")
-      refetchAliases()
-    } catch {
-      toast.error("Failed to delete alias")
-    } finally {
-      setAliasDeleting(null)
-    }
-  }
 
   // Handle column sort
   const handleSort = (column: SortColumn) => {
@@ -364,6 +248,7 @@ export function EventGroups() {
 
     // Filter parents
     const filteredParents = parents.filter((group) => {
+      if (nameFilter && !group.name.toLowerCase().includes(nameFilter.toLowerCase())) return false
       if (leagueFilter && !group.leagues.includes(leagueFilter)) return false
       if (sportFilter) {
         const groupSports = group.leagues.map(l => leagueSports[l]).filter(Boolean)
@@ -422,7 +307,7 @@ export function EventGroups() {
       filteredGroups: flat,
       childrenMap,
     }
-  }, [data?.groups, leagueFilter, sportFilter, templateFilter, statusFilter, leagueSports])
+  }, [data?.groups, nameFilter, leagueFilter, sportFilter, templateFilter, statusFilter, leagueSports])
 
   // Apply sorting to MANUAL groups only (AUTO groups use drag-and-drop order)
   const sortedGroups = useMemo(() => {
@@ -676,6 +561,13 @@ export function EventGroups() {
     return modes.size > 1
   }, [data?.groups, selectedIds])
 
+  // Check if all selected groups are multi-league (for template assignment vs single template)
+  const allMultiMode = useMemo(() => {
+    if (!data?.groups || selectedIds.size === 0) return false
+    const selectedGroups = data.groups.filter(g => selectedIds.has(g.id))
+    return selectedGroups.every(g => g.group_mode === 'multi')
+  }, [data?.groups, selectedIds])
+
   // Reset bulk edit form state
   const resetBulkEditForm = () => {
     setBulkEditLeaguesEnabled(false)
@@ -690,6 +582,9 @@ export function EventGroups() {
     setBulkEditProfilesEnabled(false)
     setBulkEditProfileIds([])
     setBulkEditUseDefaultProfiles(true)
+    setBulkEditStreamTimezoneEnabled(false)
+    setBulkEditStreamTimezone(null)
+    setBulkEditClearStreamTimezone(false)
     setBulkEditSortOrderEnabled(false)
     setBulkEditSortOrder("time")
     setBulkEditOverlapHandlingEnabled(false)
@@ -708,12 +603,14 @@ export function EventGroups() {
       channel_group_mode?: 'static' | 'sport' | 'league'
       channel_profile_ids?: (number | string)[]
       stream_profile_id?: number | null
+      stream_timezone?: string | null
       channel_sort_order?: string
       overlap_handling?: string
       clear_template?: boolean
       clear_channel_group_id?: boolean
       clear_channel_profile_ids?: boolean
       clear_stream_profile_id?: boolean
+      clear_stream_timezone?: boolean
     } = { group_ids: ids }
 
     if (bulkEditLeaguesEnabled && bulkEditLeagues.length > 0) {
@@ -754,6 +651,15 @@ export function EventGroups() {
         request.stream_profile_id = bulkEditStreamProfileId
       }
     }
+    if (bulkEditStreamTimezoneEnabled) {
+      if (bulkEditClearStreamTimezone) {
+        // Reset to auto-detect from stream
+        request.clear_stream_timezone = true
+      } else if (bulkEditStreamTimezone) {
+        // Specific timezone selected
+        request.stream_timezone = bulkEditStreamTimezone
+      }
+    }
     if (bulkEditSortOrderEnabled) {
       request.channel_sort_order = bulkEditSortOrder
     }
@@ -777,13 +683,14 @@ export function EventGroups() {
   }
 
   const clearFilters = () => {
+    setNameFilter("")
     setLeagueFilter("")
     setSportFilter("")
     setTemplateFilter("")
     setStatusFilter("")
   }
 
-  const hasActiveFilters = leagueFilter || sportFilter || templateFilter !== "" || statusFilter !== ""
+  const hasActiveFilters = nameFilter || leagueFilter || sportFilter || templateFilter !== "" || statusFilter !== ""
 
   // Drag-and-drop handlers for AUTO groups
   const handleDragStart = (e: React.DragEvent, groupId: number) => {
@@ -862,10 +769,16 @@ export function EventGroups() {
             Configure event-based EPG from M3U stream groups
           </p>
         </div>
-        <Button size="sm" onClick={() => navigate("/event-groups/import")}>
-          <Download className="h-4 w-4 mr-1" />
-          Import
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => navigate("/detection-library")}>
+            <Library className="h-4 w-4 mr-1" />
+            Detection Library
+          </Button>
+          <Button size="sm" onClick={() => navigate("/event-groups/import")}>
+            <Download className="h-4 w-4 mr-1" />
+            Import
+          </Button>
+        </div>
       </div>
 
       {/* Stats Tiles - V1 Style: Grid with 4 equal columns filling width */}
@@ -1031,6 +944,38 @@ export function EventGroups() {
                   variant="outline"
                   size="sm"
                   onClick={() => {
+                    // For single selection, open template assignment for that group
+                    // For multi-selection, open for first group (assignments will apply to pattern)
+                    const firstGroupId = Array.from(selectedIds)[0]
+                    const firstGroup = data?.groups?.find(g => g.id === firstGroupId)
+                    if (firstGroup && firstGroup.group_mode === 'multi') {
+                      setTemplateAssignmentGroupId(firstGroupId)
+                      setShowTemplateAssignment(true)
+                    }
+                  }}
+                  disabled={(() => {
+                    // Only enable for multi-league groups
+                    if (!data?.groups) return true
+                    const selectedGroups = data.groups.filter(g => selectedIds.has(g.id))
+                    // Enable only if all selected groups are multi-league
+                    return selectedGroups.length === 0 || selectedGroups.some(g => g.group_mode !== 'multi')
+                  })()}
+                  title={(() => {
+                    if (!data?.groups) return "Loading..."
+                    const selectedGroups = data.groups.filter(g => selectedIds.has(g.id))
+                    if (selectedGroups.some(g => g.group_mode !== 'multi')) {
+                      return "Template assignments only available for multi-league groups"
+                    }
+                    return selectedIds.size === 1 ? "Manage template assignments" : "Manage templates for first selected group"
+                  })()}
+                >
+                  <Layers className="h-3 w-3 mr-1" />
+                  Templates
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
                     if (selectedIds.size === 1) {
                       const groupId = Array.from(selectedIds)[0]
                       navigate(`/event-groups/${groupId}`)
@@ -1060,34 +1005,32 @@ export function EventGroups() {
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : sortedGroups.length === 0 ? (
+          ) : data?.groups.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              {data?.groups.length === 0
-                ? "No event groups configured. Create one to get started."
-                : "No groups match the current filters."}
+              No event groups configured. Create one to get started.
             </div>
           ) : (
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-6"></TableHead>
-                  <TableHead className="w-8">
+                  <TableHead className="w-5"></TableHead>
+                  <TableHead className="w-10">
                     <Checkbox
                       checked={selectedIds.size === sortedGroups.length && sortedGroups.length > 0}
                       onCheckedChange={toggleSelectAll}
                     />
                   </TableHead>
                   <TableHead
-                    className="cursor-pointer hover:bg-muted/50"
+                    className="w-[30%] cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort("name")}
                   >
                     <div className="flex items-center">
                       Name <SortIcon column="name" />
                     </div>
                   </TableHead>
-                  <TableHead className="w-[70px] text-center">League</TableHead>
+                  <TableHead className="w-20 text-center">League</TableHead>
                   <TableHead
-                    className="w-[50px] text-center cursor-pointer hover:bg-muted/50"
+                    className="w-12 text-center cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort("sport")}
                   >
                     <div className="flex items-center justify-center">
@@ -1095,17 +1038,17 @@ export function EventGroups() {
                     </div>
                   </TableHead>
                   <TableHead
-                    className="w-[100px] cursor-pointer hover:bg-muted/50"
+                    className="w-20 cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort("template")}
                   >
                     <div className="flex items-center">
                       Template <SortIcon column="template" />
                     </div>
                   </TableHead>
-                  <TableHead className="text-center w-[90px]">Ch Start</TableHead>
-                  <TableHead className="text-center w-[140px]">Ch Group</TableHead>
+                  <TableHead className="text-center w-16">Ch Start</TableHead>
+                  <TableHead className="text-center w-20">Ch Group</TableHead>
                   <TableHead
-                    className="w-[75px] text-center cursor-pointer hover:bg-muted/50"
+                    className="w-24 text-center cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort("matched")}
                   >
                     <div className="flex items-center justify-center">
@@ -1113,20 +1056,38 @@ export function EventGroups() {
                     </div>
                   </TableHead>
                   <TableHead
-                    className="w-[50px] cursor-pointer hover:bg-muted/50"
+                    className="w-14 cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort("status")}
                   >
                     <div className="flex items-center">
                       Status <SortIcon column="status" />
                     </div>
                   </TableHead>
-                  <TableHead className="w-[70px] text-right">Actions</TableHead>
+                  <TableHead className="w-28 text-right">Actions</TableHead>
                 </TableRow>
                 {/* Filter row - styled like V1 */}
                 <TableRow className="border-b-2 border-border">
                   <TableHead className="py-0.5 pb-1.5"></TableHead>
                   <TableHead className="py-0.5 pb-1.5"></TableHead>
-                  <TableHead className="py-0.5 pb-1.5"></TableHead>
+                  <TableHead className="py-0.5 pb-1.5">
+                    <div className="relative">
+                      <Input
+                        type="text"
+                        placeholder="Filter..."
+                        value={nameFilter}
+                        onChange={(e) => setNameFilter(e.target.value)}
+                        className="h-[18px] text-[0.65rem] italic px-1 pr-4 rounded-sm"
+                      />
+                      {nameFilter && (
+                        <button
+                          onClick={() => setNameFilter("")}
+                          className="absolute right-0.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      )}
+                    </div>
+                  </TableHead>
                   <TableHead className="py-0.5 pb-1.5">
                     <FilterSelect
                       value={leagueFilter}
@@ -1191,6 +1152,14 @@ export function EventGroups() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {sortedGroups.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                      No groups match the current filters.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  <>
                 {/* AUTO Section Header - V1 style */}
                 {autoGroups.length > 0 && (
                   <TableRow className="bg-secondary/50 hover:bg-secondary/50 border-b-2 border-emerald-500/40">
@@ -1504,6 +1473,17 @@ export function EventGroups() {
                             <RotateCcw className="h-4 w-4" />
                           )}
                         </Button>
+                        {isChild && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => setPromoteConfirm(group)}
+                            title="Promote to parent"
+                          >
+                            <Crown className="h-4 w-4 text-amber-500" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
@@ -1528,172 +1508,12 @@ export function EventGroups() {
                     </React.Fragment>
                   )
                 })}
+                  </>
+                )}
               </TableBody>
             </Table>
           )}
       </div>
-
-      {/* Team Aliases Section - Compact like V1 */}
-      <div className="mt-4">
-        <div className="flex items-center gap-2 mb-1.5">
-          <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Team Aliases</h3>
-          <span className="text-[0.65rem] text-muted-foreground/70">({aliases?.length ?? 0})</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-5 px-1.5 text-xs ml-auto"
-            onClick={() => {
-              setAliasForm({ alias: "", league: "", team_id: "", team_name: "" })
-              setAliasSelectedTeams([])
-              setShowAliasModal(true)
-            }}
-          >
-            <Plus className="h-3 w-3 mr-0.5" />
-            Add
-          </Button>
-        </div>
-
-        {aliases && aliases.length > 0 ? (
-          <div className="border rounded overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="h-6 bg-muted/30">
-                  <TableHead className="text-[0.65rem] py-1 font-medium">Alias</TableHead>
-                  <TableHead className="text-[0.65rem] py-1 font-medium">League</TableHead>
-                  <TableHead className="text-[0.65rem] py-1 font-medium">Maps To</TableHead>
-                  <TableHead className="text-[0.65rem] py-1 w-8"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {aliases.map((alias) => (
-                  <TableRow key={alias.id} className="h-7">
-                    <TableCell className="py-1 font-mono text-xs">{alias.alias}</TableCell>
-                    <TableCell className="py-1">
-                      <Badge variant="outline" className="text-[0.6rem] px-1 py-0 h-4">
-                        {alias.league.toUpperCase()}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="py-1 text-xs">{alias.team_name}</TableCell>
-                    <TableCell className="py-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5"
-                        onClick={() => handleDeleteAlias(alias.id)}
-                        disabled={aliasDeleting === alias.id}
-                        title="Delete"
-                      >
-                        {aliasDeleting === alias.id ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                        )}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground/70 italic">
-            No aliases defined. Aliases help match stream names to teams.
-          </p>
-        )}
-      </div>
-
-      {/* Add Alias Modal */}
-      <Dialog open={showAliasModal} onOpenChange={(open) => {
-        setShowAliasModal(open)
-        if (!open) {
-          setAliasForm({ alias: "", league: "", team_id: "", team_name: "" })
-          setAliasSport("")
-          setAliasSelectedTeams([])
-        }
-      }}>
-        <DialogContent onClose={() => setShowAliasModal(false)}>
-          <DialogHeader>
-            <DialogTitle>Add Team Alias</DialogTitle>
-            <DialogDescription>
-              Create a new alias to map stream names to teams.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Alias Text</label>
-              <Input
-                value={aliasForm.alias}
-                onChange={(e) => setAliasForm({ ...aliasForm, alias: e.target.value })}
-                placeholder="e.g., spurs, man u"
-              />
-              <p className="text-xs text-muted-foreground">
-                The text that appears in stream names (case-insensitive)
-              </p>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Sport</label>
-              <Select
-                value={aliasSport}
-                onChange={(e) => handleAliasSportChange(e.target.value)}
-              >
-                <option value="">Select sport...</option>
-                {aliasSports.map((sport) => (
-                  <option key={sport} value={sport}>
-                    {sport}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">League</label>
-              {!aliasSport ? (
-                <p className="text-sm text-muted-foreground py-2">Select a sport first</p>
-              ) : (
-                <Select
-                  value={aliasForm.league}
-                  onChange={(e) => handleAliasLeagueChange(e.target.value)}
-                >
-                  <option value="">Select league...</option>
-                  {aliasFilteredLeagues.map((league) => (
-                    <option key={league.slug} value={league.slug}>
-                      {getLeagueDisplayName(league, true)}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Team</label>
-              {!aliasForm.league ? (
-                <p className="text-sm text-muted-foreground py-2">Select a league first</p>
-              ) : (
-                <TeamPicker
-                  leagues={[aliasForm.league]}
-                  selectedTeams={aliasSelectedTeams}
-                  onSelectionChange={handleAliasTeamSelect}
-                  placeholder="Search teams..."
-                  singleSelect
-                />
-              )}
-              <p className="text-xs text-muted-foreground">
-                The actual team this alias should map to
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAliasModal(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateAlias}
-              disabled={aliasSubmitting || !aliasForm.alias.trim() || !aliasForm.team_id}
-            >
-              {aliasSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Save Alias
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog
@@ -1722,6 +1542,72 @@ export function EventGroups() {
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               )}
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Promote to Parent Confirmation Dialog */}
+      <Dialog
+        open={promoteConfirm !== null}
+        onOpenChange={(open) => !open && setPromoteConfirm(null)}
+      >
+        <DialogContent onClose={() => setPromoteConfirm(null)}>
+          <DialogHeader>
+            <DialogTitle>Promote to Parent</DialogTitle>
+            <DialogDescription className="space-y-2">
+              <p>
+                Promote "{promoteConfirm ? getDisplayName(promoteConfirm) : ''}" to become the parent group?
+              </p>
+              {promoteConfirm && (() => {
+                const currentParent = parentGroups.find(p => p.id === promoteConfirm.parent_group_id)
+                const siblings = data?.groups.filter(g =>
+                  g.parent_group_id === promoteConfirm.parent_group_id && g.id !== promoteConfirm.id
+                ) || []
+                return (
+                  <div className="mt-2 p-2 bg-muted rounded text-sm">
+                    <p className="font-medium mb-1">This will reorganize the hierarchy:</p>
+                    <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                      {currentParent && (
+                        <li>"{getDisplayName(currentParent)}" will become a child</li>
+                      )}
+                      {siblings.map(s => (
+                        <li key={s.id}>"{getDisplayName(s)}" will become a child</li>
+                      ))}
+                      <li>"{getDisplayName(promoteConfirm)}" will become the parent</li>
+                    </ul>
+                    <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                      Channels will be reassigned on next EPG generation.
+                    </p>
+                  </div>
+                )
+              })()}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPromoteConfirm(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (promoteConfirm) {
+                  promoteMutation.mutate(promoteConfirm.id, {
+                    onSuccess: (result) => {
+                      toast.success(result.message)
+                      setPromoteConfirm(null)
+                    },
+                    onError: (error) => {
+                      toast.error(error instanceof Error ? error.message : "Failed to promote group")
+                    },
+                  })
+                }
+              }}
+              disabled={promoteMutation.isPending}
+            >
+              {promoteMutation.isPending && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
+              Promote
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1818,46 +1704,72 @@ export function EventGroups() {
 
             {/* Template */}
             <div className="space-y-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <Checkbox
-                  checked={bulkEditTemplateEnabled}
-                  onCheckedChange={(checked) => {
-                    setBulkEditTemplateEnabled(!!checked)
-                    if (!checked) {
-                      setBulkEditTemplateId(null)
-                      setBulkEditClearTemplate(false)
-                    }
-                  }}
-                />
-                <span className="text-sm font-medium">Template</span>
-              </label>
-              {bulkEditTemplateEnabled && (
+              {allMultiMode ? (
+                // Multi-league groups: use template assignments
                 <>
-                  <Select
-                    value={bulkEditClearTemplate ? "" : (bulkEditTemplateId?.toString() ?? "")}
-                    onChange={(e) => {
-                      setBulkEditTemplateId(e.target.value ? parseInt(e.target.value) : null)
-                      setBulkEditClearTemplate(false)
+                  <span className="text-sm font-medium">Template Assignments</span>
+                  <p className="text-xs text-muted-foreground">
+                    Multi-league groups use template assignments for sport/league-specific templates.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      // Open template assignment modal for first selected group
+                      const firstGroupId = Array.from(selectedIds)[0]
+                      setTemplateAssignmentGroupId(firstGroupId)
+                      setShowTemplateAssignment(true)
                     }}
-                    disabled={bulkEditClearTemplate}
                   >
-                    <option value="">Select template...</option>
-                    {eventTemplates.map((template) => (
-                      <option key={template.id} value={template.id.toString()}>
-                        {template.name}
-                      </option>
-                    ))}
-                  </Select>
+                    <Layers className="h-3 w-3 mr-1" />
+                    Manage Templates...
+                  </Button>
+                </>
+              ) : (
+                // Single-league groups: use single template dropdown
+                <>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
-                      checked={bulkEditClearTemplate}
+                      checked={bulkEditTemplateEnabled}
                       onCheckedChange={(checked) => {
-                        setBulkEditClearTemplate(!!checked)
-                        if (checked) setBulkEditTemplateId(null)
+                        setBulkEditTemplateEnabled(!!checked)
+                        if (!checked) {
+                          setBulkEditTemplateId(null)
+                          setBulkEditClearTemplate(false)
+                        }
                       }}
                     />
-                    <span className="text-xs text-muted-foreground">Clear (unassign template)</span>
+                    <span className="text-sm font-medium">Template</span>
                   </label>
+                  {bulkEditTemplateEnabled && (
+                    <>
+                      <Select
+                        value={bulkEditClearTemplate ? "" : (bulkEditTemplateId?.toString() ?? "")}
+                        onChange={(e) => {
+                          setBulkEditTemplateId(e.target.value ? parseInt(e.target.value) : null)
+                          setBulkEditClearTemplate(false)
+                        }}
+                        disabled={bulkEditClearTemplate}
+                      >
+                        <option value="">Select template...</option>
+                        {eventTemplates.map((template) => (
+                          <option key={template.id} value={template.id.toString()}>
+                            {template.name}
+                          </option>
+                        ))}
+                      </Select>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={bulkEditClearTemplate}
+                          onCheckedChange={(checked) => {
+                            setBulkEditClearTemplate(!!checked)
+                            if (checked) setBulkEditTemplateId(null)
+                          }}
+                        />
+                        <span className="text-xs text-muted-foreground">Clear (unassign template)</span>
+                      </label>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -2055,6 +1967,43 @@ export function EventGroups() {
               )}
             </div>
 
+            {/* Stream Timezone */}
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={bulkEditStreamTimezoneEnabled}
+                  onCheckedChange={(checked) => setBulkEditStreamTimezoneEnabled(!!checked)}
+                />
+                <span className="text-sm font-medium">Stream Timezone</span>
+              </label>
+              {bulkEditStreamTimezoneEnabled && (
+                <div className="space-y-2 pl-6">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={bulkEditClearStreamTimezone}
+                      onCheckedChange={(checked) => {
+                        setBulkEditClearStreamTimezone(!!checked)
+                        if (checked) {
+                          setBulkEditStreamTimezone(null)
+                        }
+                      }}
+                    />
+                    <span className="text-sm font-normal">
+                      Auto-detect from stream
+                    </span>
+                  </label>
+                  <StreamTimezoneSelector
+                    value={bulkEditStreamTimezone}
+                    onChange={setBulkEditStreamTimezone}
+                    disabled={bulkEditClearStreamTimezone}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Timezone used in stream names for date matching
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* Channel Sort Order (multi-league only) */}
             <div className="space-y-2">
               <label className="flex items-center gap-2 cursor-pointer">
@@ -2106,7 +2055,7 @@ export function EventGroups() {
             </Button>
             <Button
               onClick={handleBulkEdit}
-              disabled={bulkUpdateMutation.isPending || (!bulkEditLeaguesEnabled && !bulkEditTemplateEnabled && !bulkEditChannelGroupEnabled && !bulkEditProfilesEnabled && !bulkEditSortOrderEnabled && !bulkEditOverlapHandlingEnabled)}
+              disabled={bulkUpdateMutation.isPending || (!bulkEditLeaguesEnabled && !bulkEditTemplateEnabled && !bulkEditChannelGroupEnabled && !bulkEditProfilesEnabled && !bulkEditStreamProfileEnabled && !bulkEditStreamTimezoneEnabled && !bulkEditSortOrderEnabled && !bulkEditOverlapHandlingEnabled)}
             >
               {bulkUpdateMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Apply to {selectedIds.size} groups
@@ -2266,6 +2215,20 @@ export function EventGroups() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Template Assignment Modal for bulk/single selection */}
+      {templateAssignmentGroupId && (
+        <TemplateAssignmentModal
+          open={showTemplateAssignment}
+          onOpenChange={(open) => {
+            setShowTemplateAssignment(open)
+            if (!open) setTemplateAssignmentGroupId(undefined)
+          }}
+          groupId={templateAssignmentGroupId}
+          groupName={data?.groups?.find(g => g.id === templateAssignmentGroupId)?.name || "Selected Group"}
+          groupLeagues={data?.groups?.find(g => g.id === templateAssignmentGroupId)?.leagues || []}
+        />
+      )}
     </div>
   )
 }

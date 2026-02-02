@@ -21,6 +21,7 @@ export interface EventGroup {
   channel_group_mode: string  // Dynamic channel group assignment mode
   channel_profile_ids: (number | string)[] | null  // null = use global default, can include "{sport}", "{league}"
   stream_profile_id: number | null  // Stream profile (overrides global default)
+  stream_timezone: string | null  // IANA timezone for interpreting stream dates (e.g., 'America/New_York')
   duplicate_event_handling: string
   channel_assignment_mode: string
   sort_order: number
@@ -42,6 +43,11 @@ export interface EventGroup {
   custom_regex_time_enabled: boolean
   custom_regex_league: string | null
   custom_regex_league_enabled: boolean
+  // EVENT_CARD specific regex (UFC, Boxing, MMA)
+  custom_regex_fighters: string | null
+  custom_regex_fighters_enabled: boolean
+  custom_regex_event_name: string | null
+  custom_regex_event_name_enabled: boolean
   skip_builtin_filter: boolean
   // Team filtering (canonical team selection, inherited by children)
   include_teams: TeamFilterEntry[] | null
@@ -85,6 +91,7 @@ export interface EventGroupCreate {
   channel_group_mode?: string  // Dynamic channel group assignment mode
   channel_profile_ids?: (number | string)[] | null  // null = use global default, can include "{sport}", "{league}"
   stream_profile_id?: number | null  // Stream profile (overrides global default)
+  stream_timezone?: string | null  // IANA timezone for interpreting stream dates
   duplicate_event_handling?: string
   channel_assignment_mode?: string
   sort_order?: number
@@ -106,6 +113,11 @@ export interface EventGroupCreate {
   custom_regex_time_enabled?: boolean
   custom_regex_league?: string | null
   custom_regex_league_enabled?: boolean
+  // EVENT_CARD specific regex (UFC, Boxing, MMA)
+  custom_regex_fighters?: string | null
+  custom_regex_fighters_enabled?: boolean
+  custom_regex_event_name?: string | null
+  custom_regex_event_name_enabled?: boolean
   skip_builtin_filter?: boolean
   // Team filtering (canonical team selection, inherited by children)
   include_teams?: TeamFilterEntry[] | null
@@ -115,6 +127,12 @@ export interface EventGroupCreate {
   channel_sort_order?: string
   overlap_handling?: string
   enabled?: boolean
+  // Template assignments for multi-league groups (created with the group)
+  template_assignments?: Array<{
+    template_id: number
+    sports?: string[] | null
+    leagues?: string[] | null
+  }>
 }
 
 export interface EventGroupUpdate extends Partial<EventGroupCreate> {
@@ -125,6 +143,7 @@ export interface EventGroupUpdate extends Partial<EventGroupCreate> {
   clear_channel_group_id?: boolean
   clear_channel_profile_ids?: boolean
   clear_stream_profile_id?: boolean
+  clear_stream_timezone?: boolean
   clear_m3u_group_id?: boolean
   clear_m3u_group_name?: boolean
   clear_m3u_account_id?: boolean
@@ -152,6 +171,7 @@ export interface BulkGroupUpdateRequest {
   channel_group_mode?: string
   channel_profile_ids?: (number | string)[] | null  // null = use global default, can include "{sport}", "{league}"
   stream_profile_id?: number | null  // Stream profile (overrides global default)
+  stream_timezone?: string | null  // IANA timezone for interpreting stream dates
   channel_sort_order?: string
   overlap_handling?: string
   clear_template?: boolean

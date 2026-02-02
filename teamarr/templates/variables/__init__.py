@@ -6,6 +6,7 @@ Each variable file defines extractors decorated with @register_variable.
 
 from teamarr.templates.variables import (  # noqa: F401 - side effect imports
     broadcast,
+    combat,
     conference,
     home_away,
     identity,

@@ -249,6 +249,11 @@ CREATE TABLE IF NOT EXISTS settings (
     scheduler_enabled BOOLEAN DEFAULT 1,
     scheduler_interval_minutes INTEGER DEFAULT 15,
 
+    -- Scheduled Channel Reset (for Jellyfin logo cache issues)
+    -- When enabled, purges all Teamarr channels from Dispatcharr on the specified schedule
+    channel_reset_enabled BOOLEAN DEFAULT 0,
+    channel_reset_cron TEXT DEFAULT NULL,
+
     -- Stream Filtering (global defaults for event groups)
     -- Require event pattern: only match streams that look like events (have vs/@/at/date patterns)
     stream_filter_require_event_pattern BOOLEAN DEFAULT 1,
@@ -298,7 +303,7 @@ CREATE TABLE IF NOT EXISTS settings (
     update_auto_detect_branch BOOLEAN DEFAULT 1,         -- Auto-detect branch from version string
 
     -- Schema Version
-    schema_version INTEGER DEFAULT 46
+    schema_version INTEGER DEFAULT 47
 );
 
 -- Insert default settings
@@ -339,6 +344,7 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
     channel_group_mode TEXT DEFAULT 'static', -- 'static' or pattern like '{sport}', '{league}', '{sport} | {league}'
     channel_profile_ids TEXT,                -- JSON array: profile IDs and/or patterns like "{sport}", "{league}"
     stream_profile_id INTEGER,               -- Stream profile for transcoding/proxy (overrides global default)
+    stream_timezone TEXT,                    -- Timezone for interpreting dates/times in stream names (e.g., 'America/New_York')
 
     -- Duplicate Event Handling (uses global lifecycle settings)
     duplicate_event_handling TEXT DEFAULT 'consolidate'
@@ -377,6 +383,17 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
     custom_regex_time_enabled BOOLEAN DEFAULT 0,
     custom_regex_league TEXT,                -- Custom pattern to extract league hint
     custom_regex_league_enabled BOOLEAN DEFAULT 0,
+    -- EVENT_CARD specific regex (UFC, Boxing, MMA)
+    custom_regex_fighters TEXT,              -- Custom pattern to extract fighter names (?P<fighter1>...) (?P<fighter2>...)
+    custom_regex_fighters_enabled BOOLEAN DEFAULT 0,
+    custom_regex_event_name TEXT,            -- Custom pattern to extract event name (?P<event_name>...)
+    custom_regex_event_name_enabled BOOLEAN DEFAULT 0,
+
+    -- Custom Regex organized by event type (replaces flat custom_regex_* columns)
+    -- Structure: {"team_vs_team": {"teams": {"pattern": "...", "enabled": true}, ...},
+    --             "event_card": {"fighters": {...}, "event_name": {...}, ...}}
+    custom_regex_config JSON,
+
     skip_builtin_filter BOOLEAN DEFAULT 0,   -- Skip built-in stream filtering (placeholder, unsupported sports, event patterns)
 
     -- Team Filtering (canonical team selection, inherited by children)
@@ -424,6 +441,26 @@ CREATE INDEX IF NOT EXISTS idx_event_epg_groups_name ON event_epg_groups(name);
 -- Allow same group name from different M3U accounts (e.g., "US - NFL" from Provider A and B)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_event_epg_groups_name_account
     ON event_epg_groups(name, m3u_account_id);
+
+
+-- =============================================================================
+-- GROUP_TEMPLATES TABLE
+-- Multi-template assignment per group with sport/league specificity
+-- Resolution order: leagues match > sports match > default (both NULL)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS group_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    template_id INTEGER NOT NULL,
+    sports JSON,                              -- NULL = any, or ["mma", "boxing"]
+    leagues JSON,                             -- NULL = any, or ["ufc", "bellator"]
+
+    FOREIGN KEY (group_id) REFERENCES event_epg_groups(id) ON DELETE CASCADE,
+    FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_templates_group_id ON group_templates(group_id);
 
 
 -- =============================================================================
@@ -722,6 +759,7 @@ INSERT OR REPLACE INTO leagues (league_code, provider, provider_league_id, provi
     ('esp.1', 'espn', 'soccer/esp.1', NULL, 'La Liga', 'soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png', NULL, 1, NULL, 'laliga', 'team_vs_team', 'La Liga Soccer', NULL, NULL),
     ('esp.copa_del_rey', 'espn', 'soccer/esp.copa_del_rey', NULL, 'Copa del Rey', 'soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/79.png', NULL, 1, NULL, 'copa-del-rey', 'team_vs_team', 'Copa del Rey Soccer', NULL, NULL),
     ('ger.1', 'espn', 'soccer/ger.1', NULL, 'Bundesliga', 'soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/10.png', NULL, 1, NULL, 'bundesliga', 'team_vs_team', 'Bundesliga Soccer', NULL, NULL),
+    ('ger.2', 'espn', 'soccer/ger.2', NULL, '2. Bundesliga', 'soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/9.png', NULL, 1, NULL, '2-bundesliga', 'team_vs_team', '2. Bundesliga Soccer', NULL, NULL),
     ('ger.dfb_pokal', 'espn', 'soccer/ger.dfb_pokal', NULL, 'DFB-Pokal', 'soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/80.png', NULL, 1, NULL, 'dfb-pokal', 'team_vs_team', 'DFB-Pokal Soccer', NULL, NULL),
     ('ita.1', 'espn', 'soccer/ita.1', NULL, 'Serie A', 'soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png', NULL, 1, NULL, 'seriea', 'team_vs_team', 'Serie A Soccer', NULL, NULL),
     ('ita.coppa_italia', 'espn', 'soccer/ita.coppa_italia', NULL, 'Coppa Italia', 'soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/159.png', NULL, 1, NULL, 'coppa-italia', 'team_vs_team', 'Coppa Italia Soccer', NULL, NULL),
@@ -1170,6 +1208,53 @@ CREATE INDEX IF NOT EXISTS idx_team_aliases_alias ON team_aliases(alias);
 
 
 -- =============================================================================
+-- DETECTION_KEYWORDS TABLE
+-- User-defined detection keywords for stream classification
+-- Extends the built-in patterns in DetectionKeywordService
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS detection_keywords (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Keyword category determines how it's used in classification
+    category TEXT NOT NULL CHECK(category IN (
+        'event_type_keywords',  -- Keywords that detect event type (target_value = EVENT_CARD, etc.)
+        'league_hints',         -- Patterns that map to league code(s)
+        'sport_hints',          -- Patterns that map to sport name
+        'placeholders',         -- Patterns for placeholder/filler streams
+        'card_segments',        -- Patterns for UFC card segments (prelims, main)
+        'exclusions',           -- Patterns to exclude from matching (weigh-ins, etc.)
+        'separators'            -- Game separators (vs, @, at)
+    )),
+
+    -- The keyword or pattern to match
+    keyword TEXT NOT NULL,          -- Plain text keyword or regex pattern
+    is_regex BOOLEAN DEFAULT 0,     -- If true, keyword is treated as regex
+
+    -- Target value (meaning depends on category)
+    -- league_hints: league code or JSON array of codes (e.g., "nfl" or '["eng.2","eng.3"]')
+    -- sport_hints: sport name (e.g., "Hockey")
+    -- card_segments: segment name (e.g., "main_card")
+    -- Others: unused (NULL)
+    target_value TEXT,
+
+    -- Control flags
+    enabled BOOLEAN DEFAULT 1,
+    priority INTEGER DEFAULT 0,     -- Higher priority checked first (within category)
+
+    -- Optional metadata
+    description TEXT,               -- User notes about this keyword
+
+    UNIQUE(category, keyword)
+);
+
+CREATE INDEX IF NOT EXISTS idx_detection_keywords_category ON detection_keywords(category);
+CREATE INDEX IF NOT EXISTS idx_detection_keywords_enabled ON detection_keywords(enabled);
+
+
+-- =============================================================================
 -- CONDITION_PRESETS TABLE
 -- Saved condition configurations for template descriptions
 -- =============================================================================
@@ -1407,3 +1492,33 @@ CREATE TABLE IF NOT EXISTS epg_failed_matches (
 CREATE INDEX IF NOT EXISTS idx_failed_matches_run ON epg_failed_matches(run_id);
 CREATE INDEX IF NOT EXISTS idx_failed_matches_group ON epg_failed_matches(group_id);
 CREATE INDEX IF NOT EXISTS idx_failed_matches_reason ON epg_failed_matches(reason);
+
+
+-- =============================================================================
+-- SCHEMA MIGRATIONS
+-- Run on every startup - must be idempotent (safe to run multiple times)
+-- =============================================================================
+
+-- v47: Add custom_regex_config column to event_epg_groups (JSON subcategories)
+-- This replaces the flat custom_regex_* columns with organized event-type structure
+-- Old columns kept for migration/backwards compatibility
+
+-- Add custom_regex_config column if it doesn't exist (SQLite workaround)
+-- Note: SQLite will fail silently if column exists - this is expected behavior
+-- We wrap in a trigger-like check by using a temp table
+
+-- v47: Migrate combat_sports category to event_type_keywords
+-- Set target_value to EVENT_CARD for existing combat_sports keywords
+UPDATE detection_keywords
+SET category = 'event_type_keywords',
+    target_value = COALESCE(target_value, 'EVENT_CARD')
+WHERE category = 'combat_sports';
+
+-- v48: Migrate group.template_id to group_templates table
+-- Creates a default template assignment (sports=NULL, leagues=NULL) for each group
+-- that has a template_id set but no entries in group_templates yet
+INSERT INTO group_templates (group_id, template_id, sports, leagues)
+SELECT id, template_id, NULL, NULL
+FROM event_epg_groups
+WHERE template_id IS NOT NULL
+  AND id NOT IN (SELECT DISTINCT group_id FROM group_templates);

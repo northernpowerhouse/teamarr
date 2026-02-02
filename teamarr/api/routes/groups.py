@@ -80,6 +80,7 @@ class GroupCreate(BaseModel):
     channel_group_mode: str = "static"  # "static", "sport", "league"
     channel_profile_ids: list[str | int] | None = None  # IDs or "{sport}", "{league}"
     stream_profile_id: int | None = None  # Stream profile (overrides global default)
+    stream_timezone: str | None = None  # Timezone for stream datetime parsing
     duplicate_event_handling: str = "consolidate"
     channel_assignment_mode: str = "auto"
     sort_order: int = 0
@@ -101,6 +102,11 @@ class GroupCreate(BaseModel):
     custom_regex_time_enabled: bool = False
     custom_regex_league: str | None = None
     custom_regex_league_enabled: bool = False
+    # EVENT_CARD specific regex (UFC, Boxing, MMA)
+    custom_regex_fighters: str | None = None
+    custom_regex_fighters_enabled: bool = False
+    custom_regex_event_name: str | None = None
+    custom_regex_event_name_enabled: bool = False
     skip_builtin_filter: bool = False
     # Team filtering (canonical team selection, inherited by children)
     include_teams: list[TeamFilterEntry] | None = None
@@ -110,6 +116,8 @@ class GroupCreate(BaseModel):
     channel_sort_order: str = "time"
     overlap_handling: str = "add_stream"
     enabled: bool = True
+    # Template assignments for multi-league groups (optional, created after group)
+    template_assignments: list["GroupTemplateCreate"] | None = None
 
     @field_validator("channel_profile_ids", mode="before")
     @classmethod
@@ -131,6 +139,7 @@ class GroupUpdate(BaseModel):
     channel_group_mode: str | None = None  # "static", "sport", "league"
     channel_profile_ids: list[str | int] | None = None  # IDs or "{sport}", "{league}"
     stream_profile_id: int | None = None  # Stream profile (overrides global default)
+    stream_timezone: str | None = None  # Timezone for stream datetime parsing
     duplicate_event_handling: str | None = None
     channel_assignment_mode: str | None = None
     sort_order: int | None = None
@@ -152,6 +161,11 @@ class GroupUpdate(BaseModel):
     custom_regex_time_enabled: bool | None = None
     custom_regex_league: str | None = None
     custom_regex_league_enabled: bool | None = None
+    # EVENT_CARD specific regex (UFC, Boxing, MMA)
+    custom_regex_fighters: str | None = None
+    custom_regex_fighters_enabled: bool | None = None
+    custom_regex_event_name: str | None = None
+    custom_regex_event_name_enabled: bool | None = None
     skip_builtin_filter: bool | None = None
     # Team filtering (canonical team selection, inherited by children)
     include_teams: list[TeamFilterEntry] | None = None
@@ -170,6 +184,7 @@ class GroupUpdate(BaseModel):
     clear_channel_group_id: bool = False
     clear_channel_profile_ids: bool = False
     clear_stream_profile_id: bool = False
+    clear_stream_timezone: bool = False
     clear_m3u_group_id: bool = False
     clear_m3u_group_name: bool = False
     clear_m3u_account_id: bool = False
@@ -180,6 +195,8 @@ class GroupUpdate(BaseModel):
     clear_custom_regex_date: bool = False
     clear_custom_regex_time: bool = False
     clear_custom_regex_league: bool = False
+    clear_custom_regex_fighters: bool = False
+    clear_custom_regex_event_name: bool = False
     clear_include_teams: bool = False
     clear_exclude_teams: bool = False
 
@@ -202,8 +219,9 @@ class GroupResponse(BaseModel):
     channel_start_number: int | None = None
     channel_group_id: int | None = None
     channel_group_mode: str = "static"  # "static", "sport", "league"
-    channel_profile_ids: list[str | int] = []  # IDs or "{sport}", "{league}"
+    channel_profile_ids: list[str | int] | None = None  # null = use default, [] = no profiles
     stream_profile_id: int | None = None  # Stream profile (overrides global default)
+    stream_timezone: str | None = None  # Timezone for stream datetime parsing
     duplicate_event_handling: str = "consolidate"
     channel_assignment_mode: str = "auto"
     sort_order: int = 0
@@ -225,6 +243,11 @@ class GroupResponse(BaseModel):
     custom_regex_time_enabled: bool = False
     custom_regex_league: str | None = None
     custom_regex_league_enabled: bool = False
+    # EVENT_CARD specific regex (UFC, Boxing, MMA)
+    custom_regex_fighters: str | None = None
+    custom_regex_fighters_enabled: bool = False
+    custom_regex_event_name: str | None = None
+    custom_regex_event_name_enabled: bool = False
     skip_builtin_filter: bool = False
     # Team filtering (canonical team selection, inherited by children)
     include_teams: list[TeamFilterEntry] | None = None
@@ -257,9 +280,9 @@ class GroupResponse(BaseModel):
 
     @field_validator("channel_profile_ids", mode="before")
     @classmethod
-    def validate_profile_ids(cls, v: Any) -> list[str | int]:
-        result = _validate_profile_ids(v)
-        return result if result is not None else []
+    def validate_profile_ids(cls, v: Any) -> list[str | int] | None:
+        # Preserve None (use default) vs [] (no profiles) distinction
+        return _validate_profile_ids(v)
 
 
 class GroupListResponse(BaseModel):
@@ -313,6 +336,7 @@ class BulkGroupSettings(BaseModel):
     channel_group_mode: str = "static"  # "static", "sport", "league"
     channel_profile_ids: list[str | int] | None = None  # IDs or "{sport}", "{league}"
     stream_profile_id: int | None = None  # Stream profile (overrides global default)
+    stream_timezone: str | None = None  # Timezone for stream datetime parsing
     duplicate_event_handling: str = "consolidate"
     channel_sort_order: str = "time"
     overlap_handling: str = "add_stream"
@@ -367,6 +391,7 @@ class BulkGroupUpdateRequest(BaseModel):
     channel_group_mode: str | None = None
     channel_profile_ids: list[str | int] | None = None
     stream_profile_id: int | None = None  # Stream profile (overrides global default)
+    stream_timezone: str | None = None  # Timezone for stream datetime parsing
     duplicate_event_handling: str | None = None
     channel_sort_order: str | None = None
     overlap_handling: str | None = None
@@ -377,6 +402,7 @@ class BulkGroupUpdateRequest(BaseModel):
     clear_channel_group_id: bool = False
     clear_channel_profile_ids: bool = False
     clear_stream_profile_id: bool = False
+    clear_stream_timezone: bool = False
 
     @field_validator("channel_profile_ids", mode="before")
     @classmethod
@@ -554,6 +580,10 @@ def list_groups(
                 custom_regex_time_enabled=g.custom_regex_time_enabled,
                 custom_regex_league=g.custom_regex_league,
                 custom_regex_league_enabled=g.custom_regex_league_enabled,
+                custom_regex_fighters=g.custom_regex_fighters,
+                custom_regex_fighters_enabled=g.custom_regex_fighters_enabled,
+                custom_regex_event_name=g.custom_regex_event_name,
+                custom_regex_event_name_enabled=g.custom_regex_event_name_enabled,
                 skip_builtin_filter=g.skip_builtin_filter,
                 include_teams=[TeamFilterEntry(**t) for t in g.include_teams]
                 if g.include_teams
@@ -592,7 +622,12 @@ def list_groups(
 @router.post("", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)
 def create_group(request: GroupCreate):
     """Create a new event EPG group."""
-    from teamarr.database.groups import create_group, get_group, get_group_by_name
+    from teamarr.database.groups import (
+        add_group_template,
+        create_group,
+        get_group,
+        get_group_by_name,
+    )
 
     validate_group_fields(
         duplicate_event_handling=request.duplicate_event_handling,
@@ -623,6 +658,7 @@ def create_group(request: GroupCreate):
             channel_group_mode=request.channel_group_mode,
             channel_profile_ids=request.channel_profile_ids,
             stream_profile_id=request.stream_profile_id,
+            stream_timezone=request.stream_timezone,
             duplicate_event_handling=request.duplicate_event_handling,
             channel_assignment_mode=request.channel_assignment_mode,
             sort_order=request.sort_order,
@@ -643,6 +679,10 @@ def create_group(request: GroupCreate):
             custom_regex_time_enabled=request.custom_regex_time_enabled,
             custom_regex_league=request.custom_regex_league,
             custom_regex_league_enabled=request.custom_regex_league_enabled,
+            custom_regex_fighters=request.custom_regex_fighters,
+            custom_regex_fighters_enabled=request.custom_regex_fighters_enabled,
+            custom_regex_event_name=request.custom_regex_event_name,
+            custom_regex_event_name_enabled=request.custom_regex_event_name_enabled,
             skip_builtin_filter=request.skip_builtin_filter,
             include_teams=[t.model_dump() for t in request.include_teams]
             if request.include_teams is not None
@@ -655,6 +695,17 @@ def create_group(request: GroupCreate):
             overlap_handling=request.overlap_handling,
             enabled=request.enabled,
         )
+
+        # Create template assignments if provided (for multi-league groups)
+        if request.template_assignments:
+            for assignment in request.template_assignments:
+                add_group_template(
+                    conn,
+                    group_id,
+                    assignment.template_id,
+                    assignment.sports,
+                    assignment.leagues,
+                )
 
         group = get_group(conn, group_id)
 
@@ -673,6 +724,7 @@ def create_group(request: GroupCreate):
         channel_group_mode=group.channel_group_mode,
         channel_profile_ids=group.channel_profile_ids,
         stream_profile_id=group.stream_profile_id,
+        stream_timezone=group.stream_timezone,
         duplicate_event_handling=group.duplicate_event_handling,
         channel_assignment_mode=group.channel_assignment_mode,
         sort_order=group.sort_order,
@@ -770,6 +822,7 @@ def create_groups_bulk(request: BulkGroupCreateRequest):
                     channel_group_mode=request.settings.channel_group_mode,
                     channel_profile_ids=request.settings.channel_profile_ids,
                     stream_profile_id=request.settings.stream_profile_id,
+                    stream_timezone=request.settings.stream_timezone,
                     duplicate_event_handling=request.settings.duplicate_event_handling,
                     channel_sort_order=request.settings.channel_sort_order,
                     overlap_handling=request.settings.overlap_handling,
@@ -862,6 +915,7 @@ def update_groups_bulk(request: BulkGroupUpdateRequest):
                     channel_group_mode=request.channel_group_mode,
                     channel_profile_ids=request.channel_profile_ids,
                     stream_profile_id=request.stream_profile_id,
+                    stream_timezone=request.stream_timezone,
                     duplicate_event_handling=request.duplicate_event_handling,
                     channel_sort_order=request.channel_sort_order,
                     overlap_handling=request.overlap_handling,
@@ -870,6 +924,7 @@ def update_groups_bulk(request: BulkGroupUpdateRequest):
                     clear_channel_group_id=request.clear_channel_group_id,
                     clear_channel_profile_ids=request.clear_channel_profile_ids,
                     clear_stream_profile_id=request.clear_stream_profile_id,
+                    clear_stream_timezone=request.clear_stream_timezone,
                 )
 
                 results.append(
@@ -946,6 +1001,7 @@ def get_group_by_id(group_id: int):
         channel_group_mode=group.channel_group_mode,
         channel_profile_ids=group.channel_profile_ids,
         stream_profile_id=group.stream_profile_id,
+        stream_timezone=group.stream_timezone,
         duplicate_event_handling=group.duplicate_event_handling,
         channel_assignment_mode=group.channel_assignment_mode,
         sort_order=group.sort_order,
@@ -1038,71 +1094,85 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
                     detail=f"Group with name '{target_name}' already exists for this M3U account",
                 )
 
-        update_group(
-            conn,
-            group_id,
-            name=request.name,
-            display_name=request.display_name,
-            leagues=request.leagues,
-            group_mode=request.group_mode,
-            parent_group_id=request.parent_group_id,
-            template_id=request.template_id,
-            channel_start_number=request.channel_start_number,
-            channel_group_id=request.channel_group_id,
-            channel_group_mode=request.channel_group_mode,
-            channel_profile_ids=request.channel_profile_ids,
-            stream_profile_id=request.stream_profile_id,
-            duplicate_event_handling=request.duplicate_event_handling,
-            channel_assignment_mode=request.channel_assignment_mode,
-            sort_order=request.sort_order,
-            total_stream_count=request.total_stream_count,
-            m3u_group_id=request.m3u_group_id,
-            m3u_group_name=request.m3u_group_name,
-            m3u_account_id=request.m3u_account_id,
-            m3u_account_name=request.m3u_account_name,
-            stream_include_regex=request.stream_include_regex,
-            stream_include_regex_enabled=request.stream_include_regex_enabled,
-            stream_exclude_regex=request.stream_exclude_regex,
-            stream_exclude_regex_enabled=request.stream_exclude_regex_enabled,
-            custom_regex_teams=request.custom_regex_teams,
-            custom_regex_teams_enabled=request.custom_regex_teams_enabled,
-            custom_regex_date=request.custom_regex_date,
-            custom_regex_date_enabled=request.custom_regex_date_enabled,
-            custom_regex_time=request.custom_regex_time,
-            custom_regex_time_enabled=request.custom_regex_time_enabled,
-            custom_regex_league=request.custom_regex_league,
-            custom_regex_league_enabled=request.custom_regex_league_enabled,
-            skip_builtin_filter=request.skip_builtin_filter,
-            include_teams=[t.model_dump() for t in request.include_teams]
-            if request.include_teams is not None
-            else None,
-            exclude_teams=[t.model_dump() for t in request.exclude_teams]
-            if request.exclude_teams is not None
-            else None,
-            team_filter_mode=request.team_filter_mode,
-            channel_sort_order=request.channel_sort_order,
-            overlap_handling=request.overlap_handling,
-            enabled=request.enabled,
-            clear_display_name=request.clear_display_name,
-            clear_parent_group_id=request.clear_parent_group_id,
-            clear_template=request.clear_template,
-            clear_channel_start_number=request.clear_channel_start_number,
-            clear_channel_group_id=request.clear_channel_group_id,
-            clear_channel_profile_ids=request.clear_channel_profile_ids,
-            clear_stream_profile_id=request.clear_stream_profile_id,
-            clear_m3u_group_id=request.clear_m3u_group_id,
-            clear_m3u_group_name=request.clear_m3u_group_name,
-            clear_m3u_account_id=request.clear_m3u_account_id,
-            clear_m3u_account_name=request.clear_m3u_account_name,
-            clear_stream_include_regex=request.clear_stream_include_regex,
-            clear_stream_exclude_regex=request.clear_stream_exclude_regex,
-            clear_custom_regex_teams=request.clear_custom_regex_teams,
-            clear_custom_regex_date=request.clear_custom_regex_date,
-            clear_custom_regex_time=request.clear_custom_regex_time,
-            clear_custom_regex_league=request.clear_custom_regex_league,
-            clear_include_teams=request.clear_include_teams,
-            clear_exclude_teams=request.clear_exclude_teams,
-        )
+        try:
+            update_group(
+                conn,
+                group_id,
+                name=request.name,
+                display_name=request.display_name,
+                leagues=request.leagues,
+                group_mode=request.group_mode,
+                parent_group_id=request.parent_group_id,
+                template_id=request.template_id,
+                channel_start_number=request.channel_start_number,
+                channel_group_id=request.channel_group_id,
+                channel_group_mode=request.channel_group_mode,
+                channel_profile_ids=request.channel_profile_ids,
+                stream_profile_id=request.stream_profile_id,
+                stream_timezone=request.stream_timezone,
+                duplicate_event_handling=request.duplicate_event_handling,
+                channel_assignment_mode=request.channel_assignment_mode,
+                sort_order=request.sort_order,
+                total_stream_count=request.total_stream_count,
+                m3u_group_id=request.m3u_group_id,
+                m3u_group_name=request.m3u_group_name,
+                m3u_account_id=request.m3u_account_id,
+                m3u_account_name=request.m3u_account_name,
+                stream_include_regex=request.stream_include_regex,
+                stream_include_regex_enabled=request.stream_include_regex_enabled,
+                stream_exclude_regex=request.stream_exclude_regex,
+                stream_exclude_regex_enabled=request.stream_exclude_regex_enabled,
+                custom_regex_teams=request.custom_regex_teams,
+                custom_regex_teams_enabled=request.custom_regex_teams_enabled,
+                custom_regex_date=request.custom_regex_date,
+                custom_regex_date_enabled=request.custom_regex_date_enabled,
+                custom_regex_time=request.custom_regex_time,
+                custom_regex_time_enabled=request.custom_regex_time_enabled,
+                custom_regex_league=request.custom_regex_league,
+                custom_regex_league_enabled=request.custom_regex_league_enabled,
+                custom_regex_fighters=request.custom_regex_fighters,
+                custom_regex_fighters_enabled=request.custom_regex_fighters_enabled,
+                custom_regex_event_name=request.custom_regex_event_name,
+                custom_regex_event_name_enabled=request.custom_regex_event_name_enabled,
+                skip_builtin_filter=request.skip_builtin_filter,
+                include_teams=[t.model_dump() for t in request.include_teams]
+                if request.include_teams is not None
+                else None,
+                exclude_teams=[t.model_dump() for t in request.exclude_teams]
+                if request.exclude_teams is not None
+                else None,
+                team_filter_mode=request.team_filter_mode,
+                channel_sort_order=request.channel_sort_order,
+                overlap_handling=request.overlap_handling,
+                enabled=request.enabled,
+                clear_display_name=request.clear_display_name,
+                clear_parent_group_id=request.clear_parent_group_id,
+                clear_template=request.clear_template,
+                clear_channel_start_number=request.clear_channel_start_number,
+                clear_channel_group_id=request.clear_channel_group_id,
+                clear_channel_profile_ids=request.clear_channel_profile_ids,
+                clear_stream_profile_id=request.clear_stream_profile_id,
+                clear_stream_timezone=request.clear_stream_timezone,
+                clear_m3u_group_id=request.clear_m3u_group_id,
+                clear_m3u_group_name=request.clear_m3u_group_name,
+                clear_m3u_account_id=request.clear_m3u_account_id,
+                clear_m3u_account_name=request.clear_m3u_account_name,
+                clear_stream_include_regex=request.clear_stream_include_regex,
+                clear_stream_exclude_regex=request.clear_stream_exclude_regex,
+                clear_custom_regex_teams=request.clear_custom_regex_teams,
+                clear_custom_regex_date=request.clear_custom_regex_date,
+                clear_custom_regex_time=request.clear_custom_regex_time,
+                clear_custom_regex_league=request.clear_custom_regex_league,
+                clear_custom_regex_fighters=request.clear_custom_regex_fighters,
+                clear_custom_regex_event_name=request.clear_custom_regex_event_name,
+                clear_include_teams=request.clear_include_teams,
+                clear_exclude_teams=request.clear_exclude_teams,
+            )
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            ) from None
 
         # Clean up XMLTV content when group is disabled
         if request.enabled is False:
@@ -1126,6 +1196,7 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
         channel_group_mode=group.channel_group_mode,
         channel_profile_ids=group.channel_profile_ids,
         stream_profile_id=group.stream_profile_id,
+        stream_timezone=group.stream_timezone,
         duplicate_event_handling=group.duplicate_event_handling,
         channel_assignment_mode=group.channel_assignment_mode,
         sort_order=group.sort_order,
@@ -1260,6 +1331,46 @@ def disable_group(group_id: int) -> dict:
         set_group_enabled(conn, group_id, False)
 
     return {"success": True, "message": f"Group '{group.name}' disabled"}
+
+
+@router.post("/{group_id}/promote")
+def promote_group_to_parent(group_id: int) -> dict:
+    """Promote a child group to become the parent, swapping the hierarchy.
+
+    This operation:
+    1. Makes the old parent a child of the promoted group
+    2. Makes all siblings children of the promoted group
+    3. Copies settings from old parent to promoted group if needed
+
+    Example:
+        Before: A (parent) -> B, C, D (children)
+        POST /groups/D/promote
+        After: D (parent) -> A, B, C (children)
+
+    Returns:
+        Success message with details of reassigned groups
+    """
+    from teamarr.database.groups import promote_to_parent
+
+    try:
+        with get_db() as conn:
+            result = promote_to_parent(conn, group_id)
+
+        return {
+            "success": True,
+            "promoted_group_id": result["promoted_group_id"],
+            "promoted_group_name": result["promoted_group_name"],
+            "old_parent_id": result["old_parent_id"],
+            "old_parent_name": result["old_parent_name"],
+            "reassigned_groups": result["reassigned_groups"],
+            "message": f"'{result['promoted_group_name']}' is now the parent of "
+            f"'{result['old_parent_name']}' and {result['reassigned_count'] - 1} other group(s)",
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from None
 
 
 @router.post("/{group_id}/cache/clear", response_model=ClearCacheResponse)
@@ -1876,3 +1987,210 @@ def reorder_groups(request: ReorderGroupsRequest):
         updated_count=updated,
         message=f"Updated sort order for {updated} groups",
     )
+
+
+# =============================================================================
+# GROUP TEMPLATES - Multi-template assignment per group
+# =============================================================================
+
+
+class GroupTemplateCreate(BaseModel):
+    """Create a template assignment for a group."""
+
+    template_id: int
+    sports: list[str] | None = None  # NULL = any, or ["mma", "boxing"]
+    leagues: list[str] | None = None  # NULL = any, or ["ufc", "bellator"]
+
+
+class GroupTemplateUpdate(BaseModel):
+    """Update a template assignment."""
+
+    template_id: int | None = None
+    sports: list[str] | None = None
+    leagues: list[str] | None = None
+
+
+class GroupTemplateResponse(BaseModel):
+    """Template assignment response."""
+
+    id: int
+    group_id: int
+    template_id: int
+    sports: list[str] | None = None
+    leagues: list[str] | None = None
+    template_name: str | None = None
+
+
+@router.get("/{group_id}/templates", response_model=list[GroupTemplateResponse])
+def get_group_templates(group_id: int):
+    """Get all template assignments for a group.
+
+    Returns templates ordered by specificity (leagues first, then sports, then default).
+    """
+    from teamarr.database.groups import get_group_templates as db_get_templates
+
+    with get_db() as conn:
+        # Verify group exists
+        row = conn.execute(
+            "SELECT id FROM event_epg_groups WHERE id = ?", (group_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Group {group_id} not found",
+            )
+
+        templates = db_get_templates(conn, group_id)
+
+    return [
+        GroupTemplateResponse(
+            id=t.id,
+            group_id=t.group_id,
+            template_id=t.template_id,
+            sports=t.sports,
+            leagues=t.leagues,
+            template_name=t.template_name,
+        )
+        for t in templates
+    ]
+
+
+@router.post(
+    "/{group_id}/templates",
+    response_model=GroupTemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_group_template(group_id: int, request: GroupTemplateCreate):
+    """Add a template assignment to a group.
+
+    Templates are resolved by specificity:
+    1. leagues match (most specific)
+    2. sports match
+    3. default (both NULL)
+    """
+    from teamarr.database.groups import add_group_template as db_add_template
+
+    with get_db() as conn:
+        # Verify group exists
+        row = conn.execute(
+            "SELECT id FROM event_epg_groups WHERE id = ?", (group_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Group {group_id} not found",
+            )
+
+        # Verify template exists
+        row = conn.execute(
+            "SELECT id, name FROM templates WHERE id = ?", (request.template_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Template {request.template_id} not found",
+            )
+        template_name = row["name"]
+
+        assignment_id = db_add_template(
+            conn,
+            group_id,
+            request.template_id,
+            request.sports,
+            request.leagues,
+        )
+
+    return GroupTemplateResponse(
+        id=assignment_id,
+        group_id=group_id,
+        template_id=request.template_id,
+        sports=request.sports,
+        leagues=request.leagues,
+        template_name=template_name,
+    )
+
+
+@router.put("/{group_id}/templates/{assignment_id}", response_model=GroupTemplateResponse)
+def update_group_template(group_id: int, assignment_id: int, request: GroupTemplateUpdate):
+    """Update a template assignment."""
+    from teamarr.database.groups import update_group_template as db_update_template
+
+    with get_db() as conn:
+        # Verify assignment exists and belongs to this group
+        row = conn.execute(
+            "SELECT * FROM group_templates WHERE id = ? AND group_id = ?",
+            (assignment_id, group_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Template assignment {assignment_id} not found in group {group_id}",
+            )
+
+        # Build update kwargs
+        kwargs = {}
+        if request.template_id is not None:
+            # Verify new template exists
+            t_row = conn.execute(
+                "SELECT id FROM templates WHERE id = ?", (request.template_id,)
+            ).fetchone()
+            if not t_row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Template {request.template_id} not found",
+                )
+            kwargs["template_id"] = request.template_id
+
+        # Use ... sentinel to distinguish "not provided" from "set to null"
+        if "sports" in request.model_fields_set:
+            kwargs["sports"] = request.sports
+        if "leagues" in request.model_fields_set:
+            kwargs["leagues"] = request.leagues
+
+        if kwargs:
+            db_update_template(conn, assignment_id, **kwargs)
+
+        # Fetch updated record
+        row = conn.execute(
+            """SELECT gt.*, t.name as template_name
+               FROM group_templates gt
+               LEFT JOIN templates t ON gt.template_id = t.id
+               WHERE gt.id = ?""",
+            (assignment_id,),
+        ).fetchone()
+
+    import json
+
+    sports = json.loads(row["sports"]) if row["sports"] else None
+    leagues = json.loads(row["leagues"]) if row["leagues"] else None
+
+    return GroupTemplateResponse(
+        id=row["id"],
+        group_id=row["group_id"],
+        template_id=row["template_id"],
+        sports=sports,
+        leagues=leagues,
+        template_name=row["template_name"],
+    )
+
+
+@router.delete("/{group_id}/templates/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_group_template(group_id: int, assignment_id: int):
+    """Delete a template assignment."""
+    from teamarr.database.groups import delete_group_template as db_delete_template
+
+    with get_db() as conn:
+        # Verify assignment exists and belongs to this group
+        row = conn.execute(
+            "SELECT id FROM group_templates WHERE id = ? AND group_id = ?",
+            (assignment_id, group_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Template assignment {assignment_id} not found in group {group_id}",
+            )
+
+        db_delete_template(conn, assignment_id)
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -664,8 +664,18 @@ def execute_reset_channels():
 
     This is a destructive operation that removes all channels with
     teamarr-event-* tvg_id. Also marks all managed_channels as deleted.
+
+    Will fail if EPG generation is currently in progress.
     """
+    from teamarr.api.generation_status import is_in_progress
     from teamarr.dispatcharr import ChannelManager, get_dispatcharr_client
+
+    # Check if EPG generation is in progress
+    if is_in_progress():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot reset channels while EPG generation is in progress",
+        )
 
     client = get_dispatcharr_client(get_db)
     if not client:

@@ -1,4 +1,4 @@
-"""FastAPI application factory - Clean V2 API with React UI."""
+"""FastAPI application factory."""
 
 import logging
 import os
@@ -15,6 +15,7 @@ from teamarr.api.routes import (
     backup,
     cache,
     channels,
+    detection_keywords,
     dispatcharr,
     epg,
     groups,
@@ -244,7 +245,7 @@ def _run_startup_tasks():
             logger.info("[STARTUP] Background scheduler disabled")
 
         startup_state.set_phase(StartupPhase.READY)
-        logger.info("[STARTUP] Teamarr V2 ready")
+        logger.info("[STARTUP] Teamarr ready")
 
     except Exception as e:
         logger.exception("[STARTUP] Failed: %s", e)
@@ -264,7 +265,7 @@ async def lifespan(app: FastAPI):
 
     # Startup - minimal blocking, then background tasks
     setup_logging()
-    logger.info("[STARTUP] Starting Teamarr V2...")
+    logger.info("[STARTUP] Starting Teamarr...")
 
     # Initialize database (fast) - this also detects V1 databases
     init_db()
@@ -273,7 +274,7 @@ async def lifespan(app: FastAPI):
     if is_v1_database_detected():
         logger.warning("[STARTUP] V1 database detected - running in migration mode only")
         yield
-        logger.info("[SHUTDOWN] Teamarr V2 stopped (migration mode)")
+        logger.info("[SHUTDOWN] Teamarr stopped (migration mode)")
         return
 
     # Normal V2 startup continues...
@@ -293,7 +294,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    logger.info("[SHUTDOWN] Shutting down Teamarr V2...")
+    logger.info("[SHUTDOWN] Shutting down Teamarr...")
 
     # Stop scheduler
     scheduler_service = _app_state.get("scheduler_service")
@@ -303,7 +304,7 @@ async def lifespan(app: FastAPI):
     # Close Dispatcharr connection
     close_dispatcharr()
 
-    logger.info("[SHUTDOWN] Teamarr V2 stopped")
+    logger.info("[SHUTDOWN] Teamarr stopped")
 
 
 def create_app() -> FastAPI:
@@ -313,7 +314,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="Teamarr API",
-        description="Sports EPG generation service - V2 Architecture",
+        description="Sports EPG generation service",
         version=BASE_VERSION,
         docs_url="/docs",
         redoc_url="/redoc",
@@ -340,7 +341,7 @@ def create_app() -> FastAPI:
                 )
         return await call_next(request)
 
-    # Include API routers - clean V2 API
+    # Include API routers
     app.include_router(health.router, tags=["Health"])
     app.include_router(teams.router, prefix="/api/v1", tags=["Teams"])
     app.include_router(templates.router, prefix="/api/v1", tags=["Templates"])
@@ -359,6 +360,7 @@ def create_app() -> FastAPI:
     app.include_router(dispatcharr.router, prefix="/api/v1", tags=["Dispatcharr"])
     app.include_router(migration.router, prefix="/api/v1", tags=["Migration"])
     app.include_router(backup.router, prefix="/api/v1", tags=["Backup"])
+    app.include_router(detection_keywords.router, tags=["Detection Keywords"])
 
     # Serve React UI static files
     frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"

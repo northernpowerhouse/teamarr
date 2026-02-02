@@ -7,7 +7,7 @@ Organization: Variables grouped by category, with base/.next/.last variants toge
 """
 
 # Available sports for the dropdown
-AVAILABLE_SPORTS = ["NBA", "NFL", "MLB", "NHL", "NCAAM", "NCAAF", "Soccer"]
+AVAILABLE_SPORTS = ["NBA", "NFL", "MLB", "NHL", "NCAAM", "NCAAF", "Soccer", "UFC"]
 
 # Sample data organized by variable name and sport
 # Each variable can have different sample values per sport
@@ -142,6 +142,7 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "NCAAM": "Ohio State Buckeyes @ Michigan Wolverines",
         "NCAAF": "Ohio State Buckeyes @ Michigan Wolverines",
         "Soccer": "Manchester City @ Liverpool",
+        "UFC": "Alex Volkanovski vs Diego Lopes",
     },
     "matchup.next": {
         "NBA": "Detroit Pistons @ Milwaukee Bucks",
@@ -151,6 +152,7 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "NCAAM": "Michigan Wolverines @ Indiana Hoosiers",
         "NCAAF": "Michigan Wolverines @ Penn State Nittany Lions",
         "Soccer": "Liverpool @ Arsenal",
+        "UFC": "Islam Makhachev vs Arman Tsarukyan",
     },
     "matchup.last": {
         "NBA": "Detroit Pistons @ Cleveland Cavaliers",
@@ -160,6 +162,7 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "NCAAM": "Michigan Wolverines @ Michigan State Spartans",
         "NCAAF": "Michigan Wolverines @ Michigan State Spartans",
         "Soccer": "Liverpool @ Chelsea",
+        "UFC": "Jon Jones vs Stipe Miocic",
     },
     "matchup_abbrev": {
         "NBA": "CHI @ DET",
@@ -3631,6 +3634,89 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "NCAAF": "",
         "Soccer": "",
     },
+    # ==========================================================================
+    # COMBAT SPORTS - UFC/MMA specific variables (event EPG only, no .next/.last)
+    # ==========================================================================
+    "fighter1": {
+        "UFC": "Alex Volkanovski",
+    },
+    "fighter2": {
+        "UFC": "Diego Lopes",
+    },
+    "event_number": {
+        "UFC": "314",
+    },
+    "event_title": {
+        "UFC": "UFC 314: Volkanovski vs Lopes",
+    },
+    "card_segment": {
+        "UFC": "main_card",
+    },
+    "card_segment_display": {
+        "UFC": "Main Card",
+    },
+    "main_card_time": {
+        "UFC": "10:00 PM EST",
+    },
+    "prelims_time": {
+        "UFC": "8:00 PM EST",
+    },
+    "early_prelims_time": {
+        "UFC": "6:00 PM EST",
+    },
+    "bout_count": {
+        "UFC": "14",
+    },
+    "fight_card": {
+        "UFC": (
+            "Alex Volkanovski vs Diego Lopes\n"
+            "Merab Dvalishvili vs Umar Nurmagomedov\n"
+            "Renato Moicano vs Beneil Dariush"
+        ),
+    },
+    "main_card_bouts": {
+        "UFC": "Alex Volkanovski vs Diego Lopes\nMerab Dvalishvili vs Umar Nurmagomedov",
+    },
+    "prelims_bouts": {
+        "UFC": "Sean Brady vs Kelvin Gastelum\nChris Weidman vs Eryk Anders",
+    },
+    "early_prelims_bouts": {
+        "UFC": "Mauricio Ruffy vs Jamie Mullarkey\nOtar Kentchadze vs Ismael Bonfim",
+    },
+    # Fight result variables (for finished fights)
+    "fight_result": {
+        "UFC": "TKO",
+    },
+    "fight_result_short": {
+        "UFC": "TKO",
+    },
+    "finish_round": {
+        "UFC": "2",
+    },
+    "finish_time": {
+        "UFC": "4:31",
+    },
+    "finish_info": {
+        "UFC": "R2 4:31",
+    },
+    "weight_class": {
+        "UFC": "Featherweight",
+    },
+    "weight_class_short": {
+        "UFC": "FW",
+    },
+    "fighter1_record": {
+        "UFC": "28-4-0",
+    },
+    "fighter2_record": {
+        "UFC": "27-8-0",
+    },
+    "judge_scores": {
+        "UFC": "48-47",
+    },
+    "fight_summary": {
+        "UFC": "TKO R2 4:31",
+    },
 }
 
 
@@ -3682,6 +3768,10 @@ _TIME_VARIABLES = {
     "game_time",
     "game_time.next",
     "game_time.last",
+    # UFC segment times (base only, no .next/.last for event EPG)
+    "main_card_time",
+    "prelims_time",
+    "early_prelims_time",
 }
 
 

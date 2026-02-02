@@ -33,6 +33,7 @@ from teamarr.utilities.cache import (
     get_events_cache_ttl,
     make_cache_key,
 )
+from teamarr.utilities.event_status import is_event_final
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +152,10 @@ class SportsDataService:
         for provider in self._providers:
             if provider.supports_league(league):
                 events = provider.get_events(league, target_date)
-                ttl = get_events_cache_ttl(target_date)
+                # Check if all events are final (for past dates, enables 30-day cache)
+                # Empty list counts as "all final" (no games = nothing to update)
+                all_final = len(events) == 0 or all(is_event_final(e) for e in events)
+                ttl = get_events_cache_ttl(target_date, all_events_final=all_final)
                 # Cache ALL results including empty lists to avoid repeated API calls
                 # for leagues with no events on a given day
                 self._cache.set(cache_key, [event_to_dict(e) for e in events], ttl)

@@ -918,7 +918,9 @@ class EventGroupProcessor:
             )
 
             # Step 4: Add matched streams to parent's channels
-            matched_streams = self._build_matched_stream_list(streams, match_result)
+            matched_streams = self._build_matched_stream_list(
+                streams, match_result, stream_timezone=group.stream_timezone
+            )
 
             # Build event lookup BEFORE team filtering (for cleanup)
             # Use segment-aware event_id to match channel.event_id storage
@@ -1243,7 +1245,9 @@ class EventGroupProcessor:
             )
 
             # Step 4: Create/update channels
-            matched_streams = self._build_matched_stream_list(streams, match_result)
+            matched_streams = self._build_matched_stream_list(
+                streams, match_result, stream_timezone=group.stream_timezone
+            )
 
             # Sort channels based on global channel numbering sort_by setting
             from teamarr.database.settings import get_channel_numbering_settings
@@ -1648,6 +1652,7 @@ class EventGroupProcessor:
             custom_regex_league=group.custom_regex_league,
             custom_regex_league_enabled=group.custom_regex_league_enabled,
             shared_events=self._shared_events,  # Reuse events across groups in same run
+            stream_timezone=group.stream_timezone,  # TZ for interpreting stream dates
         )
 
         result = matcher.match_all(
@@ -1673,11 +1678,17 @@ class EventGroupProcessor:
         self,
         streams: list[dict],
         match_result: BatchMatchResult,
+        stream_timezone: str | None = None,
     ) -> list[dict]:
         """Build list of matched streams with their events.
 
         Returns list of dicts with 'stream' and 'event' keys.
         Also applies UFC segment expansion to create separate channels per segment.
+
+        Args:
+            streams: List of stream dicts
+            match_result: Result from matcher
+            stream_timezone: Group-configured timezone for stream time interpretation
         """
         # Build name -> stream lookup
         stream_lookup = {s["name"]: s for s in streams}
@@ -1697,11 +1708,13 @@ class EventGroupProcessor:
 
         # Apply UFC segment expansion
         # This splits UFC streams into separate segment channels
-        matched = self._expand_ufc_segments(matched)
+        matched = self._expand_ufc_segments(matched, stream_timezone)
 
         return matched
 
-    def _expand_ufc_segments(self, matched_streams: list[dict]) -> list[dict]:
+    def _expand_ufc_segments(
+        self, matched_streams: list[dict], stream_timezone: str | None = None
+    ) -> list[dict]:
         """Expand UFC streams into segment-based channels.
 
         Groups UFC streams by detected segment (early_prelims, prelims, main_card)
@@ -1709,6 +1722,7 @@ class EventGroupProcessor:
 
         Args:
             matched_streams: List of {'stream': ..., 'event': ...} dicts
+            stream_timezone: Group-configured timezone for stream time interpretation
 
         Returns:
             Expanded list with UFC streams grouped by segment
@@ -1716,7 +1730,7 @@ class EventGroupProcessor:
         from teamarr.consumers.ufc_segments import expand_ufc_segments
 
         sport_durations = self._load_sport_durations_cached()
-        return expand_ufc_segments(matched_streams, sport_durations)
+        return expand_ufc_segments(matched_streams, sport_durations, stream_timezone)
 
     def _enrich_matched_events(self, matched_streams: list[dict]) -> list[dict]:
         """Enrich all matched events with fresh status from provider.
@@ -2229,6 +2243,11 @@ class EventGroupProcessor:
                 parsed_team2 = getattr(result, "parsed_team2", None)
                 detected_league = getattr(result, "detected_league", None)
 
+                # Get detailed failure reason if available
+                failed_reason = "unmatched"
+                if result.failed_reason:
+                    failed_reason = result.failed_reason.value
+
                 failed_list.append(
                     FailedMatch(
                         run_id=run_id,
@@ -2236,7 +2255,7 @@ class EventGroupProcessor:
                         group_name=group_name,
                         stream_id=stream_id,
                         stream_name=result.stream_name,
-                        reason="unmatched",
+                        reason=failed_reason,
                         parsed_team1=parsed_team1,
                         parsed_team2=parsed_team2,
                         detected_league=detected_league,

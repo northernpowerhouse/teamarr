@@ -455,6 +455,10 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     - 23: Added default_channel_profile_ids to settings
     - 24: Added excluded and exclusion_reason to epg_matched_streams
     - 25: Changed event_epg_groups name uniqueness from global to per-account
+    - 46: Added stream_profile_id to event_epg_groups
+    - 47: Added stream_timezone to event_epg_groups
+    - 48: Added channel_reset_enabled and channel_reset_cron to settings
+    - 49: Added combat sports custom regex columns (fighters, event_name, config)
     """
     # Get current schema version
     try:
@@ -1077,6 +1081,50 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE settings SET schema_version = 46 WHERE id = 1")
         logger.info("[MIGRATE] Schema upgraded to version 46 (stream profile support)")
         current_version = 46
+
+    # ==========================================================================
+    # v47: Stream Timezone Support
+    # ==========================================================================
+    # Adds stream_timezone to event_epg_groups for interpreting dates/times in stream names
+    # when providers use a different timezone than the user's local timezone
+    if current_version < 47:
+        _add_column_if_not_exists(conn, "event_epg_groups", "stream_timezone", "TEXT")
+        conn.execute("UPDATE settings SET schema_version = 47 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 47 (stream timezone support)")
+        current_version = 47
+
+    # ==========================================================================
+    # v48: Scheduled Channel Reset
+    # ==========================================================================
+    # Adds channel_reset_enabled and channel_reset_cron to settings for scheduling
+    # periodic channel purges (helps users with Jellyfin logo caching issues)
+    if current_version < 48:
+        _add_column_if_not_exists(conn, "settings", "channel_reset_enabled", "BOOLEAN DEFAULT 0")
+        _add_column_if_not_exists(conn, "settings", "channel_reset_cron", "TEXT")
+        conn.execute("UPDATE settings SET schema_version = 48 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 48 (scheduled channel reset)")
+        current_version = 48
+
+    # ==========================================================================
+    # v49: Combat Sports Custom Regex Columns
+    # ==========================================================================
+    # Adds custom regex columns for EVENT_CARD type events (UFC, Boxing, MMA)
+    # - custom_regex_fighters: Extract fighter names from stream titles
+    # - custom_regex_event_name: Extract event name from stream titles
+    # - custom_regex_config: JSON structure for organized event-type regex patterns
+    if current_version < 49:
+        _add_column_if_not_exists(conn, "event_epg_groups", "custom_regex_fighters", "TEXT")
+        _add_column_if_not_exists(
+            conn, "event_epg_groups", "custom_regex_fighters_enabled", "BOOLEAN DEFAULT 0"
+        )
+        _add_column_if_not_exists(conn, "event_epg_groups", "custom_regex_event_name", "TEXT")
+        _add_column_if_not_exists(
+            conn, "event_epg_groups", "custom_regex_event_name_enabled", "BOOLEAN DEFAULT 0"
+        )
+        _add_column_if_not_exists(conn, "event_epg_groups", "custom_regex_config", "JSON")
+        conn.execute("UPDATE settings SET schema_version = 49 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 49 (combat sports custom regex)")
+        current_version = 49
 
 
 # =============================================================================

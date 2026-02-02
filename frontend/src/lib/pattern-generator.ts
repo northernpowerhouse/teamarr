@@ -55,14 +55,15 @@ function generalizeForField(
       return "([\\d/\\-.]+)"
 
     case "time":
-      // Time: HH:MM with optional seconds, AM/PM
+      // Time: HH:MM with optional seconds, AM/PM, and timezone
+      // Common TZ abbreviations: ET, PT, CT, MT, EST, PST, GMT, UTC, etc.
       if (/\d{1,2}:\d{2}:\d{2}/.test(text)) {
-        return "(\\d{1,2}:\\d{2}:\\d{2})"
+        return "(\\d{1,2}:\\d{2}:\\d{2}(?:\\s*[A-Z]{2,4})?)"
       }
       if (/\d{1,2}:\d{2}\s*[AaPp][Mm]/.test(text)) {
-        return "(\\d{1,2}:\\d{2}\\s*[AaPp][Mm])"
+        return "(\\d{1,2}:\\d{2}\\s*[AaPp][Mm](?:\\s*[A-Z]{2,4})?)"
       }
-      return "(\\d{1,2}:\\d{2}(?::\\d{2})?\\s*(?:[AaPp][Mm])?)"
+      return "(\\d{1,2}:\\d{2}(?::\\d{2})?\\s*(?:[AaPp][Mm])?(?:\\s*[A-Z]{2,4})?)"
 
     case "league":
       // League codes tend to be short uppercase or known names

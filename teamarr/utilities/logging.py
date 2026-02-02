@@ -185,9 +185,11 @@ def setup_logging(
     _configured = True
 
     # Log startup info
+    from teamarr.config import VERSION
+
     logger = logging.getLogger("teamarr")
     logger.info("[STARTUP] " + "=" * 60)
-    logger.info("[STARTUP] Teamarr v2 - Dynamic EPG Generator for Sports Channels")
+    logger.info("[STARTUP] Teamarr %s - Dynamic EPG Generator for Sports Channels", VERSION)
     logger.info("[STARTUP] " + "=" * 60)
     logger.info("[STARTUP] Log level: %s", logging.getLevelName(level))
     logger.info("[STARTUP] Log directory: %s", log_path)

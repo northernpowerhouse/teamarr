@@ -72,6 +72,8 @@ def get_settings():
             password="********" if settings.dispatcharr.password else None,
             epg_id=settings.dispatcharr.epg_id,
             default_channel_profile_ids=settings.dispatcharr.default_channel_profile_ids,
+            default_stream_profile_id=settings.dispatcharr.default_stream_profile_id,
+            cleanup_unused_logos=settings.dispatcharr.cleanup_unused_logos,
         ),
         lifecycle=LifecycleSettingsModel(
             channel_create_timing=settings.lifecycle.channel_create_timing,
@@ -91,6 +93,8 @@ def get_settings():
         scheduler=SchedulerSettingsModel(
             enabled=settings.scheduler.enabled,
             interval_minutes=settings.scheduler.interval_minutes,
+            channel_reset_enabled=settings.scheduler.channel_reset_enabled,
+            channel_reset_cron=settings.scheduler.channel_reset_cron,
         ),
         epg=EPGSettingsModel(
             team_schedule_days_ahead=settings.epg.team_schedule_days_ahead,

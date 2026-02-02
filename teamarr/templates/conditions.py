@@ -268,6 +268,60 @@ class ConditionEvaluator:
             return False
         return our_rank <= 25 and opp_rank <= 25
 
+    # =========================================================================
+    # Combat sports conditions (UFC/MMA)
+    # =========================================================================
+
+    def _eval_is_knockout(
+        self, value: str | None, ctx: TemplateContext, game_ctx: GameContext
+    ) -> bool:
+        """Check if fight ended by KO or TKO."""
+        event = game_ctx.event
+        if not event or event.sport != "mma":
+            return False
+        method = event.fight_result_method
+        return method in ("ko", "tko")
+
+    def _eval_is_submission(
+        self, value: str | None, ctx: TemplateContext, game_ctx: GameContext
+    ) -> bool:
+        """Check if fight ended by submission."""
+        event = game_ctx.event
+        if not event or event.sport != "mma":
+            return False
+        return event.fight_result_method == "submission"
+
+    def _eval_is_decision(
+        self, value: str | None, ctx: TemplateContext, game_ctx: GameContext
+    ) -> bool:
+        """Check if fight went to decision."""
+        event = game_ctx.event
+        if not event or event.sport != "mma":
+            return False
+        method = event.fight_result_method
+        return method is not None and "decision" in method
+
+    def _eval_is_finish(
+        self, value: str | None, ctx: TemplateContext, game_ctx: GameContext
+    ) -> bool:
+        """Check if fight ended by finish (KO/TKO/Submission, not decision)."""
+        event = game_ctx.event
+        if not event or event.sport != "mma":
+            return False
+        method = event.fight_result_method
+        return method in ("ko", "tko", "submission")
+
+    def _eval_went_distance(
+        self, value: str | None, ctx: TemplateContext, game_ctx: GameContext
+    ) -> bool:
+        """Check if fight went all scheduled rounds."""
+        event = game_ctx.event
+        if not event or event.sport != "mma":
+            return False
+        method = event.fight_result_method
+        # If it went to decision, it went the distance
+        return method is not None and "decision" in method
+
 
 class ConditionalDescriptionSelector:
     """Selects the best description based on conditions and priority."""

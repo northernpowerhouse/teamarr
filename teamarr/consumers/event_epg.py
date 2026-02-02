@@ -399,6 +399,7 @@ class EventEPGGenerator:
                 event=event,
                 team_id=event.home_team.id,
                 league=event.league,
+                card_segment=segment,
             )
 
             # Generate channel name from template

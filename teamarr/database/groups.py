@@ -25,10 +25,9 @@ class EventEPGGroup:
     channel_start_number: int | None = None
     channel_group_id: int | None = None
     channel_group_mode: str = "static"  # "static", "sport", "league"
-    channel_profile_ids: list[int | str] = field(
-        default_factory=list
-    )  # IDs or "{sport}", "{league}"
+    channel_profile_ids: list[int | str] | None = None  # null = use default, [] = no profiles
     stream_profile_id: int | None = None  # Stream profile (overrides global default)
+    stream_timezone: str | None = None  # Timezone for stream datetime parsing
     duplicate_event_handling: str = "consolidate"
     channel_assignment_mode: str = "auto"
     sort_order: int = 0
@@ -55,6 +54,11 @@ class EventEPGGroup:
     custom_regex_time_enabled: bool = False
     custom_regex_league: str | None = None
     custom_regex_league_enabled: bool = False
+    # EVENT_CARD specific regex (UFC, Boxing, MMA)
+    custom_regex_fighters: str | None = None
+    custom_regex_fighters_enabled: bool = False
+    custom_regex_event_name: str | None = None
+    custom_regex_event_name_enabled: bool = False
     skip_builtin_filter: bool = False
     # Team filtering (canonical team selection, inherited by children)
     include_teams: list[dict] | None = None
@@ -84,12 +88,13 @@ class EventEPGGroup:
 def _row_to_group(row) -> EventEPGGroup:
     """Convert a database row to EventEPGGroup."""
     leagues = json.loads(row["leagues"]) if row["leagues"] else []
-    channel_profile_ids = []
+    # Preserve None (use default) vs [] (no profiles) distinction
+    channel_profile_ids = None
     if row["channel_profile_ids"]:
         try:
             channel_profile_ids = json.loads(row["channel_profile_ids"])
         except (json.JSONDecodeError, TypeError):
-            pass
+            channel_profile_ids = None
 
     created_at = None
     if row["created_at"]:
@@ -126,6 +131,7 @@ def _row_to_group(row) -> EventEPGGroup:
         else "static",
         channel_profile_ids=channel_profile_ids,
         stream_profile_id=row["stream_profile_id"] if "stream_profile_id" in row.keys() else None,
+        stream_timezone=row["stream_timezone"] if "stream_timezone" in row.keys() else None,
         duplicate_event_handling=row["duplicate_event_handling"] or "consolidate",
         channel_assignment_mode=row["channel_assignment_mode"] or "auto",
         sort_order=row["sort_order"] or 0,
@@ -158,6 +164,19 @@ def _row_to_group(row) -> EventEPGGroup:
         else None,
         custom_regex_league_enabled=bool(row["custom_regex_league_enabled"])
         if "custom_regex_league_enabled" in row.keys()
+        else False,
+        # EVENT_CARD specific regex
+        custom_regex_fighters=row["custom_regex_fighters"]
+        if "custom_regex_fighters" in row.keys()
+        else None,
+        custom_regex_fighters_enabled=bool(row["custom_regex_fighters_enabled"])
+        if "custom_regex_fighters_enabled" in row.keys()
+        else False,
+        custom_regex_event_name=row["custom_regex_event_name"]
+        if "custom_regex_event_name" in row.keys()
+        else None,
+        custom_regex_event_name_enabled=bool(row["custom_regex_event_name_enabled"])
+        if "custom_regex_event_name_enabled" in row.keys()
         else False,
         skip_builtin_filter=bool(row["skip_builtin_filter"]),
         # Team filtering
@@ -304,6 +323,7 @@ def create_group(
     channel_group_mode: str = "static",
     channel_profile_ids: list[int | str] | None = None,
     stream_profile_id: int | None = None,
+    stream_timezone: str | None = None,
     duplicate_event_handling: str = "consolidate",
     channel_assignment_mode: str = "auto",
     sort_order: int = 0,
@@ -326,6 +346,11 @@ def create_group(
     custom_regex_time_enabled: bool = False,
     custom_regex_league: str | None = None,
     custom_regex_league_enabled: bool = False,
+    # EVENT_CARD specific regex
+    custom_regex_fighters: str | None = None,
+    custom_regex_fighters_enabled: bool = False,
+    custom_regex_event_name: str | None = None,
+    custom_regex_event_name_enabled: bool = False,
     skip_builtin_filter: bool = False,
     # Team filtering
     include_teams: list[dict] | None = None,
@@ -374,7 +399,7 @@ def create_group(
         """INSERT INTO event_epg_groups (
             name, display_name, leagues, group_mode, template_id, channel_start_number,
             channel_group_id, channel_group_mode, channel_profile_ids, stream_profile_id,
-            duplicate_event_handling, channel_assignment_mode, sort_order,
+            stream_timezone, duplicate_event_handling, channel_assignment_mode, sort_order,
             total_stream_count, parent_group_id, m3u_group_id, m3u_group_name,
             m3u_account_id, m3u_account_name,
             stream_include_regex, stream_include_regex_enabled,
@@ -383,10 +408,12 @@ def create_group(
             custom_regex_date, custom_regex_date_enabled,
             custom_regex_time, custom_regex_time_enabled,
             custom_regex_league, custom_regex_league_enabled,
+            custom_regex_fighters, custom_regex_fighters_enabled,
+            custom_regex_event_name, custom_regex_event_name_enabled,
             skip_builtin_filter,
             include_teams, exclude_teams, team_filter_mode,
             channel_sort_order, overlap_handling, enabled
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",  # noqa: E501
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",  # noqa: E501
         (
             name,
             display_name,
@@ -398,6 +425,7 @@ def create_group(
             channel_group_mode,
             json.dumps(channel_profile_ids) if channel_profile_ids else None,
             stream_profile_id,
+            stream_timezone,
             duplicate_event_handling,
             channel_assignment_mode,
             sort_order,
@@ -419,6 +447,10 @@ def create_group(
             int(custom_regex_time_enabled),
             custom_regex_league,
             int(custom_regex_league_enabled),
+            custom_regex_fighters,
+            int(custom_regex_fighters_enabled),
+            custom_regex_event_name,
+            int(custom_regex_event_name_enabled),
             int(skip_builtin_filter),
             json.dumps(include_teams) if include_teams else None,
             json.dumps(exclude_teams) if exclude_teams else None,
@@ -451,6 +483,7 @@ def update_group(
     channel_group_mode: str | None = None,
     channel_profile_ids: list[int | str] | None = None,
     stream_profile_id: int | None = None,
+    stream_timezone: str | None = None,
     duplicate_event_handling: str | None = None,
     channel_assignment_mode: str | None = None,
     sort_order: int | None = None,
@@ -473,6 +506,11 @@ def update_group(
     custom_regex_time_enabled: bool | None = None,
     custom_regex_league: str | None = None,
     custom_regex_league_enabled: bool | None = None,
+    # EVENT_CARD specific regex
+    custom_regex_fighters: str | None = None,
+    custom_regex_fighters_enabled: bool | None = None,
+    custom_regex_event_name: str | None = None,
+    custom_regex_event_name_enabled: bool | None = None,
     skip_builtin_filter: bool | None = None,
     # Team filtering
     include_teams: list[dict] | None = None,
@@ -489,6 +527,7 @@ def update_group(
     clear_channel_group_id: bool = False,
     clear_channel_profile_ids: bool = False,
     clear_stream_profile_id: bool = False,
+    clear_stream_timezone: bool = False,
     clear_parent_group_id: bool = False,
     clear_m3u_group_id: bool = False,
     clear_m3u_group_name: bool = False,
@@ -500,6 +539,8 @@ def update_group(
     clear_custom_regex_date: bool = False,
     clear_custom_regex_time: bool = False,
     clear_custom_regex_league: bool = False,
+    clear_custom_regex_fighters: bool = False,
+    clear_custom_regex_event_name: bool = False,
     clear_include_teams: bool = False,
     clear_exclude_teams: bool = False,
 ) -> bool:
@@ -516,7 +557,22 @@ def update_group(
 
     Returns:
         True if updated
+
+    Raises:
+        ValueError: If trying to set parent on a group that has children
     """
+    # Validation: prevent making a parent-with-children into a child
+    if parent_group_id is not None:
+        child_count = conn.execute(
+            "SELECT COUNT(*) FROM event_epg_groups WHERE parent_group_id = ?",
+            (group_id,),
+        ).fetchone()[0]
+        if child_count > 0:
+            raise ValueError(
+                f"Cannot set parent on group {group_id}: it has {child_count} child group(s). "
+                "Remove or reassign children first."
+            )
+
     updates = []
     values = []
 
@@ -572,6 +628,12 @@ def update_group(
     elif clear_stream_profile_id:
         updates.append("stream_profile_id = NULL")
 
+    if stream_timezone is not None:
+        updates.append("stream_timezone = ?")
+        values.append(stream_timezone)
+    elif clear_stream_timezone:
+        updates.append("stream_timezone = NULL")
+
     if duplicate_event_handling is not None:
         updates.append("duplicate_event_handling = ?")
         values.append(duplicate_event_handling)
@@ -592,6 +654,63 @@ def update_group(
         updates.append("parent_group_id = ?")
         values.append(parent_group_id)
     elif clear_parent_group_id:
+        # When detaching from parent, copy inherited settings if child has none
+        current = conn.execute(
+            """SELECT parent_group_id, template_id, channel_start_number,
+                      channel_group_id, channel_group_mode, channel_profile_ids,
+                      stream_profile_id, channel_assignment_mode
+               FROM event_epg_groups WHERE id = ?""",
+            (group_id,),
+        ).fetchone()
+
+        if current and current["parent_group_id"]:
+            # Get parent's settings to copy
+            parent = conn.execute(
+                """SELECT template_id, channel_start_number, channel_group_id,
+                          channel_group_mode, channel_profile_ids, stream_profile_id,
+                          channel_assignment_mode
+                   FROM event_epg_groups WHERE id = ?""",
+                (current["parent_group_id"],),
+            ).fetchone()
+
+            if parent:
+                # Copy template if child doesn't have one
+                if current["template_id"] is None and parent["template_id"] is not None:
+                    updates.append("template_id = ?")
+                    values.append(parent["template_id"])
+
+                # Copy channel settings if child doesn't have them
+                if current["channel_start_number"] is None and parent["channel_start_number"]:
+                    updates.append("channel_start_number = ?")
+                    values.append(parent["channel_start_number"])
+
+                if current["channel_group_id"] is None and parent["channel_group_id"]:
+                    updates.append("channel_group_id = ?")
+                    values.append(parent["channel_group_id"])
+
+                if current["channel_group_mode"] is None and parent["channel_group_mode"]:
+                    updates.append("channel_group_mode = ?")
+                    values.append(parent["channel_group_mode"])
+
+                if current["channel_profile_ids"] is None and parent["channel_profile_ids"]:
+                    updates.append("channel_profile_ids = ?")
+                    values.append(parent["channel_profile_ids"])
+
+                if current["stream_profile_id"] is None and parent["stream_profile_id"]:
+                    updates.append("stream_profile_id = ?")
+                    values.append(parent["stream_profile_id"])
+
+                # Copy channel assignment mode
+                if parent["channel_assignment_mode"]:
+                    updates.append("channel_assignment_mode = ?")
+                    values.append(parent["channel_assignment_mode"])
+
+                logger.info(
+                    "[DETACH] Group %d: copied settings from parent %d",
+                    group_id,
+                    current["parent_group_id"],
+                )
+
         updates.append("parent_group_id = NULL")
 
     if m3u_group_id is not None:
@@ -678,6 +797,27 @@ def update_group(
     if custom_regex_league_enabled is not None:
         updates.append("custom_regex_league_enabled = ?")
         values.append(int(custom_regex_league_enabled))
+
+    # EVENT_CARD specific regex
+    if custom_regex_fighters is not None:
+        updates.append("custom_regex_fighters = ?")
+        values.append(custom_regex_fighters)
+    elif clear_custom_regex_fighters:
+        updates.append("custom_regex_fighters = NULL")
+
+    if custom_regex_fighters_enabled is not None:
+        updates.append("custom_regex_fighters_enabled = ?")
+        values.append(int(custom_regex_fighters_enabled))
+
+    if custom_regex_event_name is not None:
+        updates.append("custom_regex_event_name = ?")
+        values.append(custom_regex_event_name)
+    elif clear_custom_regex_event_name:
+        updates.append("custom_regex_event_name = NULL")
+
+    if custom_regex_event_name_enabled is not None:
+        updates.append("custom_regex_event_name_enabled = ?")
+        values.append(int(custom_regex_event_name_enabled))
 
     if skip_builtin_filter is not None:
         updates.append("skip_builtin_filter = ?")
@@ -904,6 +1044,138 @@ def delete_group(conn: Connection, group_id: int) -> bool:
     return False
 
 
+def promote_to_parent(conn: Connection, group_id: int) -> dict:
+    """Promote a child group to become the parent, swapping the hierarchy.
+
+    This is an atomic operation that:
+    1. Makes the old parent a child of the promoted group
+    2. Makes all siblings children of the promoted group
+    3. Copies settings from old parent to promoted group if needed
+    4. Clears the promoted group's parent_group_id
+
+    Example:
+        Before: A (parent) -> B, C, D (children)
+        promote_to_parent(D)
+        After: D (parent) -> A, B, C (children)
+
+    Args:
+        conn: Database connection
+        group_id: ID of the child group to promote
+
+    Returns:
+        dict with promoted_group_id, old_parent_id, reassigned_groups
+
+    Raises:
+        ValueError: If group is not a child or validation fails
+    """
+    # Get the group to promote
+    promoted = conn.execute(
+        """SELECT id, name, parent_group_id, template_id, channel_start_number,
+                  channel_group_id, channel_group_mode, channel_profile_ids,
+                  stream_profile_id, channel_assignment_mode, leagues
+           FROM event_epg_groups WHERE id = ?""",
+        (group_id,),
+    ).fetchone()
+
+    if not promoted:
+        raise ValueError(f"Group {group_id} not found")
+
+    if not promoted["parent_group_id"]:
+        raise ValueError(f"Group {group_id} is not a child group - cannot promote")
+
+    old_parent_id = promoted["parent_group_id"]
+
+    # Get the old parent's settings (to copy if needed)
+    old_parent = conn.execute(
+        """SELECT id, name, template_id, channel_start_number, channel_group_id,
+                  channel_group_mode, channel_profile_ids, stream_profile_id,
+                  channel_assignment_mode
+           FROM event_epg_groups WHERE id = ?""",
+        (old_parent_id,),
+    ).fetchone()
+
+    if not old_parent:
+        raise ValueError(f"Parent group {old_parent_id} not found")
+
+    # Get all siblings (other children of the same parent, excluding self)
+    siblings = conn.execute(
+        "SELECT id, name FROM event_epg_groups WHERE parent_group_id = ? AND id != ?",
+        (old_parent_id, group_id),
+    ).fetchall()
+
+    # Copy settings from old parent to promoted group if promoted has NULL
+    settings_updates = []
+    settings_values = []
+
+    if promoted["template_id"] is None and old_parent["template_id"] is not None:
+        settings_updates.append("template_id = ?")
+        settings_values.append(old_parent["template_id"])
+
+    if promoted["channel_start_number"] is None and old_parent["channel_start_number"]:
+        settings_updates.append("channel_start_number = ?")
+        settings_values.append(old_parent["channel_start_number"])
+
+    if promoted["channel_group_id"] is None and old_parent["channel_group_id"]:
+        settings_updates.append("channel_group_id = ?")
+        settings_values.append(old_parent["channel_group_id"])
+
+    if promoted["channel_group_mode"] is None and old_parent["channel_group_mode"]:
+        settings_updates.append("channel_group_mode = ?")
+        settings_values.append(old_parent["channel_group_mode"])
+
+    if promoted["channel_profile_ids"] is None and old_parent["channel_profile_ids"]:
+        settings_updates.append("channel_profile_ids = ?")
+        settings_values.append(old_parent["channel_profile_ids"])
+
+    if promoted["stream_profile_id"] is None and old_parent["stream_profile_id"]:
+        settings_updates.append("stream_profile_id = ?")
+        settings_values.append(old_parent["stream_profile_id"])
+
+    if old_parent["channel_assignment_mode"]:
+        settings_updates.append("channel_assignment_mode = ?")
+        settings_values.append(old_parent["channel_assignment_mode"])
+
+    # Clear promoted group's parent and apply copied settings
+    settings_updates.append("parent_group_id = NULL")
+    if settings_updates:
+        conn.execute(
+            f"UPDATE event_epg_groups SET {', '.join(settings_updates)} WHERE id = ?",
+            (*settings_values, group_id),
+        )
+
+    # Make old parent a child of promoted group
+    conn.execute(
+        "UPDATE event_epg_groups SET parent_group_id = ? WHERE id = ?",
+        (group_id, old_parent_id),
+    )
+
+    # Make all siblings children of promoted group
+    reassigned_ids = [old_parent_id]
+    for sibling in siblings:
+        conn.execute(
+            "UPDATE event_epg_groups SET parent_group_id = ? WHERE id = ?",
+            (group_id, sibling["id"]),
+        )
+        reassigned_ids.append(sibling["id"])
+
+    logger.info(
+        "[PROMOTE] Group %d (%s) promoted to parent. Old parent %d and %d siblings reassigned.",
+        group_id,
+        promoted["name"],
+        old_parent_id,
+        len(siblings),
+    )
+
+    return {
+        "promoted_group_id": group_id,
+        "promoted_group_name": promoted["name"],
+        "old_parent_id": old_parent_id,
+        "old_parent_name": old_parent["name"],
+        "reassigned_groups": reassigned_ids,
+        "reassigned_count": len(reassigned_ids),
+    }
+
+
 # =============================================================================
 # STATS / HELPERS
 # =============================================================================
@@ -1090,3 +1362,256 @@ def delete_group_xmltv(conn: Connection, group_id: int) -> bool:
         logger.debug("[DELETED] XMLTV for group id=%d", group_id)
         return True
     return False
+
+
+# =============================================================================
+# GROUP_TEMPLATES - Multi-template assignment per group
+# =============================================================================
+
+
+@dataclass
+class GroupTemplate:
+    """Template assignment for a group with optional sport/league filters."""
+
+    id: int
+    group_id: int
+    template_id: int
+    sports: list[str] | None = None  # NULL = any, or ["mma", "boxing"]
+    leagues: list[str] | None = None  # NULL = any, or ["ufc", "bellator"]
+    # Joined fields (for display)
+    template_name: str | None = None
+
+
+def _row_to_group_template(row) -> GroupTemplate:
+    """Convert database row to GroupTemplate."""
+    sports = None
+    if row["sports"]:
+        try:
+            sports = json.loads(row["sports"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    leagues = None
+    if row["leagues"]:
+        try:
+            leagues = json.loads(row["leagues"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return GroupTemplate(
+        id=row["id"],
+        group_id=row["group_id"],
+        template_id=row["template_id"],
+        sports=sports,
+        leagues=leagues,
+        template_name=row["template_name"] if "template_name" in row.keys() else None,
+    )
+
+
+def get_group_templates(conn: Connection, group_id: int) -> list[GroupTemplate]:
+    """Get all template assignments for a group.
+
+    Args:
+        conn: Database connection
+        group_id: Group ID
+
+    Returns:
+        List of GroupTemplate objects ordered by specificity (leagues first)
+    """
+    cursor = conn.execute(
+        """SELECT gt.*, t.name as template_name
+           FROM group_templates gt
+           LEFT JOIN templates t ON gt.template_id = t.id
+           WHERE gt.group_id = ?
+           ORDER BY
+               CASE WHEN gt.leagues IS NOT NULL THEN 0 ELSE 1 END,
+               CASE WHEN gt.sports IS NOT NULL THEN 0 ELSE 1 END""",
+        (group_id,),
+    )
+    return [_row_to_group_template(row) for row in cursor.fetchall()]
+
+
+def add_group_template(
+    conn: Connection,
+    group_id: int,
+    template_id: int,
+    sports: list[str] | None = None,
+    leagues: list[str] | None = None,
+) -> int:
+    """Add a template assignment to a group.
+
+    Args:
+        conn: Database connection
+        group_id: Group ID
+        template_id: Template ID to assign
+        sports: Optional list of sports this template applies to
+        leagues: Optional list of leagues this template applies to
+
+    Returns:
+        ID of the new assignment
+    """
+    sports_json = json.dumps(sports) if sports else None
+    leagues_json = json.dumps(leagues) if leagues else None
+
+    cursor = conn.execute(
+        """INSERT INTO group_templates (group_id, template_id, sports, leagues)
+           VALUES (?, ?, ?, ?)""",
+        (group_id, template_id, sports_json, leagues_json),
+    )
+    conn.commit()
+    logger.debug(
+        "[GROUP_TEMPLATES] Added template %d to group %d (sports=%s, leagues=%s)",
+        template_id,
+        group_id,
+        sports,
+        leagues,
+    )
+    return cursor.lastrowid
+
+
+def update_group_template(
+    conn: Connection,
+    assignment_id: int,
+    template_id: int | None = None,
+    sports: list[str] | None = ...,  # Use ... as sentinel for "not provided"
+    leagues: list[str] | None = ...,
+) -> bool:
+    """Update a template assignment.
+
+    Args:
+        conn: Database connection
+        assignment_id: ID of the assignment to update
+        template_id: New template ID (if provided)
+        sports: New sports filter (None to clear, ... to keep existing)
+        leagues: New leagues filter (None to clear, ... to keep existing)
+
+    Returns:
+        True if updated
+    """
+    updates = []
+    params = []
+
+    if template_id is not None:
+        updates.append("template_id = ?")
+        params.append(template_id)
+
+    if sports is not ...:
+        updates.append("sports = ?")
+        params.append(json.dumps(sports) if sports else None)
+
+    if leagues is not ...:
+        updates.append("leagues = ?")
+        params.append(json.dumps(leagues) if leagues else None)
+
+    if not updates:
+        return False
+
+    params.append(assignment_id)
+    cursor = conn.execute(
+        f"UPDATE group_templates SET {', '.join(updates)} WHERE id = ?",
+        params,
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def delete_group_template(conn: Connection, assignment_id: int) -> bool:
+    """Delete a template assignment.
+
+    Args:
+        conn: Database connection
+        assignment_id: ID of the assignment to delete
+
+    Returns:
+        True if deleted
+    """
+    cursor = conn.execute("DELETE FROM group_templates WHERE id = ?", (assignment_id,))
+    conn.commit()
+    if cursor.rowcount > 0:
+        logger.debug("[GROUP_TEMPLATES] Deleted assignment %d", assignment_id)
+        return True
+    return False
+
+
+def delete_group_templates(conn: Connection, group_id: int) -> int:
+    """Delete all template assignments for a group.
+
+    Args:
+        conn: Database connection
+        group_id: Group ID
+
+    Returns:
+        Number of assignments deleted
+    """
+    cursor = conn.execute("DELETE FROM group_templates WHERE group_id = ?", (group_id,))
+    conn.commit()
+    return cursor.rowcount
+
+
+def get_template_for_event(
+    conn: Connection,
+    group_id: int,
+    event_sport: str,
+    event_league: str,
+) -> int | None:
+    """Resolve the best template for an event based on specificity.
+
+    Resolution order (most specific wins):
+    1. leagues match - event.league in template's leagues array
+    2. sports match - event.sport in template's sports array
+    3. default - template with both sports and leagues NULL
+
+    Args:
+        conn: Database connection
+        group_id: Group ID
+        event_sport: Event's sport code (e.g., "mma", "football")
+        event_league: Event's league code (e.g., "ufc", "nfl")
+
+    Returns:
+        Template ID or None if no template configured
+    """
+    templates = get_group_templates(conn, group_id)
+
+    if not templates:
+        # Fall back to group's legacy template_id
+        row = conn.execute(
+            "SELECT template_id FROM event_epg_groups WHERE id = ?",
+            (group_id,),
+        ).fetchone()
+        return row["template_id"] if row else None
+
+    # 1. Check for league match (most specific)
+    for t in templates:
+        if t.leagues and event_league in t.leagues:
+            logger.debug(
+                "[GROUP_TEMPLATES] Resolved template %d for event (league=%s match)",
+                t.template_id,
+                event_league,
+            )
+            return t.template_id
+
+    # 2. Check for sport match
+    for t in templates:
+        if t.sports and event_sport in t.sports:
+            logger.debug(
+                "[GROUP_TEMPLATES] Resolved template %d for event (sport=%s match)",
+                t.template_id,
+                event_sport,
+            )
+            return t.template_id
+
+    # 3. Check for default (both NULL)
+    for t in templates:
+        if t.sports is None and t.leagues is None:
+            logger.debug(
+                "[GROUP_TEMPLATES] Resolved template %d for event (default)",
+                t.template_id,
+            )
+            return t.template_id
+
+    # No match found - fall back to group's legacy template_id
+    row = conn.execute(
+        "SELECT template_id FROM event_epg_groups WHERE id = ?",
+        (group_id,),
+    ).fetchone()
+    return row["template_id"] if row else None

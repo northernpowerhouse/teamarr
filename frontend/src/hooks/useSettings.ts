@@ -36,7 +36,7 @@ import {
 import type {
   DispatcharrSettings,
   LifecycleSettings,
-  SchedulerSettings,
+  SchedulerSettingsUpdate,
   EPGSettings,
   DurationSettings,
   ReconciliationSettings,
@@ -126,7 +126,7 @@ export function useUpdateSchedulerSettings() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (data: SchedulerSettings) => updateSchedulerSettings(data),
+    mutationFn: (data: SchedulerSettingsUpdate) => updateSchedulerSettings(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] })
       queryClient.invalidateQueries({ queryKey: ["scheduler"] })

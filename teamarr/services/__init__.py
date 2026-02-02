@@ -25,6 +25,7 @@ from teamarr.services.channel_service import (
     ReconciliationSummary,
     create_channel_service,
 )
+from teamarr.services.detection_keywords import DetectionKeywordService
 from teamarr.services.epg_service import (
     EPGService,
     EventEPGOptions,
@@ -114,4 +115,6 @@ __all__ = [
     "StreamOrderingService",
     "StreamWithPriority",
     "get_stream_ordering_service",
+    # Detection keyword service
+    "DetectionKeywordService",
 ]

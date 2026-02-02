@@ -1,4 +1,5 @@
 export { Dashboard } from "./Dashboard"
+export { DetectionLibrary } from "./DetectionLibrary"
 export { EventGroups } from "./EventGroups"
 export { EventGroupForm } from "./EventGroupForm"
 export { EventGroupImport } from "./EventGroupImport"

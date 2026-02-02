@@ -1,11 +1,11 @@
 ---
-title: Channel Management
+title: Channels
 parent: Settings
 grand_parent: User Guide
-nav_order: 4
+nav_order: 5
 ---
 
-# Channel Management Settings
+# Channels Settings
 
 Configure channel lifecycle, numbering, and stream ordering.
 

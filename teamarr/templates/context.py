@@ -42,6 +42,9 @@ class GameContext:
     opponent_stats: TeamStats | None = None
     odds: Odds | None = None
 
+    # UFC/Combat sports segment (early_prelims, prelims, main_card)
+    card_segment: str | None = None
+
 
 @dataclass
 class TeamChannelContext:

@@ -9,6 +9,7 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -202,6 +203,7 @@ export function Teams() {
   const deleteMutation = useDeleteTeam()
 
   // Filter state
+  const [nameFilter, setNameFilter] = useState<string>("")
   const [leagueFilter, setLeagueFilter] = useState<string>("")
   const [sportFilter, setSportFilter] = useState<string>("")
   const [templateFilter, setTemplateFilter] = useState<string>("")
@@ -277,6 +279,9 @@ export function Teams() {
 
     // First filter
     let result = teams.filter((team) => {
+      // Name filter
+      if (nameFilter && !team.team_name.toLowerCase().includes(nameFilter.toLowerCase())) return false
+
       // League filter - match if any of the team's leagues match
       if (leagueFilter && !team.leagues.includes(leagueFilter)) return false
 
@@ -341,13 +346,13 @@ export function Teams() {
     }
 
     return result
-  }, [teams, leagueFilter, sportFilter, templateFilter, activeFilter, sortColumn, sortDirection, teamTemplates])
+  }, [teams, nameFilter, leagueFilter, sportFilter, templateFilter, activeFilter, sortColumn, sortDirection, teamTemplates])
 
   // Clear selection when filters change
   useEffect(() => {
     setSelectedIds(new Set())
     setLastClickedIndex(null)
-  }, [leagueFilter, sportFilter, templateFilter, activeFilter])
+  }, [nameFilter, leagueFilter, sportFilter, templateFilter, activeFilter])
 
   // Handle column sort
   const handleSort = (column: SortColumn) => {
@@ -707,17 +712,15 @@ export function Teams() {
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : filteredTeams.length === 0 ? (
+          ) : teams?.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              {teams?.length === 0
-                ? "No teams configured. Add a team to generate team-based EPG."
-                : "No teams match the current filters."}
+              No teams configured. Add a team to generate team-based EPG.
             </div>
           ) : (
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-8">
+                  <TableHead className="w-10">
                     <Checkbox
                       checked={
                         selectedIds.size === filteredTeams.length && filteredTeams.length > 0
@@ -726,7 +729,7 @@ export function Teams() {
                     />
                   </TableHead>
                   <TableHead
-                    className="cursor-pointer hover:bg-muted/50"
+                    className="w-[28%] cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort("team")}
                   >
                     <div className="flex items-center">
@@ -734,7 +737,7 @@ export function Teams() {
                     </div>
                   </TableHead>
                   <TableHead
-                    className="w-[100px] cursor-pointer hover:bg-muted/50"
+                    className="w-20 cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort("league")}
                   >
                     <div className="flex items-center">
@@ -742,7 +745,7 @@ export function Teams() {
                     </div>
                   </TableHead>
                   <TableHead
-                    className="w-[70px] text-center cursor-pointer hover:bg-muted/50"
+                    className="w-14 text-center cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort("sport")}
                   >
                     <div className="flex items-center justify-center">
@@ -750,7 +753,7 @@ export function Teams() {
                     </div>
                   </TableHead>
                   <TableHead
-                    className="cursor-pointer hover:bg-muted/50"
+                    className="w-[28%] cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort("channel")}
                   >
                     <div className="flex items-center">
@@ -758,7 +761,7 @@ export function Teams() {
                     </div>
                   </TableHead>
                   <TableHead
-                    className="w-[120px] cursor-pointer hover:bg-muted/50"
+                    className="w-24 cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort("template")}
                   >
                     <div className="flex items-center">
@@ -766,19 +769,37 @@ export function Teams() {
                     </div>
                   </TableHead>
                   <TableHead
-                    className="w-[70px] cursor-pointer hover:bg-muted/50"
+                    className="w-16 cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort("status")}
                   >
                     <div className="flex items-center">
                       Status {renderSortIcon("status")}
                     </div>
                   </TableHead>
-                  <TableHead className="w-[70px] text-right">Actions</TableHead>
+                  <TableHead className="w-20 text-right">Actions</TableHead>
                 </TableRow>
                 {/* Filter row - styled like V1 */}
                 <TableRow className="border-b-2 border-border">
                   <TableHead className="py-0.5 pb-1.5"></TableHead>
-                  <TableHead className="py-0.5 pb-1.5"></TableHead>
+                  <TableHead className="py-0.5 pb-1.5">
+                    <div className="relative">
+                      <Input
+                        type="text"
+                        placeholder="Filter..."
+                        value={nameFilter}
+                        onChange={(e) => setNameFilter(e.target.value)}
+                        className="h-[18px] text-[0.65rem] italic px-1 pr-4 rounded-sm"
+                      />
+                      {nameFilter && (
+                        <button
+                          onClick={() => setNameFilter("")}
+                          className="absolute right-0.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      )}
+                    </div>
+                  </TableHead>
                   <TableHead className="py-0.5 pb-1.5">
                     <FilterSelect
                       value={leagueFilter}
@@ -826,7 +847,13 @@ export function Teams() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredTeams.map((team, index) => (
+                {filteredTeams.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      No teams match the current filters.
+                    </TableCell>
+                  </TableRow>
+                ) : filteredTeams.map((team, index) => (
                   <TableRow
                     key={team.id}
                     className={cn(selectedIds.has(team.id) && "bg-muted/50")}
@@ -854,7 +881,7 @@ export function Teams() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="text-center">
                       {(() => {
                         const hasMultiLeague = team.leagues.length > 1
 
@@ -914,7 +941,7 @@ export function Teams() {
                         return leagueDisplay
                       })()}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="text-center">
                       <span className="text-xl" title={team.sport}>
                         {getSportEmoji(team.sport)}
                       </span>

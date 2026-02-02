@@ -55,6 +55,9 @@ class SchedulerSettings:
 
     enabled: bool = True
     interval_minutes: int = 15
+    # Scheduled channel reset (for Jellyfin logo cache issues)
+    channel_reset_enabled: bool = False
+    channel_reset_cron: str | None = None
 
 
 @dataclass
@@ -228,4 +231,4 @@ class AllSettings:
     stream_ordering: StreamOrderingSettings = field(default_factory=StreamOrderingSettings)
     update_check: UpdateCheckSettings = field(default_factory=UpdateCheckSettings)
     epg_generation_counter: int = 0
-    schema_version: int = 44
+    schema_version: int = 48

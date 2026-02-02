@@ -193,6 +193,7 @@ class CronScheduler:
         """Run all scheduled tasks.
 
         Tasks:
+        - Scheduled channel reset (if enabled and cron matches)
         - Daily cache refresh (team/league data from ESPN/TSDB)
         - EPG generation (teams, groups, XMLTV)
         - Dispatcharr integration
@@ -204,9 +205,17 @@ class CronScheduler:
         self._last_run = datetime.now()
         results = {
             "started_at": self._last_run.isoformat(),
+            "channel_reset": {},
             "cache_refresh": {},
             "epg_generation": {},
         }
+
+        # Scheduled channel reset (runs before EPG generation if due)
+        try:
+            results["channel_reset"] = self._task_channel_reset()
+        except Exception as e:
+            logger.warning("[CRON] Channel reset task failed: %s", e)
+            results["channel_reset"] = {"error": str(e)}
 
         # Daily cache refresh (only refreshes if > 1 day old)
         try:
@@ -224,6 +233,93 @@ class CronScheduler:
 
         results["completed_at"] = datetime.now().isoformat()
         return results
+
+    def _task_channel_reset(self) -> dict:
+        """Reset all Teamarr channels if scheduled.
+
+        Checks if channel reset is enabled and if the reset cron schedule
+        has fired since the last scheduler run. If so, purges all Teamarr
+        channels from Dispatcharr.
+
+        This helps users with Jellyfin logo caching issues - by scheduling
+        reset right before Jellyfin's guide refresh, channel logos get
+        re-downloaded fresh.
+
+        Returns:
+            Dict with reset status
+        """
+        from teamarr.database.settings import get_scheduler_settings
+
+        with self._db_factory() as conn:
+            settings = get_scheduler_settings(conn)
+
+        if not settings.channel_reset_enabled:
+            return {"skipped": True, "reason": "Channel reset not enabled"}
+
+        if not settings.channel_reset_cron:
+            return {"skipped": True, "reason": "No reset cron expression configured"}
+
+        # Check if reset cron has fired since last scheduler run
+        # We use a 1-hour window to catch the reset even if scheduler timing drifts
+        try:
+            reset_cron = croniter(settings.channel_reset_cron, datetime.now())
+            last_reset_time = reset_cron.get_prev(datetime)
+
+            # If last reset time was within the last hour, run the reset
+            time_since_reset = (datetime.now() - last_reset_time).total_seconds()
+            if time_since_reset > 3600:  # More than 1 hour ago
+                return {
+                    "skipped": True,
+                    "reason": "Reset not due yet",
+                    "last_scheduled": last_reset_time.isoformat(),
+                }
+        except (KeyError, ValueError) as e:
+            logger.warning("[CRON] Invalid channel reset cron: %s", e)
+            return {"skipped": True, "reason": f"Invalid cron: {e}"}
+
+        # Perform the reset
+        logger.info("[CRON] Running scheduled channel reset")
+
+        from teamarr.dispatcharr import ChannelManager, get_dispatcharr_client
+
+        client = get_dispatcharr_client(self._db_factory)
+        if not client:
+            return {"skipped": True, "reason": "Dispatcharr not connected"}
+
+        manager = ChannelManager(client)
+        all_channels = manager.get_channels()
+
+        deleted_count = 0
+        errors: list[str] = []
+
+        for ch in all_channels:
+            tvg_id = ch.tvg_id or ""
+            if not tvg_id.startswith("teamarr-event-"):
+                continue
+
+            result = manager.delete_channel(ch.id)
+            if result.success:
+                deleted_count += 1
+            else:
+                errors.append(f"Failed to delete {ch.name}: {result.error}")
+
+        # Mark all managed_channels as deleted
+        with self._db_factory() as conn:
+            conn.execute(
+                """UPDATE managed_channels
+                   SET deleted_at = CURRENT_TIMESTAMP
+                   WHERE deleted_at IS NULL"""
+            )
+            conn.commit()
+
+        logger.info("[CRON] Channel reset complete: deleted %d channels", deleted_count)
+
+        return {
+            "executed": True,
+            "deleted_count": deleted_count,
+            "error_count": len(errors),
+            "errors": errors if errors else None,
+        }
 
     def _task_refresh_cache(self) -> dict:
         """Refresh team/league cache if stale (daily).

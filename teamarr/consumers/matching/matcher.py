@@ -36,6 +36,8 @@ from teamarr.consumers.matching.classifier import (
 from teamarr.consumers.matching.constants import MATCH_WINDOW_DAYS
 from teamarr.consumers.matching.event_matcher import EventCardMatcher
 from teamarr.consumers.matching.result import (
+    ExcludedReason,
+    FailedReason,
     FilteredReason,
     MatchMethod,
     MatchOutcome,
@@ -57,7 +59,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class MatchedStreamResult:
-    """Result of matching a single stream."""
+    """Result of matching a single stream.
+
+    This is the business-level result that combines:
+    - Match outcome from MatchOutcome
+    - Inclusion decision (business rules)
+    - Classification data from ClassifiedStream
+    """
 
     stream_name: str
     stream_id: int
@@ -69,7 +77,7 @@ class MatchedStreamResult:
 
     # Inclusion decision
     included: bool = False
-    exclusion_reason: str | None = None
+    exclusion_reason: str | None = None  # Human-readable string
 
     # Method tracking
     match_method: MatchMethod | None = None
@@ -86,6 +94,12 @@ class MatchedStreamResult:
 
     # Exception handling
     exception_keyword: str | None = None
+
+    # Detailed reason enums from MatchOutcome (preserved for type-safe access)
+    failed_reason: FailedReason | None = None
+    filtered_reason: FilteredReason | None = None
+    excluded_reason: ExcludedReason | None = None
+    detail: str | None = None  # Additional context from matching
 
     @property
     def is_exception(self) -> bool:
@@ -168,6 +182,7 @@ class StreamMatcher:
         custom_regex_league_enabled: bool = False,
         days_ahead: int | None = None,
         shared_events: dict[str, tuple[list[Event], bool]] | None = None,
+        stream_timezone: str | None = None,
     ):
         """Initialize the matcher.
 
@@ -194,6 +209,7 @@ class StreamMatcher:
                            across multiple matchers in a single generation run.
                            Values are (events, was_cache_only) tuples where was_cache_only
                            indicates if the result came from a cache-only lookup.
+            stream_timezone: IANA timezone for interpreting stream dates (group setting)
         """
         self._service = service
         self._db_factory = db_factory
@@ -203,6 +219,14 @@ class StreamMatcher:
         self._include_final_events = include_final_events
         self._sport_durations = sport_durations or {}
         self._user_tz = user_tz or get_user_timezone()
+
+        # Stream timezone (group setting) - convert IANA string to ZoneInfo
+        self._stream_tz: ZoneInfo | None = None
+        if stream_timezone:
+            try:
+                self._stream_tz = ZoneInfo(stream_timezone)
+            except (KeyError, ValueError):
+                logger.warning("[MATCHER] Invalid stream_timezone: %s", stream_timezone)
 
         # Load days_ahead from settings if not provided
         if days_ahead is None:
@@ -497,6 +521,15 @@ class StreamMatcher:
         target_date: date,
     ) -> MatchOutcome:
         """Match a team-vs-team stream."""
+        # Determine effective stream timezone for date/time comparison
+        # Priority: extracted TZ from stream > group setting > None (use user_tz as fallback)
+        stream_tz = self._stream_tz
+        if classified.normalized.extracted_tz:
+            try:
+                stream_tz = ZoneInfo(classified.normalized.extracted_tz)
+            except (KeyError, ValueError):
+                pass  # Keep group setting or None
+
         # Determine if single-league or multi-league matching
         if len(self._search_leagues) == 1:
             league = self._search_leagues[0]
@@ -509,6 +542,7 @@ class StreamMatcher:
                 generation=self._generation,
                 user_tz=self._user_tz,
                 sport_durations=self._sport_durations,
+                stream_tz=stream_tz,
             )
         else:
             return self._team_matcher.match_multi_league(
@@ -521,6 +555,7 @@ class StreamMatcher:
                 user_tz=self._user_tz,
                 sport_durations=self._sport_durations,
                 prefetched_events=self._prefetched_events,
+                stream_tz=stream_tz,
             )
 
     def _match_event_card(
@@ -617,6 +652,11 @@ class StreamMatcher:
             parsed_team2=classified.team2,
             detected_league=detected_league_str,
             card_segment=classified.card_segment,  # UFC segment from stream name
+            # Preserve detailed reason enums from MatchOutcome
+            failed_reason=outcome.failed_reason,
+            filtered_reason=outcome.filtered_reason,
+            excluded_reason=outcome.excluded_reason,
+            detail=outcome.detail,
         )
 
     def _get_dominant_event_type(self) -> str | None:

@@ -150,8 +150,11 @@ export async function refreshCache(): Promise<{ status: string; message: string 
         if (line.startsWith("data: ")) {
           try {
             const data = JSON.parse(line.slice(6))
-            if (data.status === "completed") {
-              lastStatus = { status: "success", message: `Refreshed ${data.result?.teams_count || 0} teams` }
+            if (data.status === "complete") {
+              // Backend sends "complete", not "completed"
+              const teams = data.result?.teams_count || 0
+              const leagues = data.result?.leagues_count || 0
+              lastStatus = { status: "success", message: `Refreshed ${leagues} leagues, ${teams} teams` }
             } else if (data.status === "error") {
               lastStatus = { status: "error", message: data.message || "Refresh failed" }
             }
@@ -364,4 +367,31 @@ export async function correctStreamMatch(
   request: MatchCorrectionRequest
 ): Promise<MatchCorrectionResponse> {
   return api.post("/epg/streams/correct", request)
+}
+
+// Game Data Cache (schedules, scores, odds from providers)
+
+export interface GameDataCacheStats {
+  total_entries: number
+  active_entries: number
+  expired_entries: number
+  hits: number
+  misses: number
+  hit_rate: number
+  pending_writes: number
+  pending_deletes: number
+}
+
+export interface GameDataCacheClearResponse {
+  success: boolean
+  entries_cleared: number
+  message: string
+}
+
+export async function getGameDataCacheStats(): Promise<GameDataCacheStats> {
+  return api.get("/game-data-cache/stats")
+}
+
+export async function clearGameDataCache(): Promise<GameDataCacheClearResponse> {
+  return api.post("/game-data-cache/clear", {})
 }

@@ -27,6 +27,7 @@ def _category_display_name(category: Category) -> str:
         Category.RANKINGS: "Rankings",
         Category.CONFERENCE: "Conference",
         Category.SOCCER: "Soccer",
+        Category.COMBAT: "Combat Sports",
     }
     return names.get(category, category.name.title())
 
@@ -226,11 +227,45 @@ def get_conditions(template_type: str = "team"):
         },
     ]
 
+    # Combat sports conditions (MMA/UFC events)
+    combat_conditions = [
+        {
+            "name": "is_knockout",
+            "description": "Fight ended by KO or TKO",
+            "requires_value": False,
+            "providers": "espn",
+        },
+        {
+            "name": "is_submission",
+            "description": "Fight ended by submission",
+            "requires_value": False,
+            "providers": "espn",
+        },
+        {
+            "name": "is_decision",
+            "description": "Fight went to decision",
+            "requires_value": False,
+            "providers": "espn",
+        },
+        {
+            "name": "is_finish",
+            "description": "Fight ended by finish (KO/TKO/Submission)",
+            "requires_value": False,
+            "providers": "espn",
+        },
+        {
+            "name": "went_distance",
+            "description": "Fight went all scheduled rounds",
+            "requires_value": False,
+            "providers": "espn",
+        },
+    ]
+
     if template_type == "event":
-        # Event templates have no conditions - they lack "our team" perspective
-        conditions = []
+        # Event templates get combat conditions only (for MMA event EPG)
+        conditions = combat_conditions
     else:
         # Team templates get all conditions
-        conditions = team_only_conditions + common_conditions
+        conditions = team_only_conditions + common_conditions + combat_conditions
 
     return {"conditions": conditions, "template_type": template_type}

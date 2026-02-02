@@ -12,7 +12,7 @@ Configure Teamarr's behavior through the Settings page. Settings are organized i
 - **[General](general)** - Timezone, time format, and display preferences
 - **[Teams](teams)** - Team-based stream settings
 - **[Event Groups](event-groups)** - Event matching and filtering defaults
-- **[Channel Management](channels)** - Lifecycle, numbering, and stream ordering
-- **[EPG Generation](epg)** - Output settings, scheduling, and durations
+- **[EPG](epg)** - Output settings, scheduling, scheduled reset, and durations
+- **[Channels](channels)** - Lifecycle, numbering, and stream ordering
 - **[Dispatcharr](dispatcharr)** - Dispatcharr connection, EPG source, profiles, and logo cleanup
-- **[Advanced](advanced)** - Local caching, TheSportsDB API, XMLTV metadata, backup/restore, update notifications
+- **[System](advanced)** - Updates, backup/restore, local caching, TheSportsDB API, XMLTV metadata

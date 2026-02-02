@@ -6,18 +6,25 @@ Streams are routed to correct segment channel based on detected card_segment.
 Segment timing comes from ESPN bout-level data:
 - PPV events: 3 segments (early_prelims, prelims, main_card)
 - Fight Night: 2 segments (prelims, main_card)
+
+Timezone disambiguation uses three-tier priority:
+1. Timezone indicator extracted from stream name (e.g., "9PM ET")
+2. Group-configured stream_timezone
+3. User's configured timezone (fallback)
 """
 
 import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from teamarr.consumers.matching.classifier import (
     ClassifiedStream,
     detect_card_segment,
-    is_ufc_excluded,
+    is_combat_sports_excluded,
 )
+from teamarr.consumers.matching.normalizer import TZ_ABBREVIATION_MAP
 from teamarr.core.types import Event
 
 logger = logging.getLogger(__name__)
@@ -32,6 +39,10 @@ SEGMENT_DISPLAY_NAMES: dict[str, str] = {
 
 # Segment codes ordered from earliest to latest
 SEGMENT_ORDER = ["early_prelims", "prelims", "main_card"]
+
+# Maximum distance (in minutes) for time-based segment detection
+# If stream time is more than this far from any segment, ignore the time
+MAX_SEGMENT_TIME_DISTANCE_MINUTES = 60
 
 
 def canonicalize_segment(detected: str, event: Event) -> str:
@@ -93,47 +104,69 @@ def canonicalize_segment(detected: str, event: Event) -> str:
     return fallback
 
 
-def extract_time_from_stream(stream_name: str) -> time | None:
-    """Extract time from stream name for segment disambiguation.
+def extract_time_and_tz_from_stream(stream_name: str) -> tuple[time | None, str | None]:
+    """Extract time and timezone from stream name for segment disambiguation.
 
     Looks for common time patterns in stream names:
-    - "5:30 PM", "5:30PM", "5:30pm"
-    - "10pm", "10 pm", "10PM"
+    - "5:30 PM ET", "5:30PM EST", "5:30pm"
+    - "10pm ET", "10 pm", "10PM"
     - "22:30" (24-hour format)
 
     Args:
         stream_name: Raw stream name
 
     Returns:
-        Extracted time or None
+        Tuple of (extracted time, IANA timezone name or None)
     """
     if not stream_name:
-        return None
+        return None, None
 
-    # Pattern 1: 12-hour format with minutes - "5:30 PM", "5:30PM"
-    match = re.search(r"\b(\d{1,2}):(\d{2})\s*(am|pm)\b", stream_name, re.IGNORECASE)
+    # Build TZ abbreviation pattern from normalizer's map
+    tz_abbrevs = "|".join(re.escape(k) for k in TZ_ABBREVIATION_MAP.keys())
+
+    extracted_time = None
+    extracted_tz = None
+
+    # Pattern 1: 12-hour format with minutes - "5:30 PM ET", "5:30PM EST"
+    match = re.search(
+        rf"\b(\d{{1,2}}):(\d{{2}})\s*(am|pm)\s*({tz_abbrevs})?\b",
+        stream_name,
+        re.IGNORECASE,
+    )
     if match:
         hour = int(match.group(1))
         minute = int(match.group(2))
         ampm = match.group(3).upper()
+        tz_abbrev = match.group(4)
         if ampm == "PM" and hour < 12:
             hour += 12
         elif ampm == "AM" and hour == 12:
             hour = 0
-        return time(hour, minute)
+        extracted_time = time(hour, minute)
+        if tz_abbrev:
+            extracted_tz = TZ_ABBREVIATION_MAP.get(tz_abbrev.upper())
+        return extracted_time, extracted_tz
 
-    # Pattern 2: 12-hour format without minutes - "10pm", "10 pm"
-    match = re.search(r"\b(\d{1,2})\s*(am|pm)\b", stream_name, re.IGNORECASE)
+    # Pattern 2: 12-hour format without minutes - "10pm ET", "10 pm EST"
+    match = re.search(
+        rf"\b(\d{{1,2}})\s*(am|pm)\s*({tz_abbrevs})?\b",
+        stream_name,
+        re.IGNORECASE,
+    )
     if match:
         hour = int(match.group(1))
         ampm = match.group(2).upper()
+        tz_abbrev = match.group(3)
         if ampm == "PM" and hour < 12:
             hour += 12
         elif ampm == "AM" and hour == 12:
             hour = 0
-        return time(hour, 0)
+        extracted_time = time(hour, 0)
+        if tz_abbrev:
+            extracted_tz = TZ_ABBREVIATION_MAP.get(tz_abbrev.upper())
+        return extracted_time, extracted_tz
 
-    # Pattern 3: 24-hour format - "22:30"
+    # Pattern 3: 24-hour format - "22:30" (no TZ typically)
     match = re.search(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", stream_name)
     if match:
         hour = int(match.group(1))
@@ -141,9 +174,20 @@ def extract_time_from_stream(stream_name: str) -> time | None:
         # Only use if it looks like a time (not like "UFC 324")
         # Times typically have hours >= 10 or are early morning (< 6)
         if hour >= 10 or hour < 6:
-            return time(hour, minute)
+            extracted_time = time(hour, minute)
+            return extracted_time, None
 
-    return None
+    return None, None
+
+
+# Backwards compatibility alias
+def extract_time_from_stream(stream_name: str) -> time | None:
+    """Extract time from stream name (without timezone).
+
+    Deprecated: Use extract_time_and_tz_from_stream for timezone support.
+    """
+    extracted_time, _ = extract_time_and_tz_from_stream(stream_name)
+    return extracted_time
 
 
 @dataclass
@@ -185,7 +229,7 @@ def get_stream_segment(stream: dict, classified: ClassifiedStream | None = None)
 def should_exclude_stream(stream: dict) -> bool:
     """Check if UFC stream should be excluded (weigh-in, press conference, etc.)."""
     stream_name = stream.get("name", "")
-    return is_ufc_excluded(stream_name)
+    return is_combat_sports_excluded(stream_name)
 
 
 def get_segment_display_suffix(segment: str | None) -> str:
@@ -206,28 +250,122 @@ def get_segment_display_suffix(segment: str | None) -> str:
     return ""
 
 
+def determine_segment_from_time(
+    stream_time: time,
+    event: Event,
+    extracted_tz: str | None = None,
+    group_tz: str | None = None,
+) -> str | None:
+    """Determine segment from stream time when no keyword detected.
+
+    Matches stream time to the closest ESPN segment start time.
+    Used when a stream has a time in its name but no segment keyword.
+
+    Args:
+        stream_time: Time extracted from stream name
+        event: UFC Event with segment_times from ESPN (UTC)
+        extracted_tz: IANA timezone name extracted from stream (tier 1)
+        group_tz: Group-configured stream_timezone (tier 2)
+
+    Returns:
+        Segment code or None if can't determine
+    """
+    from teamarr.utilities.tz import get_user_timezone
+
+    if not event.segment_times:
+        return None
+
+    # Three-tier timezone resolution
+    effective_tz: ZoneInfo | None = None
+    tz_source = "user"
+
+    if extracted_tz:
+        try:
+            effective_tz = ZoneInfo(extracted_tz)
+            tz_source = f"stream ({extracted_tz})"
+        except (KeyError, ValueError):
+            pass
+
+    if not effective_tz and group_tz:
+        try:
+            effective_tz = ZoneInfo(group_tz)
+            tz_source = f"group ({group_tz})"
+        except (KeyError, ValueError):
+            pass
+
+    if not effective_tz:
+        effective_tz = get_user_timezone()
+        tz_source = "user"
+
+    # Get reference date from first available segment
+    ref_dt = next(iter(event.segment_times.values()))
+    event_date = ref_dt.date()
+
+    # Convert stream time to UTC for comparison
+    stream_dt_local = datetime.combine(event_date, stream_time, tzinfo=effective_tz)
+    stream_dt_utc = stream_dt_local.astimezone(ZoneInfo("UTC"))
+
+    # Find closest segment
+    best_segment = None
+    best_distance = float("inf")
+
+    for segment_code, segment_dt in event.segment_times.items():
+        distance = abs((stream_dt_utc - segment_dt).total_seconds())
+        if distance < best_distance:
+            best_distance = distance
+            best_segment = segment_code
+
+    if best_segment:
+        best_distance_min = best_distance // 60
+        # Reject if time is too far from any segment
+        if best_distance_min > MAX_SEGMENT_TIME_DISTANCE_MINUTES:
+            logger.debug(
+                "[UFC_SEGMENTS] Time %s too far from any segment (dist=%d min > %d max), ignoring",
+                stream_time,
+                best_distance_min,
+                MAX_SEGMENT_TIME_DISTANCE_MINUTES,
+            )
+            return None
+
+        logger.info(
+            "[UFC_SEGMENTS] Determined segment '%s' from time %s (tz=%s, dist=%d min)",
+            best_segment,
+            stream_time,
+            tz_source,
+            best_distance_min,
+        )
+
+    return best_segment
+
+
 def disambiguate_prelims_by_time(
     detected_segment: str,
     stream_time: time | None,
     event: Event,
+    extracted_tz: str | None = None,
+    group_tz: str | None = None,
 ) -> str:
     """Disambiguate "prelims" segment based on stream time.
 
     If a stream says "prelims" but has a time in its name that's closer to
     early_prelims, reassign to early_prelims.
 
-    Stream times are assumed to be in user's local timezone. ESPN times (UTC)
-    are converted to user timezone for comparison.
+    Uses three-tier timezone priority for interpreting stream time:
+    1. Timezone extracted from stream name (e.g., "9PM ET" → America/New_York)
+    2. Group-configured stream_timezone
+    3. User's configured timezone (fallback)
 
     Args:
         detected_segment: Segment detected from stream name ("prelims")
-        stream_time: Time extracted from stream name (in local timezone)
+        stream_time: Time extracted from stream name
         event: UFC Event with segment_times from ESPN (UTC)
+        extracted_tz: IANA timezone name extracted from stream (tier 1)
+        group_tz: Group-configured stream_timezone (tier 2)
 
     Returns:
         Disambiguated segment code
     """
-    from teamarr.utilities.tz import to_user_tz
+    from teamarr.utilities.tz import get_user_timezone
 
     # Only disambiguate "prelims" - other segments are unambiguous
     if detected_segment != "prelims":
@@ -244,36 +382,57 @@ def disambiguate_prelims_by_time(
     if not early_prelims_dt or not prelims_dt:
         return detected_segment
 
-    # Convert ESPN datetime (UTC) to user timezone, then extract time
-    early_time = to_user_tz(early_prelims_dt).time()
-    prelims_time = to_user_tz(prelims_dt).time()
+    # Three-tier timezone resolution for stream time:
+    # 1. Extracted from stream name (highest priority)
+    # 2. Group-configured stream_timezone
+    # 3. User timezone (fallback)
+    effective_tz: ZoneInfo | None = None
+    tz_source = "user"
 
-    # Calculate time differences (in seconds from midnight)
-    def time_to_seconds(t: time) -> int:
-        return t.hour * 3600 + t.minute * 60 + t.second
+    if extracted_tz:
+        try:
+            effective_tz = ZoneInfo(extracted_tz)
+            tz_source = f"stream ({extracted_tz})"
+        except (KeyError, ValueError):
+            pass
 
-    stream_secs = time_to_seconds(stream_time)
-    early_secs = time_to_seconds(early_time)
-    prelims_secs = time_to_seconds(prelims_time)
+    if not effective_tz and group_tz:
+        try:
+            effective_tz = ZoneInfo(group_tz)
+            tz_source = f"group ({group_tz})"
+        except (KeyError, ValueError):
+            pass
 
-    # Distance from stream time to each segment time
-    # Handle wrap-around at midnight (e.g., stream at 23:00, event at 01:00)
-    def time_distance(t1_secs: int, t2_secs: int) -> int:
-        diff = abs(t1_secs - t2_secs)
-        # If difference > 12 hours, it's probably wrap-around
-        return min(diff, 86400 - diff)
+    if not effective_tz:
+        effective_tz = get_user_timezone()
+        tz_source = "user"
 
-    dist_to_early = time_distance(stream_secs, early_secs)
-    dist_to_prelims = time_distance(stream_secs, prelims_secs)
+    # Convert stream time to datetime in effective timezone, then to UTC for comparison
+    # ESPN segment times are in UTC
+    event_date = early_prelims_dt.date()
+    stream_dt_local = datetime.combine(event_date, stream_time, tzinfo=effective_tz)
+    stream_dt_utc = stream_dt_local.astimezone(ZoneInfo("UTC"))
 
-    # If stream time is closer to early_prelims, reassign
+    # Calculate time differences in seconds
+    def datetime_distance(dt1: datetime, dt2: datetime) -> int:
+        """Calculate absolute distance in seconds, handling day boundaries."""
+        diff = abs((dt1 - dt2).total_seconds())
+        return int(diff)
+
+    dist_to_early = datetime_distance(stream_dt_utc, early_prelims_dt)
+    dist_to_prelims = datetime_distance(stream_dt_utc, prelims_dt)
+
+    # Simple "closest to" logic - assign to whichever segment is closer
     if dist_to_early < dist_to_prelims:
         logger.info(
-            "[UFC_SEGMENTS] Disambiguated 'prelims' to 'early_prelims' based on time "
-            "(stream=%s, early=%s, prelims=%s)",
+            "[UFC_SEGMENTS] Disambiguated 'prelims' → 'early_prelims' "
+            "(stream=%s tz=%s, early=%s, prelims=%s, dist=%d/%d min)",
             stream_time,
-            early_time,
-            prelims_time,
+            tz_source,
+            early_prelims_dt.strftime("%H:%M UTC"),
+            prelims_dt.strftime("%H:%M UTC"),
+            dist_to_early // 60,
+            dist_to_prelims // 60,
         )
         return "early_prelims"
 
@@ -364,6 +523,7 @@ def _estimate_segment_times_fallback(
 def expand_ufc_segments(
     matched_streams: list[dict],
     sport_durations: dict[str, float] | None = None,
+    stream_timezone: str | None = None,
 ) -> list[dict]:
     """Expand UFC matched streams into segment-based channels.
 
@@ -373,6 +533,7 @@ def expand_ufc_segments(
     Args:
         matched_streams: List of {'stream': ..., 'event': ...} dicts
         sport_durations: Optional sport duration settings
+        stream_timezone: Group-configured timezone for stream time interpretation
 
     Returns:
         Expanded list with UFC streams grouped by segment
@@ -402,22 +563,40 @@ def expand_ufc_segments(
 
         # Use pre-detected segment from classifier, or detect from stream name
         segment = match.get("card_segment") or get_stream_segment(stream)
-
-        # Default to main_card if no segment detected
-        if not segment:
-            segment = "main_card"
+        stream_name = stream.get("name", "")
 
         # Combined streams go to main_card
         if segment == "combined":
             segment = "main_card"
 
+        # If no segment keyword detected, try to determine from time
+        if not segment:
+            stream_time, extracted_tz = extract_time_and_tz_from_stream(stream_name)
+            if stream_time:
+                segment = determine_segment_from_time(
+                    stream_time,
+                    event,
+                    extracted_tz=extracted_tz,
+                    group_tz=stream_timezone,
+                )
+
+        # Default to main_card if still no segment
+        if not segment:
+            segment = "main_card"
+
         # Disambiguate "prelims" using time if available
         # Streams labeled "prelims" might actually be early prelims based on time
+        # Uses three-tier TZ: extracted from stream > group setting > user TZ
         if segment == "prelims":
-            stream_name = stream.get("name", "")
-            stream_time = extract_time_from_stream(stream_name)
+            stream_time, extracted_tz = extract_time_and_tz_from_stream(stream_name)
             if stream_time:
-                segment = disambiguate_prelims_by_time(segment, stream_time, event)
+                segment = disambiguate_prelims_by_time(
+                    segment,
+                    stream_time,
+                    event,
+                    extracted_tz=extracted_tz,
+                    group_tz=stream_timezone,
+                )
 
         # Validate against ESPN's segment data - ensures segment exists
         segment = canonicalize_segment(segment, event)

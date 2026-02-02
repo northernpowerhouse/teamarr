@@ -7,7 +7,7 @@ nav_order: 2
 
 # Template Variables
 
-Templates use variables enclosed in curly braces that get replaced with real data when EPG is generated. Teamarr provides 161 variables across 16 categories.
+Templates use variables enclosed in curly braces that get replaced with real data when EPG is generated. Teamarr provides 175 variables across 17 categories.
 
 ## Suffix Support
 
@@ -343,6 +343,45 @@ Soccer teams often play in multiple competitions (domestic league, cups, Champio
 
 ---
 
+## Combat Sports
+
+UFC and MMA-specific variables for event templates. These are **event-only** (no `.next`/`.last` suffixes) since each UFC event is independent.
+
+### Fighters & Matchup
+
+| Variable | Description | Sample |
+|----------|-------------|--------|
+| `{fighter1}` | First fighter name (headline bout) | `Alex Volkanovski` |
+| `{fighter2}` | Second fighter name (headline bout) | `Diego Lopes` |
+| `{matchup}` | Full matchup string | `Alex Volkanovski vs Diego Lopes` |
+| `{event_number}` | UFC event number (e.g., '314' from 'UFC 314') | `314` |
+| `{event_title}` | Full event title | `UFC 314: Volkanovski vs Lopes` |
+
+### Card Segments
+
+| Variable | Description | Sample |
+|----------|-------------|--------|
+| `{card_segment}` | Segment code for this channel | `main_card` |
+| `{card_segment_display}` | Human-readable segment name | `Main Card` |
+| `{main_card_time}` | Main card start time | `10:00 PM EST` |
+| `{prelims_time}` | Prelims start time | `8:00 PM EST` |
+| `{early_prelims_time}` | Early prelims start time | `6:00 PM EST` |
+
+### Fight Card
+
+| Variable | Description | Sample |
+|----------|-------------|--------|
+| `{bout_count}` | Total number of bouts on the card | `14` |
+| `{fight_card}` | All bouts (newline-separated) | `Alex Volkanovski vs Diego Lopes`<br>`Merab Dvalishvili vs Umar Nurmagomedov` |
+| `{main_card_bouts}` | Main card bouts only | `Alex Volkanovski vs Diego Lopes`<br>`Merab Dvalishvili vs Umar Nurmagomedov` |
+| `{prelims_bouts}` | Prelims bouts only | `Sean Brady vs Kelvin Gastelum`<br>`Chris Weidman vs Eryk Anders` |
+| `{early_prelims_bouts}` | Early prelims bouts only | `Mauricio Ruffy vs Jamie Mullarkey` |
+
+{: .note }
+UFC events are split into segments (Early Prelims, Prelims, Main Card). When using segment-based channel routing, each channel gets a `{card_segment}` value indicating which segment it covers. The `{fighter1}` and `{fighter2}` variables always refer to the headline (main event) bout.
+
+---
+
 ## Usage Examples
 
 ### Team Template (Detroit Lions channel)
@@ -371,4 +410,14 @@ Description: {away_team} ({away_team_record}) at {home_team} ({home_team_record}
 Title: {team_name} Postgame
 Description: The {team_name} {result_text.last} the {opponent.last} {final_score.last} {overtime_text.last}.
 → "The Detroit Lions defeated the Minnesota Vikings 28-21."
+```
+
+### UFC Event Template
+
+```
+Title: {event_title} - {card_segment_display}
+→ "UFC 314: Volkanovski vs Lopes - Main Card"
+
+Description: {matchup}. Main card at {main_card_time}. {bout_count} total bouts.
+→ "Alex Volkanovski vs Diego Lopes. Main card at 10:00 PM EST. 14 total bouts."
 ```

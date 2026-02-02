@@ -136,6 +136,10 @@ EVENT_EPG_GROUPS_COLUMNS_V43: dict[str, str] = {
     "custom_regex_time_enabled": "BOOLEAN DEFAULT 0",
     "custom_regex_league": "TEXT",
     "custom_regex_league_enabled": "BOOLEAN DEFAULT 0",
+    "custom_regex_fighters": "TEXT",
+    "custom_regex_fighters_enabled": "BOOLEAN DEFAULT 0",
+    "custom_regex_event_name": "TEXT",
+    "custom_regex_event_name_enabled": "BOOLEAN DEFAULT 0",
     "skip_builtin_filter": "BOOLEAN DEFAULT 0",
     "include_teams": "JSON",
     "exclude_teams": "JSON",
@@ -256,6 +260,9 @@ INDEXES_V43: list[tuple[str, str, str]] = [
     ("idx_mc_fingerprint", "match_corrections", "match_corrections(fingerprint)"),
     ("idx_mc_group", "match_corrections", "match_corrections(group_id)"),
     ("idx_mc_type", "match_corrections", "match_corrections(correction_type)"),
+    # Detection keywords indexes
+    ("idx_detection_keywords_category", "detection_keywords", "detection_keywords(category)"),
+    ("idx_detection_keywords_enabled", "detection_keywords", "detection_keywords(enabled)"),
 ]
 
 # Sports table seed data
@@ -411,6 +418,28 @@ def _ensure_tables_v43(conn: sqlite3.Connection) -> None:
         """)
         conn.execute("INSERT OR IGNORE INTO cache_meta (id) VALUES (1)")
         logger.info("[CHECKPOINT] Created cache_meta table")
+
+    # Detection keywords table (user-defined detection patterns)
+    if not _table_exists(conn, "detection_keywords"):
+        conn.execute("""
+            CREATE TABLE detection_keywords (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                category TEXT NOT NULL CHECK(category IN (
+                    'combat_sports', 'league_hints', 'sport_hints',
+                    'placeholders', 'card_segments', 'exclusions', 'separators'
+                )),
+                keyword TEXT NOT NULL,
+                is_regex BOOLEAN DEFAULT 0,
+                target_value TEXT,
+                enabled BOOLEAN DEFAULT 1,
+                priority INTEGER DEFAULT 0,
+                description TEXT,
+                UNIQUE(category, keyword)
+            )
+        """)
+        logger.info("[CHECKPOINT] Created detection_keywords table")
 
 
 # =============================================================================

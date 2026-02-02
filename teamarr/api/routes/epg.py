@@ -23,6 +23,8 @@ from teamarr.api.models import (
     EPGGenerateResponse,
     EventEPGRequest,
     EventSearchResult,
+    GameDataCacheClearResponse,
+    GameDataCacheStats,
     MatchCorrectionRequest,
     MatchCorrectionResponse,
     MatchStats,
@@ -788,7 +790,7 @@ def get_epg_content(
 def get_matched_streams(
     run_id: int | None = Query(None, description="Processing run ID (defaults to latest)"),
     group_id: int | None = Query(None, description="Filter by event group ID"),
-    limit: int = Query(500, ge=1, le=2000, description="Max results"),
+    limit: int = Query(500, ge=1, le=10000, description="Max results"),
 ):
     """Get matched streams from an EPG generation run.
 
@@ -812,7 +814,7 @@ def get_failed_matches(
     run_id: int | None = Query(None, description="Processing run ID (defaults to latest)"),
     group_id: int | None = Query(None, description="Filter by event group ID"),
     reason: str | None = Query(None, description="Filter by failure reason"),
-    limit: int = Query(500, ge=1, le=2000, description="Max results"),
+    limit: int = Query(500, ge=1, le=10000, description="Max results"),
 ):
     """Get failed matches from an EPG generation run.
 
@@ -1079,3 +1081,62 @@ def list_user_corrections(
         "count": len(rows),
         "corrections": [dict(row) for row in rows],
     }
+
+
+# =============================================================================
+# Game Data Cache endpoints
+# =============================================================================
+
+
+@router.get("/game-data-cache/stats", response_model=GameDataCacheStats)
+def get_game_data_cache_stats(
+    service: SportsDataService = Depends(get_sports_service),
+):
+    """Get game data cache statistics.
+
+    Returns stats about cached schedules, scores, and event data from providers.
+    This cache is separate from the Team & League Directory.
+    """
+    stats = service.cache_stats()
+    return GameDataCacheStats(
+        total_entries=stats.get("total_entries", 0),
+        active_entries=stats.get("active_entries", 0),
+        expired_entries=stats.get("expired_entries", 0),
+        hits=stats.get("hits", 0),
+        misses=stats.get("misses", 0),
+        hit_rate=stats.get("hit_rate", 0.0),
+        pending_writes=stats.get("pending_writes", 0),
+        pending_deletes=stats.get("pending_deletes", 0),
+    )
+
+
+@router.post("/game-data-cache/clear", response_model=GameDataCacheClearResponse)
+def clear_game_data_cache(
+    service: SportsDataService = Depends(get_sports_service),
+):
+    """Clear the game data cache.
+
+    Removes all cached schedules, scores, odds, and event data.
+    Forces fresh data to be fetched from ESPN and TheSportsDB on next
+    EPG generation.
+
+    Use this when:
+    - Scores or game results appear incorrect
+    - You want to force a complete refresh of sports data
+    - After a TTL-related bug fix to clear stale entries
+
+    Note: This does NOT clear the Team & League Directory (use the
+    separate refresh for that) or stream match results.
+    """
+    stats = service.cache_stats()
+    entries_before = stats.get("total_entries", 0)
+
+    service.clear_cache()
+
+    logger.info("[CACHE] Game data cache cleared: %d entries removed", entries_before)
+
+    return GameDataCacheClearResponse(
+        success=True,
+        entries_cleared=entries_before,
+        message=f"Cleared {entries_before} entries. Fresh data will be fetched on next generation.",
+    )

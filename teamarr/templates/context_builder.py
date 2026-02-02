@@ -45,6 +45,7 @@ class ContextBuilder:
         team_stats: TeamStats | None = None,
         next_event: Event | None = None,
         last_event: Event | None = None,
+        card_segment: str | None = None,
     ) -> TemplateContext:
         """Build complete template context for an event.
 
@@ -55,6 +56,7 @@ class ContextBuilder:
             team_stats: Pre-fetched team stats (optional, will fetch if None)
             next_event: Next scheduled game (optional)
             last_event: Last completed game (optional)
+            card_segment: UFC card segment code (early_prelims, prelims, main_card)
 
         Returns:
             Complete TemplateContext ready for template resolution
@@ -81,6 +83,7 @@ class ContextBuilder:
             event=event,
             team_id=team_id,
             league=league,
+            card_segment=card_segment,
         )
 
         # Build contexts for next/last games if provided
@@ -141,6 +144,7 @@ class ContextBuilder:
         event: Event,
         team_id: str,
         league: str,
+        card_segment: str | None = None,
     ) -> GameContext:
         """Build GameContext for a single event."""
         is_home = event.home_team.id == team_id
@@ -160,6 +164,7 @@ class ContextBuilder:
             opponent=opponent,
             opponent_stats=opponent_stats,
             odds=odds,
+            card_segment=card_segment,
         )
 
     def _build_odds(self, odds_data: dict, is_home: bool) -> Odds:

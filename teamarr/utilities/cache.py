@@ -478,16 +478,24 @@ def make_cache_key(*parts: str) -> str:
     return ":".join(str(p) for p in parts)
 
 
-def get_events_cache_ttl(target_date) -> int:
-    """Get cache TTL for events based on date proximity.
+def get_events_cache_ttl(target_date, *, all_events_final: bool = False) -> int:
+    """Get cache TTL for events based on date proximity and finality.
 
-    Tiered caching - past events are final (long TTL), today needs fresh data.
+    Tiered caching - past events get long TTL only if ALL are final.
 
-    Past:       30 days (final scores don't change)
-    Today:      30 minutes (flex times, live scores)
-    Tomorrow:   4 hours (flex scheduling possible)
-    Days 2-7:   8 hours (mostly stable)
-    Days 8+:    8 hours (playoffs may appear)
+    The key insight: we only use 30-day TTL when we KNOW all events are
+    final. This prevents caching incomplete scores from late-night games
+    or delayed ESPN updates.
+
+    Past + all final:   30 days (scores confirmed, won't change)
+    Past + not final:   2 hours (need to re-fetch for final scores)
+    Today:              30 minutes (live scores, flex times)
+    Tomorrow:           4 hours (flex scheduling possible)
+    Days 2+:            8 hours (mostly stable)
+
+    Args:
+        target_date: The date of the events
+        all_events_final: True if caller verified all events are final
     """
     from datetime import date
 
@@ -495,7 +503,10 @@ def get_events_cache_ttl(target_date) -> int:
     days_from_today = (target_date - today).days
 
     if days_from_today < 0:  # Past
-        return 30 * 24 * 60 * 60  # 30 days
+        if all_events_final:
+            return 30 * 24 * 60 * 60  # 30 days - confirmed final
+        else:
+            return 2 * 60 * 60  # 2 hours - need to check for final scores
     elif days_from_today == 0:  # Today
         return 30 * 60  # 30 minutes
     elif days_from_today == 1:  # Tomorrow

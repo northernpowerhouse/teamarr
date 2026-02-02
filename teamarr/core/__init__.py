@@ -2,6 +2,7 @@
 
 from teamarr.core.interfaces import LeagueMapping, LeagueMappingSource, SportsProvider
 from teamarr.core.types import (
+    Bout,
     Event,
     EventStatus,
     Programme,
@@ -12,6 +13,7 @@ from teamarr.core.types import (
 )
 
 __all__ = [
+    "Bout",
     "Event",
     "EventStatus",
     "LeagueMapping",

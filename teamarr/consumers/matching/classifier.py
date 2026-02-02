@@ -15,15 +15,7 @@ from enum import Enum
 from re import Pattern
 
 from teamarr.consumers.matching.normalizer import NormalizedStream, normalize_stream
-from teamarr.utilities.constants import (
-    CARD_SEGMENT_PATTERNS,
-    EVENT_CARD_KEYWORDS,
-    GAME_SEPARATORS,
-    LEAGUE_HINT_PATTERNS,
-    PLACEHOLDER_PATTERNS,
-    SPORT_HINT_PATTERNS,
-    UFC_EXCLUDE_PATTERNS,
-)
+from teamarr.services.detection_keywords import DetectionKeywordService
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +60,9 @@ class ClassifiedStream:
 
 @dataclass
 class CustomRegexConfig:
-    """Configuration for custom regex extraction (teams, date, time, league)."""
+    """Configuration for custom regex extraction patterns."""
 
+    # TEAM_VS_TEAM patterns
     teams_pattern: str | None = None
     teams_enabled: bool = False
     date_pattern: str | None = None
@@ -79,11 +72,19 @@ class CustomRegexConfig:
     league_pattern: str | None = None
     league_enabled: bool = False
 
+    # EVENT_CARD patterns (UFC, Boxing, MMA)
+    fighters_pattern: str | None = None
+    fighters_enabled: bool = False
+    event_name_pattern: str | None = None
+    event_name_enabled: bool = False
+
     # Compiled patterns (cached)
     _compiled_teams: Pattern | None = None
     _compiled_date: Pattern | None = None
     _compiled_time: Pattern | None = None
     _compiled_league: Pattern | None = None
+    _compiled_fighters: Pattern | None = None
+    _compiled_event_name: Pattern | None = None
 
     def get_pattern(self) -> Pattern | None:
         """Get compiled teams regex pattern, compiling on first access."""
@@ -141,6 +142,34 @@ class CustomRegexConfig:
 
         return self._compiled_league
 
+    def get_fighters_pattern(self) -> Pattern | None:
+        """Get compiled fighters regex pattern for EVENT_CARD streams."""
+        if not self.fighters_enabled or not self.fighters_pattern:
+            return None
+
+        if self._compiled_fighters is None:
+            try:
+                self._compiled_fighters = re.compile(self.fighters_pattern, re.IGNORECASE)
+            except re.error as e:
+                logger.warning("[CLASSIFY] Invalid custom fighters regex pattern: %s", e)
+                return None
+
+        return self._compiled_fighters
+
+    def get_event_name_pattern(self) -> Pattern | None:
+        """Get compiled event name regex pattern for EVENT_CARD streams."""
+        if not self.event_name_enabled or not self.event_name_pattern:
+            return None
+
+        if self._compiled_event_name is None:
+            try:
+                self._compiled_event_name = re.compile(self.event_name_pattern, re.IGNORECASE)
+            except re.error as e:
+                logger.warning("[CLASSIFY] Invalid custom event_name regex pattern: %s", e)
+                return None
+
+        return self._compiled_event_name
+
 
 def extract_teams_with_custom_regex(
     text: str,
@@ -181,6 +210,84 @@ def extract_teams_with_custom_regex(
         pass
 
     return None, None, False
+
+
+def extract_fighters_with_custom_regex(
+    text: str,
+    config: CustomRegexConfig,
+) -> tuple[str | None, str | None, bool]:
+    """Extract fighter names using custom regex pattern for EVENT_CARD streams.
+
+    Args:
+        text: Stream name (normalized)
+        config: Custom regex configuration
+
+    Returns:
+        Tuple of (fighter1, fighter2, success)
+    """
+    pattern = config.get_fighters_pattern()
+    if not pattern:
+        return None, None, False
+
+    match = pattern.search(text)
+    if not match:
+        return None, None, False
+
+    # Try numbered groups first (group 1 and 2)
+    groups = match.groups()
+    if len(groups) >= 2:
+        fighter1 = groups[0].strip() if groups[0] else None
+        fighter2 = groups[1].strip() if groups[1] else None
+        if fighter1 and fighter2:
+            return fighter1, fighter2, True
+
+    # Try named groups (?P<fighter1>...) and (?P<fighter2>...)
+    try:
+        fighter1 = match.group("fighter1")
+        fighter2 = match.group("fighter2")
+        if fighter1 and fighter2:
+            return fighter1.strip(), fighter2.strip(), True
+    except (IndexError, re.error):
+        pass
+
+    return None, None, False
+
+
+def extract_event_name_with_custom_regex(
+    text: str,
+    config: CustomRegexConfig,
+) -> str | None:
+    """Extract event name using custom regex pattern for EVENT_CARD streams.
+
+    Args:
+        text: Stream name (original, not normalized)
+        config: Custom regex configuration
+
+    Returns:
+        Event name string or None
+    """
+    pattern = config.get_event_name_pattern()
+    if not pattern:
+        return None
+
+    match = pattern.search(text)
+    if not match:
+        return None
+
+    # Try named group (?P<event_name>...)
+    try:
+        event_name = match.group("event_name")
+        if event_name:
+            return event_name.strip()
+    except (IndexError, re.error):
+        pass
+
+    # Try first capture group
+    groups = match.groups()
+    if groups and groups[0]:
+        return groups[0].strip()
+
+    return None
 
 
 def extract_date_with_custom_regex(
@@ -486,10 +593,9 @@ def is_placeholder(text: str) -> bool:
 
     text_lower = text.lower().strip()
 
-    # Check against placeholder patterns
-    for pattern in PLACEHOLDER_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            return True
+    # Check against placeholder patterns via service
+    if DetectionKeywordService.is_placeholder(text_lower):
+        return True
 
     # Additional check: very short names with just numbers
     if re.match(r"^[\d\s\-:]+$", text_lower):
@@ -515,14 +621,7 @@ def find_game_separator(text: str) -> tuple[str | None, int]:
     if not text:
         return None, -1
 
-    text_lower = text.lower()
-
-    for sep in GAME_SEPARATORS:
-        pos = text_lower.find(sep.lower())
-        if pos != -1:
-            return sep, pos
-
-    return None, -1
+    return DetectionKeywordService.find_separator(text)
 
 
 def extract_teams_from_separator(
@@ -740,13 +839,7 @@ def detect_league_hint(text: str) -> str | list[str] | None:
     if not text:
         return None
 
-    text_lower = text.lower()
-
-    for pattern, league_code in LEAGUE_HINT_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            return league_code
-
-    return None
+    return DetectionKeywordService.detect_league(text)
 
 
 def detect_sport_hint(text: str) -> str | None:
@@ -769,13 +862,7 @@ def detect_sport_hint(text: str) -> str | None:
     if not text:
         return None
 
-    text_lower = text.lower()
-
-    for pattern, sport in SPORT_HINT_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            return sport
-
-    return None
+    return DetectionKeywordService.detect_sport(text)
 
 
 # =============================================================================
@@ -784,14 +871,16 @@ def detect_sport_hint(text: str) -> str | None:
 
 
 def is_event_card(text: str, league_event_type: str | None = None) -> bool:
-    """Check if stream is an event card (UFC, Boxing).
+    """Check if stream is a combat sports event card (UFC, MMA, Boxing).
+
+    Uses detect_event_type() which checks event_type_keywords.
 
     Args:
         text: Normalized stream name
         league_event_type: Optional event_type from leagues table
 
     Returns:
-        True if stream is an event card
+        True if stream is a combat sports event card
     """
     if not text:
         return False
@@ -800,15 +889,9 @@ def is_event_card(text: str, league_event_type: str | None = None) -> bool:
     if league_event_type == "event_card":
         return True
 
-    text_lower = text.lower()
-
-    # Check for event card keywords
-    for _league, keywords in EVENT_CARD_KEYWORDS.items():
-        for keyword in keywords:
-            if keyword.lower() in text_lower:
-                return True
-
-    return False
+    # Use event type detection - checks EVENT_CARD keywords
+    detected = DetectionKeywordService.detect_event_type(text)
+    return detected == "EVENT_CARD"
 
 
 def extract_event_card_hint(text: str) -> str | None:
@@ -833,8 +916,19 @@ def extract_event_card_hint(text: str) -> str | None:
     if org_match:
         return org_match.group(1).upper()
 
-    # Boxing event names are less standardized - look for main event patterns
-    if any(kw in text.lower() for kw in EVENT_CARD_KEYWORDS.get("boxing", [])):
+    # Boxing event names - check for boxing-specific keywords
+    text_lower = text.lower()
+    boxing_keywords = [
+        "boxing",
+        "pbc",
+        "premier boxing",
+        "top rank",
+        "matchroom",
+        "golden boy",
+        "showtime boxing",
+        "dazn boxing",
+    ]
+    if any(kw in text_lower for kw in boxing_keywords):
         # Try to extract fighter names or event name
         # For now, just return a generic hint
         return "BOXING_EVENT"
@@ -866,18 +960,14 @@ def detect_card_segment(text: str) -> str | None:
     if not text:
         return None
 
-    text_lower = text.lower()
-
-    for pattern, segment in CARD_SEGMENT_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            logger.debug("[CLASSIFY] Detected card segment '%s' from '%s'", segment, text[:50])
-            return segment
-
-    return None
+    segment = DetectionKeywordService.detect_card_segment(text)
+    if segment:
+        logger.debug("[CLASSIFY] Detected card segment '%s' from '%s'", segment, text[:50])
+    return segment
 
 
-def is_ufc_excluded(text: str) -> bool:
-    """Check if stream should be excluded from UFC matching.
+def is_combat_sports_excluded(text: str) -> bool:
+    """Check if stream should be excluded from combat sports matching.
 
     Excludes weigh-ins, press conferences, countdowns, and other non-event content.
 
@@ -890,14 +980,10 @@ def is_ufc_excluded(text: str) -> bool:
     if not text:
         return False
 
-    text_lower = text.lower()
-
-    for pattern in UFC_EXCLUDE_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            logger.debug("[CLASSIFY] UFC stream excluded by pattern '%s': %s", pattern, text[:50])
-            return True
-
-    return False
+    is_excluded = DetectionKeywordService.is_excluded(text)
+    if is_excluded:
+        logger.debug("[CLASSIFY] Combat sports excluded: %s", text[:50])
+    return is_excluded
 
 
 def extract_fighters_from_event_card(text: str) -> tuple[str | None, str | None]:
@@ -946,8 +1032,8 @@ def _clean_fighter_name(name: str) -> str | None:
         return None
 
     # Strip segment suffixes: (Prelims), (Main Card 1), etc.
-    for pattern, _segment in CARD_SEGMENT_PATTERNS:
-        name = re.sub(pattern, "", name, flags=re.IGNORECASE)
+    for pattern, _segment in DetectionKeywordService.get_card_segment_patterns():
+        name = pattern.sub("", name)
 
     # Strip empty parentheses left after segment removal
     name = re.sub(r"\(\s*\)", "", name)
@@ -1072,9 +1158,37 @@ def classify_stream(
             # Use original stream name for more accurate pattern matching
             card_segment = detect_card_segment(stream_name)
 
-            # Extract fighter names from "vs" pattern (reuse team extraction logic)
-            # Fighters are treated as "teams" for matching purposes
-            fighter1, fighter2 = extract_fighters_from_event_card(text)
+            # Try custom regex for fighters first (if configured)
+            custom_regex_used = False
+            fighter1, fighter2 = None, None
+            if custom_regex and custom_regex.fighters_enabled:
+                fighter1, fighter2, success = extract_fighters_with_custom_regex(
+                    stream_name, custom_regex
+                )
+                if success:
+                    custom_regex_used = True
+                    logger.debug(
+                        "[CLASSIFY] Custom fighters regex matched: %s vs %s",
+                        fighter1,
+                        fighter2,
+                    )
+
+            # Fallback to builtin extraction if custom regex didn't match
+            if not fighter1 and not fighter2:
+                fighter1, fighter2 = extract_fighters_from_event_card(text)
+
+            # Try custom regex for event name (if configured)
+            custom_event_name = None
+            if custom_regex and custom_regex.event_name_enabled:
+                custom_event_name = extract_event_name_with_custom_regex(
+                    stream_name, custom_regex
+                )
+                if custom_event_name:
+                    event_hint = custom_event_name
+                    custom_regex_used = True
+                    logger.debug(
+                        "[CLASSIFY] Custom event_name regex matched: %s", custom_event_name
+                    )
 
             result = ClassifiedStream(
                 category=StreamCategory.EVENT_CARD,
@@ -1085,6 +1199,7 @@ def classify_stream(
                 card_segment=card_segment,
                 league_hint=league_hint,
                 sport_hint=sport_hint,
+                custom_regex_used=custom_regex_used,
             )
 
         # Step 3: Try custom regex for team extraction (if configured)

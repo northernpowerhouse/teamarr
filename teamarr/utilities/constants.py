@@ -257,6 +257,8 @@ PLACEHOLDER_PATTERNS: list[str] = [
     r"^espn\+?\s*\d+\s*[-:]?\s*$",
     r"^dazn\s*\d+\s*[-:]?\s*$",
     r"^paramount\+?\s*\d+\s*[-:]?\s*$",
+    # UFC + number + separator + nothing after = placeholder (channel number, not event)
+    r"^ufc\s*\d+\s*[-:|]\s*$",
     # Generic numbered channels
     r"^channel\s*\d+\s*$",
     r"^ch\s*\d+\s*$",
@@ -403,7 +405,10 @@ LEAGUE_HINT_PATTERNS: list[tuple[str, str | list[str]]] = [
     (r"\bpremier\s+league[:\s-]", "eng.1"),
     # Other top European leagues
     (r"\bla\s+liga[:\s-]", "esp.1"),
-    (r"\bbundesliga[:\s-]", "ger.1"),
+    # German Bundesliga - specific divisions first, then umbrella
+    (r"\b2\.?\s*bundesliga[:\s-]", "ger.2"),  # 2. Bundesliga
+    (r"\b3\.?\s*liga[:\s-]", "ger.3"),  # 3. Liga
+    (r"\bbundesliga[:\s-]", ["ger.1", "ger.2"]),  # Umbrella for all Bundesliga
     (r"\bserie\s+a[:\s-]", "ita.1"),
     (r"\bligue\s+1[:\s-]", "fra.1"),
     (r"\buefa\s+champions\s+league[:\s-]", "uefa.champions"),
@@ -517,33 +522,114 @@ SPORT_HINT_PATTERNS: list[tuple[str, str]] = [
 
 
 # =============================================================================
-# EVENT CARD KEYWORDS
-# Keywords that identify event card streams (UFC, boxing) within their league.
-# Used by EventCardMatcher to validate streams.
+# EVENT TYPE DETECTION KEYWORDS
+# Keywords that identify stream event type for routing to the correct pipeline.
+#
+# Event Types:
+#   - EVENT_CARD: Combat sports (UFC, Boxing, MMA) - fighter-based matching
+#   - TEAM_VS_TEAM: Team sports - detected via separators, not keywords
+#   - FIELD_EVENT: Individual sports (future) - athlete-based matching
+#
+# Structure: {event_type: [keywords]}
+# Keywords are checked with word boundary matching to avoid false positives.
 # =============================================================================
 
+EVENT_TYPE_KEYWORDS: dict[str, list[str]] = {
+    # =========================================================================
+    # EVENT_CARD - Combat sports events (UFC, Boxing, MMA)
+    # These keywords indicate event card format with fighters, rounds, etc.
+    # =========================================================================
+    "EVENT_CARD": [
+    # -------------------------------------------------------------------------
+    # MMA Organizations
+    # -------------------------------------------------------------------------
+    "ufc",
+    "bellator",
+    "pfl",
+    "one fc",
+    "one championship",
+    "cage warriors",
+    "invicta fc",
+    "lfa",  # Legacy Fighting Alliance
+    "bkfc",  # Bare Knuckle FC
+    # UFC-specific terms
+    "fight night",
+    "ufc fn",
+    "dana white",
+    "contender series",
+    "dwcs",
+    "the ultimate fighter",
+    "tuf",
+    # -------------------------------------------------------------------------
+    # Boxing Organizations & Promoters
+    # -------------------------------------------------------------------------
+    "boxing",
+    "premier boxing",
+    "pbc",  # Premier Boxing Champions
+    "top rank",
+    "matchroom",
+    "golden boy",
+    "showtime boxing",
+    "dazn boxing",
+    "espn boxing",
+    "triller",
+    # -------------------------------------------------------------------------
+    # Card Segments (shared across combat sports)
+    # -------------------------------------------------------------------------
+    "main card",
+    "main event",
+    "prelims",
+    "early prelims",
+    "undercard",
+    "co-main",
+    # -------------------------------------------------------------------------
+    # Generic Combat Sports Terms
+    # -------------------------------------------------------------------------
+    "mma",
+    "mixed martial arts",
+    "kickboxing",
+    "muay thai",
+    "title fight",
+    "title bout",
+    "championship fight",
+    "undisputed",
+    # -------------------------------------------------------------------------
+    # Boxing Sanctioning Bodies (indicates boxing event)
+    # -------------------------------------------------------------------------
+        "wbc",  # World Boxing Council
+        "wba",  # World Boxing Association
+        "ibf",  # International Boxing Federation
+        "wbo",  # World Boxing Organization
+        "ibo",  # International Boxing Organization
+    ],
+    # =========================================================================
+    # TEAM_VS_TEAM - Team sports (detected via separators, no keywords needed)
+    # This is the default for streams with game separators (vs, @, at)
+    # =========================================================================
+    "TEAM_VS_TEAM": [],  # No keywords - detected by separators presence
+    # =========================================================================
+    # FIELD_EVENT - Individual sports (future expansion)
+    # Track & field, swimming, gymnastics, etc.
+    # =========================================================================
+    "FIELD_EVENT": [],  # Future: keywords for individual sports events
+}
+
+
+# Legacy aliases for backwards compatibility during transition
+# TODO: Remove after classifier migration is complete (bead 11c.8)
+COMBAT_SPORTS_KEYWORDS: list[str] = EVENT_TYPE_KEYWORDS["EVENT_CARD"]
+
+# EVENT_CARD_KEYWORDS - league-specific keyword subsets for event matching
+# Used by event_matcher.py to do keyword-based matching
+# TODO: Remove after event_matcher is refactored to use DetectionKeywordService
 EVENT_CARD_KEYWORDS: dict[str, list[str]] = {
     "ufc": [
-        "ufc",
-        "fight night",
-        "ufc fn",
-        "main card",
-        "prelims",
-        "early prelims",
-        "dana white",
-        "contender series",
-        "dwcs",
+        "ufc", "fight night", "ufc fn", "main card", "prelims", "early prelims",
+        "dana white", "contender series", "dwcs",
     ],
     "boxing": [
-        "boxing",
-        "main event",
-        "undercard",
-        "premier boxing",
-        "top rank",
-        "matchroom",
-        "dazn boxing",
-        "showtime boxing",
-        "golden boy",
+        "boxing", "main event", "undercard", "premier boxing", "top rank",
+        "matchroom", "dazn boxing", "showtime boxing", "golden boy",
     ],
 }
 
@@ -577,12 +663,12 @@ CARD_SEGMENT_PATTERNS: list[tuple[str, str]] = [
 
 
 # =============================================================================
-# UFC EXCLUDE PATTERNS
-# Stream name patterns that should NOT be matched to UFC events.
+# COMBAT SPORTS EXCLUDE PATTERNS
+# Stream name patterns that should NOT be matched to combat sports events.
 # These are related content (weigh-ins, press conferences) not actual fights.
 # =============================================================================
 
-UFC_EXCLUDE_PATTERNS: list[str] = [
+COMBAT_SPORTS_EXCLUDE_PATTERNS: list[str] = [
     r"\bweigh[\s-]?in\b",
     r"\bpress\s*conference\b",
     r"\bcountdown\b",
@@ -593,4 +679,8 @@ UFC_EXCLUDE_PATTERNS: list[str] = [
     r"\bclassic\s*fight\b",
     r"\breplay\b",
     r"\bencore\b",
+    r"\bhighlights?\b",
+    r"\binterview\b",
+    r"\banalysis\b",
+    r"\bbreakdown\b",
 ]

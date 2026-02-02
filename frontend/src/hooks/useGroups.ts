@@ -11,6 +11,7 @@ import {
   listGroups,
   previewGroup,
   processGroup,
+  promoteGroup,
   reorderGroups,
   updateGroup,
 } from "@/api/groups"
@@ -127,5 +128,16 @@ export function useClearGroupMatchCache() {
 export function useClearGroupsMatchCache() {
   return useMutation({
     mutationFn: (groupIds: number[]) => clearGroupsMatchCache(groupIds),
+  })
+}
+
+export function usePromoteGroup() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (groupId: number) => promoteGroup(groupId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["groups"] })
+    },
   })
 }
