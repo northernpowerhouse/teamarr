@@ -47,6 +47,8 @@ from teamarr.database.groups import (
     get_all_groups,
     get_enabled_soccer_leagues,
     get_group,
+    get_group_templates,
+    get_template_for_event,
     update_group_stats,
 )
 from teamarr.database.stats import (
@@ -1160,8 +1162,11 @@ class EventGroupProcessor:
         """
         result = ProcessingResult(group_id=group.id, group_name=group.name)
 
-        # Template is required - skip groups without one
-        if group.template_id is None:
+        # Template is required - check both direct assignment and group_templates table
+        group_templates = get_group_templates(conn, group.id)
+        has_template = group.template_id is not None or len(group_templates) > 0
+
+        if not has_template:
             logger.warning(
                 "[EVENT_GROUP_SKIP] Group '%s' (id=%d): no template assigned - "
                 "template is required for channel naming. Skipping group.",
@@ -2360,9 +2365,15 @@ class EventGroupProcessor:
         }
 
         # Load template from database if configured
+        # Check both direct template_id and group_templates table
         template_config = None
-        if group.template_id:
-            template_config = self._load_event_template(conn, group.template_id)
+        template_id = group.template_id
+        if not template_id:
+            # Try to get default template from group_templates (sports/leagues both NULL)
+            # Using empty strings to trigger fallback to default template
+            template_id = get_template_for_event(conn, group.id, "", "")
+        if template_id:
+            template_config = self._load_event_template(conn, template_id)
 
         combined_result = StreamProcessResult()
 
@@ -2458,19 +2469,25 @@ class EventGroupProcessor:
             return "", 0, 0, 0, 0
 
         # Load template options if configured
+        # Check both direct template_id and group_templates table
         options = EventEPGOptions()
         filler_config: EventFillerConfig | None = None
         template_db = None
 
-        if group.template_id:
-            template_config = self._load_event_template(conn, group.template_id)
+        template_id = group.template_id
+        if not template_id:
+            # Try to get default template from group_templates
+            template_id = get_template_for_event(conn, group.id, "", "")
+
+        if template_id:
+            template_config = self._load_event_template(conn, template_id)
             if template_config:
                 options.template = template_config
 
             # Load raw template for filler config
             from teamarr.database.templates import get_template
 
-            template_db = get_template(conn, group.template_id)
+            template_db = get_template(conn, template_id)
             if template_db and (template_db.pregame_enabled or template_db.postgame_enabled):
                 filler_config = template_to_event_filler_config(template_db)
 

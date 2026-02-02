@@ -25,6 +25,7 @@ export interface EventGroup {
   group_mode: string  // "single" or "multi" - persisted to preserve user intent
   parent_group_id: number | null
   template_id: number | null
+  group_template_count: number  // Count of templates via Manage Templates
   channel_start_number: number | null
   channel_group_id: number | null
   channel_group_mode: string  // Dynamic channel group assignment mode

@@ -349,8 +349,8 @@ export function EventGroups() {
       }
       if (templateFilter !== "") {
         if (templateFilter === 0) {
-          // "Unassigned" - match groups with null template_id
-          if (group.template_id !== null) return false
+          // "Unassigned" - match groups with no template_id AND no group_templates
+          if (group.template_id !== null || group.group_template_count > 0) return false
         } else {
           if (group.template_id !== templateFilter) return false
         }
@@ -1476,6 +1476,10 @@ export function EventGroups() {
                       ) : group.template_id ? (
                         <Badge variant="success">
                           {templates?.find((t) => t.id === group.template_id)?.name ?? `#${group.template_id}`}
+                        </Badge>
+                      ) : group.group_template_count > 0 ? (
+                        <Badge variant="success" title="Templates assigned via Manage Templates">
+                          Managed ({group.group_template_count})
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="italic text-muted-foreground">

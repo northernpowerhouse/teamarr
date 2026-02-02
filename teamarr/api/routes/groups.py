@@ -235,6 +235,7 @@ class GroupResponse(BaseModel):
     group_mode: str = "single"  # "single" or "multi" - persisted to preserve user intent
     parent_group_id: int | None = None
     template_id: int | None = None
+    group_template_count: int = 0  # Count of templates via Manage Templates
     channel_start_number: int | None = None
     channel_group_id: int | None = None
     channel_group_mode: str = "static"  # "static", "sport", "league"
@@ -554,6 +555,12 @@ def list_groups(
         if include_stats:
             stats = get_all_group_stats(conn)
 
+        # Get group_templates counts for all groups
+        cursor = conn.execute(
+            "SELECT group_id, COUNT(*) as count FROM group_templates GROUP BY group_id"
+        )
+        group_template_counts = {row["group_id"]: row["count"] for row in cursor.fetchall()}
+
     # Fetch fresh M3U account names from Dispatcharr
     m3u_account_names: dict[int, str] = {}
     account_ids = {g.m3u_account_id for g in groups if g.m3u_account_id}
@@ -582,6 +589,7 @@ def list_groups(
                 group_mode=g.group_mode,
                 parent_group_id=g.parent_group_id,
                 template_id=g.template_id,
+                group_template_count=group_template_counts.get(g.id, 0),
                 channel_start_number=g.channel_start_number,
                 channel_group_id=g.channel_group_id,
                 channel_profile_ids=g.channel_profile_ids,
