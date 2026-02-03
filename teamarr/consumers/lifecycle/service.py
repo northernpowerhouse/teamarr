@@ -242,6 +242,49 @@ class ChannelLifecycleService:
         keywords = self._get_exception_keywords(conn)
         return check_exception_keyword(stream_name, keywords)
 
+    def _resolve_event_template(
+        self,
+        conn: Connection,
+        group_id: int,
+        event,
+        fallback_template,
+    ):
+        """Resolve the best template for a specific event.
+
+        Uses sport/league-specific templates from group_templates table if configured,
+        otherwise falls back to the provided fallback_template.
+
+        Args:
+            conn: Database connection
+            group_id: Event EPG group ID
+            event: Event object with sport and league attributes
+            fallback_template: Template to use if no specific template found
+
+        Returns:
+            Template config (dict or EventTemplateConfig) or None
+        """
+        from teamarr.database.groups import get_template_for_event
+        from teamarr.database.templates import get_template, template_to_event_config
+
+        event_sport = getattr(event, "sport", None) or ""
+        event_league = getattr(event, "league", None) or ""
+
+        # Try to find a sport/league-specific template
+        template_id = get_template_for_event(conn, group_id, event_sport, event_league)
+
+        if template_id:
+            template = get_template(conn, template_id)
+            if template:
+                return template_to_event_config(template)
+            logger.warning(
+                "[LIFECYCLE] Template %s not found for event %s",
+                template_id,
+                event.id,
+            )
+
+        # Fall back to the provided template
+        return fallback_template
+
     def process_matched_streams(
         self,
         matched_streams: list[dict],
@@ -384,6 +427,11 @@ class ChannelLifecycleService:
                     # Determine effective duplicate mode
                     effective_mode = keyword_behavior if keyword_behavior else duplicate_mode
 
+                    # Resolve template for this specific event (may be sport/league-specific)
+                    event_template = self._resolve_event_template(
+                        conn, group_id, event, template
+                    )
+
                     # Find existing channel based on mode
                     # Use effective_event_id for segment-aware lookup
                     existing = find_existing_channel(
@@ -406,7 +454,7 @@ class ChannelLifecycleService:
                             effective_mode=effective_mode,
                             matched_keyword=matched_keyword,
                             group_config=group_config,
-                            template=template,
+                            template=event_template,
                         )
                         # None means Dispatcharr channel missing - fall through to create new
                         if channel_result is not None:
@@ -447,7 +495,7 @@ class ChannelLifecycleService:
                             matched_keyword=matched_keyword,
                             overlap_handling=overlap_handling,
                             group_config=group_config,
-                            template=template,
+                            template=event_template,
                             segment=segment,
                         )
 
@@ -481,7 +529,7 @@ class ChannelLifecycleService:
                         event=event,
                         stream=stream,
                         group_config=group_config,
-                        template=template,
+                        template=event_template,
                         matched_keyword=matched_keyword,
                         channel_group_id=resolved_channel_group_id,
                         channel_profile_ids=resolved_channel_profile_ids,
