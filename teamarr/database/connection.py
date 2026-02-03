@@ -1464,6 +1464,7 @@ def _migrate_channel_group_mode_to_patterns(conn: sqlite3.Connection) -> None:
                 custom_regex_fighters_enabled BOOLEAN DEFAULT 0,
                 custom_regex_event_name TEXT,
                 custom_regex_event_name_enabled BOOLEAN DEFAULT 0,
+                custom_regex_config JSON,
                 skip_builtin_filter BOOLEAN DEFAULT 0,
                 include_teams TEXT,
                 exclude_teams TEXT,
