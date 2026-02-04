@@ -96,13 +96,26 @@ export function LeaguePicker({
   }
 
   // Global select/clear all (multi-select only)
+  // When sportFilter is active, only operate on filtered leagues
   const selectAllLeagues = () => {
-    const allSlugs = cachedLeagues?.map(l => l.slug) || []
-    onSelectionChange(allSlugs)
+    const filteredSlugs = Object.values(leaguesBySport).flat().map(l => l.slug)
+    // Merge with existing selections (don't lose other sports when filtering)
+    const next = new Set(selectedSet)
+    for (const slug of filteredSlugs) {
+      next.add(slug)
+    }
+    onSelectionChange(Array.from(next))
   }
 
   const clearAllLeagues = () => {
-    onSelectionChange([])
+    if (sportFilter || excludeSport) {
+      // Only clear leagues that are in the filtered view
+      const filteredSlugs = new Set(Object.values(leaguesBySport).flat().map(l => l.slug))
+      const next = Array.from(selectedSet).filter(slug => !filteredSlugs.has(slug))
+      onSelectionChange(next)
+    } else {
+      onSelectionChange([])
+    }
   }
 
   // Per-sport select/clear (multi-select only)
@@ -244,7 +257,8 @@ export function LeaguePicker({
             const allSelected = isSportFullySelected(sport)
 
             // Soccer in multi-select mode: show as single consolidated checkbox (too many leagues)
-            if (!singleSelect && sport.toLowerCase() === "soccer") {
+            // But NOT when sportFilter="soccer" - in that case user wants to pick individual leagues
+            if (!singleSelect && sport.toLowerCase() === "soccer" && !sportFilter) {
               return (
                 <label
                   key={sport}
