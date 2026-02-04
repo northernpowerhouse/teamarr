@@ -324,9 +324,15 @@ class ESPNProvider(UFCParserMixin, TournamentParserMixin, SportsProvider):
     LEAGUES_WITHOUT_SUMMARY = {"ufc"}
 
     # Leagues without teams endpoint support
-    # Combat sports (MMA, boxing) have individual fighters, not teams
-    # Calling /teams endpoint returns 404 - skip to avoid log spam
-    LEAGUES_WITHOUT_TEAMS = {"ufc", "boxing"}
+    # Leagues where /teams endpoint doesn't work or isn't needed:
+    # - Combat sports (MMA, boxing): individual fighters, not teams
+    # - Olympics: teams only in events, no team filtering/import needed
+    LEAGUES_WITHOUT_TEAMS = {
+        "ufc",
+        "boxing",
+        "olympics-mens-ice-hockey",
+        "olympics-womens-ice-hockey",
+    }
 
     def get_event(self, event_id: str, league: str) -> Event | None:
         """Fetch single event with full details from summary endpoint."""
