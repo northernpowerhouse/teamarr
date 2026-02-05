@@ -95,6 +95,7 @@ export function EventGroupForm() {
     include_teams: null,
     exclude_teams: null,
     team_filter_mode: "include",
+    bypass_filter_for_playoffs: null,  // null = use default
   })
 
   // Single-league selection (stores the slug for single-league mode during creation)
@@ -254,6 +255,7 @@ export function EventGroupForm() {
         include_teams: group.include_teams,
         exclude_teams: group.exclude_teams,
         team_filter_mode: group.team_filter_mode || "include",
+        bypass_filter_for_playoffs: group.bypass_filter_for_playoffs,
         // Multi-sport enhancements (Phase 3)
         channel_sort_order: group.channel_sort_order || "time",
         overlap_handling: group.overlap_handling || "add_stream",
@@ -1440,7 +1442,26 @@ export function EventGroupForm() {
                         }}
                       />
 
-                      <div className="space-y-1">
+                      {/* Playoff bypass option */}
+                      <label className="flex items-center gap-2 cursor-pointer py-2">
+                        <Checkbox
+                          checked={formData.bypass_filter_for_playoffs ?? false}
+                          onCheckedChange={(checked) =>
+                            setFormData({
+                              ...formData,
+                              bypass_filter_for_playoffs: checked ? true : null,
+                            })
+                          }
+                        />
+                        <span className="text-sm">
+                          Include all playoff games (bypass team filter for postseason)
+                        </span>
+                      </label>
+                      <p className="text-xs text-muted-foreground -mt-1 ml-6">
+                        Unchecked uses the global default from Settings
+                      </p>
+
+                      <div className="space-y-1 mt-2">
                         <p className="text-xs text-muted-foreground">
                           {!(formData.include_teams?.length || formData.exclude_teams?.length)
                             ? "No teams selected. All events will be matched."

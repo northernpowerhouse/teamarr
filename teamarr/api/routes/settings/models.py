@@ -223,6 +223,7 @@ class TeamFilterSettingsModel(BaseModel):
     include_teams: list[dict] | None = None
     exclude_teams: list[dict] | None = None
     mode: str = "include"
+    bypass_filter_for_playoffs: bool = False  # Include all playoff games
 
 
 class TeamFilterSettingsUpdate(BaseModel):
@@ -234,6 +235,7 @@ class TeamFilterSettingsUpdate(BaseModel):
     mode: str | None = None
     clear_include_teams: bool = False
     clear_exclude_teams: bool = False
+    bypass_filter_for_playoffs: bool | None = None
 
 
 # =============================================================================

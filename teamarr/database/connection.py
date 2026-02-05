@@ -1205,6 +1205,19 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("[MIGRATE] Schema upgraded to version 51 (soccer followed teams)")
         current_version = 51
 
+    # v52: Bypass team filter for playoffs (issue #70)
+    # Global default in settings, per-group override in event_epg_groups
+    if current_version < 52:
+        _add_column_if_not_exists(
+            conn, "settings", "default_bypass_filter_for_playoffs", "BOOLEAN DEFAULT 0"
+        )
+        _add_column_if_not_exists(
+            conn, "event_epg_groups", "bypass_filter_for_playoffs", "BOOLEAN"
+        )
+        conn.execute("UPDATE settings SET schema_version = 52 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 52 (playoff filter bypass)")
+        current_version = 52
+
 
 # =============================================================================
 # LEGACY MIGRATION HELPER FUNCTIONS

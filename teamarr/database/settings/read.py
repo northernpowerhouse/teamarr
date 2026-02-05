@@ -164,6 +164,9 @@ def get_all_settings(conn: Connection) -> AllSettings:
             if row["default_exclude_teams"]
             else None,
             mode=row["default_team_filter_mode"] or "include",
+            bypass_filter_for_playoffs=bool(row["default_bypass_filter_for_playoffs"])
+            if row.get("default_bypass_filter_for_playoffs") is not None
+            else False,
         ),
         channel_numbering=ChannelNumberingSettings(
             numbering_mode=row["channel_numbering_mode"] or "strict_block",
@@ -377,7 +380,7 @@ def get_team_filter_settings(conn: Connection) -> TeamFilterSettings:
     """
     cursor = conn.execute(
         """SELECT team_filter_enabled, default_include_teams, default_exclude_teams,
-                  default_team_filter_mode
+                  default_team_filter_mode, default_bypass_filter_for_playoffs
            FROM settings WHERE id = 1"""
     )
     row = cursor.fetchone()
@@ -396,6 +399,9 @@ def get_team_filter_settings(conn: Connection) -> TeamFilterSettings:
         if row["default_exclude_teams"]
         else None,
         mode=row["default_team_filter_mode"] or "include",
+        bypass_filter_for_playoffs=bool(row["default_bypass_filter_for_playoffs"])
+        if row.get("default_bypass_filter_for_playoffs") is not None
+        else False,
     )
 
 

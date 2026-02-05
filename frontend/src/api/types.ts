@@ -63,6 +63,7 @@ export interface EventGroup {
   include_teams: TeamFilterEntry[] | null
   exclude_teams: TeamFilterEntry[] | null
   team_filter_mode: 'include' | 'exclude'
+  bypass_filter_for_playoffs: boolean | null  // null = use default
   // Processing stats
   last_refresh: string | null
   stream_count: number
@@ -135,6 +136,7 @@ export interface EventGroupCreate {
   include_teams?: TeamFilterEntry[] | null
   exclude_teams?: TeamFilterEntry[] | null
   team_filter_mode?: 'include' | 'exclude'
+  bypass_filter_for_playoffs?: boolean | null  // null = use default
   // Multi-sport enhancements (Phase 3)
   channel_sort_order?: string
   overlap_handling?: string

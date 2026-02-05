@@ -1828,6 +1828,9 @@ class EventGroupProcessor:
         Uses canonical team selection (provider, team_id) for unambiguous matching.
         Filter is set on parent groups and inherited by children.
 
+        When bypass_filter_for_playoffs is enabled, playoff games (season_type='postseason')
+        bypass the team filter entirely.
+
         Args:
             matched_streams: List of {'stream': ..., 'event': ...} dicts
             group: The event group being processed
@@ -1837,7 +1840,9 @@ class EventGroupProcessor:
             Tuple of (filtered_streams, filtered_count)
         """
         # Get effective team filter (from group or parent)
-        include_teams, exclude_teams, mode = self._get_effective_team_filter(group, conn)
+        include_teams, exclude_teams, mode, bypass_playoffs = self._get_effective_team_filter(
+            group, conn
+        )
 
         # No filter configured
         if not include_teams and not exclude_teams:
@@ -1846,6 +1851,7 @@ class EventGroupProcessor:
         filter_list = include_teams if include_teams else exclude_teams
         filtered = []
         filtered_count = 0
+        playoff_bypass_count = 0
 
         # Extract leagues that have teams in the filter
         # Only filter events from leagues with explicit selections
@@ -1856,6 +1862,12 @@ class EventGroupProcessor:
             if not event:
                 # No event - can't filter by team, keep it
                 filtered.append(match)
+                continue
+
+            # Bypass filter for playoff games if setting is enabled
+            if bypass_playoffs and event.season_type == "postseason":
+                filtered.append(match)
+                playoff_bypass_count += 1
                 continue
 
             # Get event's league
@@ -1890,6 +1902,12 @@ class EventGroupProcessor:
                     filtered_count += 1
                     logger.debug(f"Team filter excluded: {event.name} - team in exclude list")
 
+        if playoff_bypass_count > 0:
+            logger.info(
+                "Playoff bypass: %d playoff game(s) included despite team filter",
+                playoff_bypass_count,
+            )
+
         if filtered_count > 0:
             logger.info(
                 "[EVENT_EPG] Team filter: %d streams excluded, %d remaining",
@@ -1903,7 +1921,7 @@ class EventGroupProcessor:
         self,
         group: "EventEPGGroup",
         conn,
-    ) -> tuple[list[dict] | None, list[dict] | None, str]:
+    ) -> tuple[list[dict] | None, list[dict] | None, str, bool]:
         """Get team filter, inheriting from parent if needed, with settings fallback.
 
         Priority chain:
@@ -1913,27 +1931,41 @@ class EventGroupProcessor:
         4. No filtering (default)
 
         Returns:
-            Tuple of (include_teams, exclude_teams, mode)
+            Tuple of (include_teams, exclude_teams, mode, bypass_filter_for_playoffs)
         """
         from teamarr.database.groups import get_group
         from teamarr.database.settings import get_team_filter_settings
 
+        # Get global settings for defaults
+        settings = get_team_filter_settings(conn)
+
+        # Determine bypass_filter_for_playoffs (group override -> global default)
+        bypass_playoffs = group.bypass_filter_for_playoffs
+        if bypass_playoffs is None and group.parent_group_id:
+            parent = get_group(conn, group.parent_group_id)
+            if parent:
+                bypass_playoffs = parent.bypass_filter_for_playoffs
+        if bypass_playoffs is None:
+            bypass_playoffs = settings.bypass_filter_for_playoffs
+
         # If group has its own filter, use it
         if group.include_teams or group.exclude_teams:
-            return group.include_teams, group.exclude_teams, group.team_filter_mode
+            return group.include_teams, group.exclude_teams, group.team_filter_mode, bypass_playoffs
 
         # Otherwise inherit from parent
         if group.parent_group_id:
             parent = get_group(conn, group.parent_group_id)
             if parent and (parent.include_teams or parent.exclude_teams):
-                return parent.include_teams, parent.exclude_teams, parent.team_filter_mode
+                return (
+                    parent.include_teams, parent.exclude_teams,
+                    parent.team_filter_mode, bypass_playoffs
+                )
 
         # Fall back to global settings default
-        settings = get_team_filter_settings(conn)
         if settings.include_teams or settings.exclude_teams:
-            return settings.include_teams, settings.exclude_teams, settings.mode
+            return settings.include_teams, settings.exclude_teams, settings.mode, bypass_playoffs
 
-        return None, None, "include"
+        return None, None, "include", bypass_playoffs
 
     def _team_matches_filter(
         self,

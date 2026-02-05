@@ -382,6 +382,7 @@ def update_team_filter_settings(
     mode: str | None = None,
     clear_include_teams: bool = False,
     clear_exclude_teams: bool = False,
+    bypass_filter_for_playoffs: bool | None = None,
 ) -> bool:
     """Update default team filtering settings.
 
@@ -393,6 +394,7 @@ def update_team_filter_settings(
         mode: Filter mode ('include' or 'exclude')
         clear_include_teams: Set to True to clear include_teams to NULL
         clear_exclude_teams: Set to True to clear exclude_teams to NULL
+        bypass_filter_for_playoffs: Include all playoff games regardless of filter
 
     Returns:
         True if updated
@@ -426,6 +428,10 @@ def update_team_filter_settings(
     if mode is not None:
         updates.append("default_team_filter_mode = ?")
         values.append(mode)
+
+    if bypass_filter_for_playoffs is not None:
+        updates.append("default_bypass_filter_for_playoffs = ?")
+        values.append(int(bypass_filter_for_playoffs))
 
     if not updates:
         return False

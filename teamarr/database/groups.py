@@ -66,6 +66,7 @@ class EventEPGGroup:
     include_teams: list[dict] | None = None
     exclude_teams: list[dict] | None = None
     team_filter_mode: str = "include"
+    bypass_filter_for_playoffs: bool | None = None  # NULL=use default, True/False=override
     # Processing stats by category (FILTERED / FAILED / EXCLUDED)
     filtered_stale: int = 0  # FILTERED: Stream marked as stale in Dispatcharr
     filtered_include_regex: int = 0  # FILTERED: Didn't match include regex
@@ -189,6 +190,12 @@ def _row_to_group(row) -> EventEPGGroup:
         include_teams=json.loads(row["include_teams"]) if row["include_teams"] else None,
         exclude_teams=json.loads(row["exclude_teams"]) if row["exclude_teams"] else None,
         team_filter_mode=row["team_filter_mode"] if "team_filter_mode" in row.keys() else "include",
+        bypass_filter_for_playoffs=(
+            bool(row["bypass_filter_for_playoffs"])
+            if "bypass_filter_for_playoffs" in row.keys()
+            and row["bypass_filter_for_playoffs"] is not None
+            else None
+        ),
         # Processing stats by category (FILTERED / FAILED / EXCLUDED)
         filtered_stale=row["filtered_stale"] if "filtered_stale" in row.keys() else 0,
         filtered_include_regex=row["filtered_include_regex"] or 0,
