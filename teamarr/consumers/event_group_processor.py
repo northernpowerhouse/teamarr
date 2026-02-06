@@ -1181,6 +1181,11 @@ class EventGroupProcessor:
         stats_run = create_run(conn, run_type="event_group", group_id=group.id)
 
         try:
+            # Clear any previously stored XMLTV for this group so that if
+            # processing crashes or produces zero matches, stale rendered
+            # output is never served in the merged EPG.
+            self._store_group_xmltv(conn, group.id, "")
+
             # Step 1: Fetch M3U streams from Dispatcharr
             streams = self._fetch_streams(group)
             result.streams_fetched = len(streams)
