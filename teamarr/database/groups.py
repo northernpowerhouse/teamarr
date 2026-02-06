@@ -1624,29 +1624,54 @@ def get_template_for_event(
 
     if not templates:
         # Fall back to group's legacy template_id
+        logger.debug(
+            "[GROUP_TEMPLATES] No group_templates for group %d, checking legacy template_id",
+            group_id,
+        )
         row = conn.execute(
             "SELECT template_id FROM event_epg_groups WHERE id = ?",
             (group_id,),
         ).fetchone()
         return row["template_id"] if row else None
 
+    # Log what we're resolving for debugging
+    # Use INFO level for first event of each sport/league combo to aid diagnosis
+    logger.debug(
+        "[GROUP_TEMPLATES] Resolving template for group=%d, sport=%r, league=%r, "
+        "templates=%s",
+        group_id,
+        event_sport,
+        event_league,
+        [(t.template_id, t.sports, t.leagues) for t in templates],
+    )
+
     # 1. Check for league match (most specific)
     for t in templates:
         if t.leagues and event_league in t.leagues:
             logger.debug(
-                "[GROUP_TEMPLATES] Resolved template %d for event (league=%s match)",
+                "[GROUP_TEMPLATES] Resolved template %d for event (league=%r match in %s)",
                 t.template_id,
                 event_league,
+                t.leagues,
             )
             return t.template_id
+        # Log near-miss for case sensitivity issues
+        if t.leagues and event_league and event_league.lower() in [lg.lower() for lg in t.leagues]:
+            logger.warning(
+                "[GROUP_TEMPLATES] Case mismatch! Event league %r almost matches %s "
+                "(case-insensitive match found)",
+                event_league,
+                t.leagues,
+            )
 
     # 2. Check for sport match
     for t in templates:
         if t.sports and event_sport in t.sports:
             logger.debug(
-                "[GROUP_TEMPLATES] Resolved template %d for event (sport=%s match)",
+                "[GROUP_TEMPLATES] Resolved template %d for event (sport=%r match in %s)",
                 t.template_id,
                 event_sport,
+                t.sports,
             )
             return t.template_id
 
@@ -1660,6 +1685,13 @@ def get_template_for_event(
             return t.template_id
 
     # No match found - fall back to group's legacy template_id
+    logger.debug(
+        "[GROUP_TEMPLATES] No match found for sport=%r, league=%r in %d templates, "
+        "checking legacy template_id",
+        event_sport,
+        event_league,
+        len(templates),
+    )
     row = conn.execute(
         "SELECT template_id FROM event_epg_groups WHERE id = ?",
         (group_id,),

@@ -2527,6 +2527,20 @@ class EventGroupProcessor:
         # Resolve per-event templates based on sport/league specificity
         # This allows different templates for different sports/leagues in multi-sport groups
         template_cache: dict = {}  # {template_id: EventTemplateConfig}
+
+        # Log template resolution context for multi-template groups
+        from teamarr.database.groups import get_group_templates
+
+        group_templates = get_group_templates(conn, group.id)
+        if len(group_templates) > 1:
+            logger.info(
+                "[EVENT_EPG] Multi-template group %d (%s): default=%s, templates=%s",
+                group.id,
+                group.name,
+                default_template_id,
+                [(t.template_id, t.sports, t.leagues) for t in group_templates],
+            )
+
         for match in matched_streams:
             event = match.get("event")
             if not event:
@@ -2539,6 +2553,18 @@ class EventGroupProcessor:
             event_template_id = get_template_for_event(
                 conn, group.id, event_sport, event_league
             )
+
+            # Log template resolution for multi-template groups
+            if len(group_templates) > 1:
+                logger.info(
+                    "[EVENT_EPG] Template resolution: event=%s sport=%r league=%r "
+                    "-> template=%s (default=%s)",
+                    event.id,
+                    event_sport,
+                    event_league,
+                    event_template_id,
+                    default_template_id,
+                )
 
             if event_template_id and event_template_id != default_template_id:
                 # Use cached template if already loaded
