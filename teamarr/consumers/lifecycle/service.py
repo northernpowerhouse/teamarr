@@ -1345,7 +1345,7 @@ class ChannelLifecycleService:
     ) -> StreamProcessResult:
         """Sync channel settings from group/template to Dispatcharr.
 
-        V1 Parity: Syncs all 8 channel properties:
+        V1 Parity: Syncs all 9 channel properties:
         | Source              | Dispatcharr Field    | Handling                    |
         |---------------------|---------------------|-----------------------------|
         | template            | name                | Template variable resolution|
@@ -1355,6 +1355,7 @@ class ChannelLifecycleService:
         | group               | channel_profile_ids | Add/remove via profile API  |
         | template            | logo_id             | Upload/update if different  |
         | event_id            | tvg_id              | Ensures EPG matching        |
+        | group/settings      | stream_profile_id   | Group override > global     |
         """
         from teamarr.database.channels import (
             log_channel_history,
@@ -1599,6 +1600,25 @@ class ChannelLifecycleService:
                     changes_made.append("logo removed")
                     # Note: Old logos are cleaned up by Dispatcharr's bulk cleanup API
                     # if cleanup_unused_logos setting is enabled
+
+            # 9. Sync stream_profile_id (group override > global default)
+            expected_stream_profile = group_config.get("stream_profile_id")
+            if expected_stream_profile is None:
+                from teamarr.database.settings import get_dispatcharr_settings
+
+                dispatcharr_settings = get_dispatcharr_settings(conn)
+                expected_stream_profile = dispatcharr_settings.default_stream_profile_id
+
+            current_stream_profile = current_channel.stream_profile_id
+            if expected_stream_profile != current_stream_profile:
+                with self._dispatcharr_lock:
+                    self._channel_manager.update_channel(
+                        existing.dispatcharr_channel_id,
+                        {"stream_profile_id": expected_stream_profile},
+                    )
+                changes_made.append(
+                    f"stream_profile: {current_stream_profile} → {expected_stream_profile}"
+                )
 
             # Log changes if any
             if changes_made:
