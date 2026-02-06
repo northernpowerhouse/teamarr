@@ -284,9 +284,10 @@ export function EventGroupForm() {
         setSelectedLeagues(new Set(group.leagues))
       }
 
-      // Set soccer mode if present
+      // Set soccer mode if present (map legacy 'all' → 'manual')
       if (group.soccer_mode) {
-        setSoccerMode(group.soccer_mode as SoccerMode)
+        const mode = group.soccer_mode === 'all' ? 'manual' : group.soccer_mode
+        setSoccerMode(mode as SoccerMode)
       }
       // Set soccer followed teams if present
       if (group.soccer_followed_teams) {

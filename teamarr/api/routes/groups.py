@@ -595,6 +595,10 @@ def list_groups(
                 name=g.name,
                 display_name=g.display_name,
                 leagues=g.leagues,
+                soccer_mode=g.soccer_mode,
+                soccer_followed_teams=[SoccerFollowedTeam(**t) for t in g.soccer_followed_teams]
+                if g.soccer_followed_teams
+                else None,
                 group_mode=g.group_mode,
                 parent_group_id=g.parent_group_id,
                 template_id=g.template_id,
@@ -763,6 +767,10 @@ def create_group(request: GroupCreate):
         name=group.name,
         display_name=group.display_name,
         leagues=group.leagues,
+        soccer_mode=group.soccer_mode,
+        soccer_followed_teams=[SoccerFollowedTeam(**t) for t in group.soccer_followed_teams]
+        if group.soccer_followed_teams
+        else None,
         group_mode=group.group_mode,
         parent_group_id=group.parent_group_id,
         template_id=group.template_id,
@@ -1178,6 +1186,10 @@ def get_group_by_id(group_id: int):
         name=group.name,
         display_name=group.display_name,
         leagues=group.leagues,
+        soccer_mode=group.soccer_mode,
+        soccer_followed_teams=[SoccerFollowedTeam(**t) for t in group.soccer_followed_teams]
+        if group.soccer_followed_teams
+        else None,
         group_mode=group.group_mode,
         parent_group_id=group.parent_group_id,
         template_id=group.template_id,
@@ -1379,6 +1391,10 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
         name=group.name,
         display_name=group.display_name,
         leagues=group.leagues,
+        soccer_mode=group.soccer_mode,
+        soccer_followed_teams=[SoccerFollowedTeam(**t) for t in group.soccer_followed_teams]
+        if group.soccer_followed_teams
+        else None,
         group_mode=group.group_mode,
         parent_group_id=group.parent_group_id,
         template_id=group.template_id,
