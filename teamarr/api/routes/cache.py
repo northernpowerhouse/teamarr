@@ -177,10 +177,10 @@ def list_sports() -> dict:
     Returns:
         Dict mapping sport codes to display names
     """
+    from teamarr.database.team_cache import list_sports as db_list_sports
+
     with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT sport_code, display_name FROM sports ORDER BY display_name")
-        sports = {row["sport_code"]: row["display_name"] for row in cursor.fetchall()}
+        sports = db_list_sports(conn)
 
     return {"sports": sports}
 
@@ -288,33 +288,10 @@ def get_league_teams(league_slug: str) -> list[dict]:
     Returns:
         List of teams in the league
     """
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT id, team_name, team_abbrev, team_short_name, provider,
-                   provider_team_id, league, sport, logo_url
-            FROM team_cache
-            WHERE league = ?
-            ORDER BY team_name
-            """,
-            (league_slug,),
-        )
+    from teamarr.database.team_cache import get_league_teams as db_get_league_teams
 
-        return [
-            {
-                "id": row["id"],
-                "team_name": row["team_name"],
-                "team_abbrev": row["team_abbrev"],
-                "team_short_name": row["team_short_name"],
-                "provider": row["provider"],
-                "provider_team_id": row["provider_team_id"],
-                "league": row["league"],
-                "sport": row["sport"],
-                "logo_url": row["logo_url"],
-            }
-            for row in cursor.fetchall()
-        ]
+    with get_db() as conn:
+        return db_get_league_teams(conn, league_slug)
 
 
 @router.get("/team-leagues/{provider}/{provider_team_id}")
@@ -331,18 +308,11 @@ def get_team_leagues(provider: str, provider_team_id: str) -> dict:
     Returns:
         Dict with team info and list of leagues
     """
+    from teamarr.database.team_cache import get_team_leagues as db_get_team_leagues
+
     # Query leagues directly from database
     with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT DISTINCT league
-            FROM team_cache
-            WHERE provider = ? AND provider_team_id = ?
-            """,
-            (provider, provider_team_id),
-        )
-        leagues = [row["league"] for row in cursor.fetchall()]
+        leagues = db_get_team_leagues(conn, provider, provider_team_id)
 
     # Get league details for each
     cache_service = create_cache_service(get_db)
@@ -392,52 +362,10 @@ def get_team_picker_leagues() -> dict:
     Returns:
         List of leagues with sport and is_configured flag, plus sport display names
     """
-    from teamarr.core.sports import get_sport_display_names_from_db
+    from teamarr.database.team_cache import get_team_picker_leagues as db_get_picker_leagues
 
     with get_db() as conn:
-        cursor = conn.cursor()
-
-        # Get sport display names from sports table
-        sport_display_names = get_sport_display_names_from_db(conn)
-
-        # Get unique leagues from team_cache (source of truth)
-        # LEFT JOIN with leagues table to get is_configured flag and display name
-        # Sort: configured first, then by sport, then by league name
-        cursor.execute(
-            """
-            SELECT
-                tc.league,
-                tc.sport,
-                tc.provider,
-                COUNT(*) as team_count,
-                CASE WHEN l.league_code IS NOT NULL THEN 1 ELSE 0 END as is_configured,
-                COALESCE(l.display_name, lc.league_name, UPPER(tc.league)) as display_name,
-                l.logo_url as configured_logo_url,
-                lc.logo_url as cached_logo_url
-            FROM team_cache tc
-            LEFT JOIN leagues l ON l.league_code = tc.league
-            LEFT JOIN league_cache lc ON lc.league_slug = tc.league
-            GROUP BY tc.league, tc.sport, tc.provider
-            ORDER BY
-                is_configured DESC,
-                tc.sport,
-                display_name
-            """
-        )
-
-        leagues = [
-            {
-                "slug": row["league"],
-                "sport": row["sport"],
-                "sport_display_name": sport_display_names.get(row["sport"], row["sport"].title()),
-                "provider": row["provider"],
-                "team_count": row["team_count"],
-                "is_configured": bool(row["is_configured"]),
-                "name": row["display_name"],
-                "logo_url": row["configured_logo_url"] or row["cached_logo_url"],
-            }
-            for row in cursor.fetchall()
-        ]
+        leagues = db_get_picker_leagues(conn)
 
     return {
         "count": len(leagues),
@@ -455,37 +383,12 @@ def get_league_info(league_slug: str) -> dict:
     Returns:
         League metadata or 404
     """
-    # Query directly from database
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT league, provider, sport, COUNT(*) as team_count
-            FROM team_cache
-            WHERE league = ?
-            GROUP BY league, provider, sport
-            """,
-            (league_slug,),
-        )
-        row = cursor.fetchone()
+    from teamarr.database.team_cache import get_league_info as db_get_league_info
 
-    if not row:
+    with get_db() as conn:
+        info = db_get_league_info(conn, league_slug)
+
+    if not info:
         return {"error": "League not found", "league": league_slug}
 
-    # Get league name from league_cache if available
-    league_name = league_slug.upper()
-    with get_db() as conn:
-        name_row = conn.execute(
-            "SELECT league_name FROM league_cache WHERE league_slug = ?",
-            (league_slug,),
-        ).fetchone()
-        if name_row:
-            league_name = name_row["league_name"]
-
-    return {
-        "slug": row["league"],
-        "provider": row["provider"],
-        "name": league_name,
-        "sport": row["sport"],
-        "team_count": row["team_count"],
-    }
+    return info
