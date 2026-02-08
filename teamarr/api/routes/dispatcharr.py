@@ -242,27 +242,3 @@ def list_stream_profiles() -> list[dict]:
     ]
 
 
-@router.get("/epg-sources")
-def list_epg_sources() -> list[dict]:
-    """List EPG sources from Dispatcharr.
-
-    Returns:
-        List of EPG sources
-    """
-    conn = get_dispatcharr_connection(db_factory=get_db)
-    if not conn:
-        raise HTTPException(status_code=503, detail="Dispatcharr not configured or unavailable")
-
-    sources = conn.epg.list_sources()
-    return [
-        {
-            "id": s.id,
-            "name": s.name,
-            "url": s.url,
-            "status": s.status,
-        }
-        for s in sources
-    ]
-
-
-

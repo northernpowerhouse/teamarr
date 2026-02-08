@@ -373,22 +373,3 @@ def get_team_picker_leagues() -> dict:
     }
 
 
-@router.get("/league/{league_slug}")
-def get_league_info(league_slug: str) -> dict:
-    """Get info for a specific league.
-
-    Args:
-        league_slug: League identifier (e.g., 'nfl', 'eng.1')
-
-    Returns:
-        League metadata or 404
-    """
-    from teamarr.database.team_cache import get_league_info as db_get_league_info
-
-    with get_db() as conn:
-        info = db_get_league_info(conn, league_slug)
-
-    if not info:
-        return {"error": "League not found", "league": league_slug}
-
-    return info
