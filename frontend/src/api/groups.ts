@@ -7,7 +7,6 @@ import type {
   EventGroupListResponse,
   EventGroupUpdate,
   PreviewGroupResponse,
-  ProcessGroupResponse,
 } from "./types"
 
 export async function listGroups(
@@ -67,22 +66,6 @@ export async function promoteGroup(
   groupId: number
 ): Promise<PromoteGroupResponse> {
   return api.post(`/groups/${groupId}/promote`)
-}
-
-export async function processGroup(
-  groupId: number
-): Promise<ProcessGroupResponse> {
-  return api.post(`/groups/${groupId}/process`)
-}
-
-export async function processAllGroups(): Promise<{
-  groups_processed: number
-  total_channels_created: number
-  total_errors: number
-  duration_seconds: number
-  results: ProcessGroupResponse[]
-}> {
-  return api.post("/groups/process-all")
 }
 
 export async function previewGroup(

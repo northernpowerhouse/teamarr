@@ -295,20 +295,6 @@ export interface HealthResponse {
   version?: string
 }
 
-export interface ProcessGroupResponse {
-  group_id: number
-  group_name: string
-  streams_fetched: number
-  streams_matched: number
-  streams_unmatched: number
-  channels_created: number
-  channels_existing: number
-  channels_skipped: number
-  channel_errors: number
-  errors: string[]
-  duration_seconds: number
-}
-
 // Preview (stream matching without channel creation)
 export interface PreviewStream {
   stream_id: number
