@@ -300,7 +300,10 @@ export function LeaguePicker({
             return (
               <div key={sport}>
                 <div
-                  className="flex items-center justify-between px-3 py-2 bg-muted/50 sticky top-0 cursor-pointer hover:bg-muted/70"
+                  className={cn(
+                    "flex items-center justify-between px-3 py-2 bg-muted/50 cursor-pointer hover:bg-muted/70",
+                    !sportFilter && "sticky top-0"
+                  )}
                   onClick={() => toggleExpanded(sport)}
                 >
                   <div className="flex items-center gap-2">
