@@ -15,8 +15,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
-import { RichTooltip } from "@/components/ui/rich-tooltip"
-import { ChevronRight, ChevronDown, X } from "lucide-react"
+import { SelectedBadges } from "@/components/ui/selected-badges"
+import { ChevronRight, ChevronDown } from "lucide-react"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -149,31 +149,11 @@ export function CheckboxListPicker({
   return (
     <div className="space-y-2">
       {/* Selected badges */}
-      {selected.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {selected.slice(0, maxBadges).map((value) => (
-            <Badge key={value} variant="secondary" className="gap-1">
-              {labelMap[value] || value}
-              <button onClick={() => toggle(value)} className="ml-1 hover:bg-muted rounded">
-                <X className="h-3 w-3" />
-              </button>
-            </Badge>
-          ))}
-          {selected.length > maxBadges && (
-            <RichTooltip
-              content={
-                <div className="text-xs space-y-0.5 max-h-48 overflow-y-auto">
-                  {selected.slice(maxBadges).map((value) => (
-                    <div key={value}>{labelMap[value] || value}</div>
-                  ))}
-                </div>
-              }
-            >
-              <Badge variant="outline" className="cursor-help">+{selected.length - maxBadges} more</Badge>
-            </RichTooltip>
-          )}
-        </div>
-      )}
+      <SelectedBadges
+        items={selected.map((value) => ({ key: value, label: labelMap[value] || value }))}
+        maxBadges={maxBadges}
+        onRemove={(key) => toggle(key)}
+      />
 
       {/* Search input */}
       <Input

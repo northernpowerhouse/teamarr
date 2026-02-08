@@ -1,12 +1,12 @@
 import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { X, Loader2, Check, ChevronRight, ChevronDown } from "lucide-react"
+import { Loader2, Check, ChevronRight, ChevronDown } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn, getSportDisplayName, getLeagueDisplayName } from "@/lib/utils"
-import { RichTooltip } from "@/components/ui/rich-tooltip"
+import { SelectedBadges, type BadgeItem } from "@/components/ui/selected-badges"
 import type { CachedLeague } from "@/api/teams"
 import { getLeagues, getSports } from "@/api/teams"
 
@@ -202,38 +202,16 @@ export function LeaguePicker({
         </div>
       )}
 
-      {/* Selected badges (multi-select only, or single with showSelectedBadges) */}
+      {/* Selected badges (multi-select only) */}
       {showSelectedBadges && selectedSet.size > 0 && !singleSelect && (
-        <div className="flex flex-wrap gap-1">
-          {Array.from(selectedSet).slice(0, maxBadges).map(slug => {
+        <SelectedBadges
+          items={Array.from(selectedSet).map((slug): BadgeItem => {
             const league = cachedLeagues?.find(l => l.slug === slug)
-            return (
-              <Badge key={slug} variant="secondary" className="gap-1">
-                {league?.logo_url && (
-                  <img src={league.logo_url} alt="" className="h-3 w-3 object-contain" />
-                )}
-                {league ? getLeagueDisplayName(league, true) : slug}
-                <button onClick={() => selectLeague(slug)} className="ml-1 hover:bg-muted rounded">
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
-            )
+            return { key: slug, label: league ? getLeagueDisplayName(league, true) : slug, icon: league?.logo_url ?? undefined }
           })}
-          {selectedSet.size > maxBadges && (
-            <RichTooltip
-              content={
-                <div className="text-xs space-y-0.5 max-h-48 overflow-y-auto">
-                  {Array.from(selectedSet).slice(maxBadges).map(slug => {
-                    const league = cachedLeagues?.find(l => l.slug === slug)
-                    return <div key={slug}>{league ? getLeagueDisplayName(league, true) : slug}</div>
-                  })}
-                </div>
-              }
-            >
-              <Badge variant="outline" className="cursor-help">+{selectedSet.size - maxBadges} more</Badge>
-            </RichTooltip>
-          )}
-        </div>
+          maxBadges={maxBadges}
+          onRemove={(slug) => selectLeague(slug)}
+        />
       )}
 
       {/* League picker by sport */}
