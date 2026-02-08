@@ -1947,6 +1947,9 @@ def process_group(group_id: int):
 
     Fetches streams from Dispatcharr, matches them to events,
     and creates/updates channels.
+
+    TODO: PRUNE — dead code path. Nothing calls this endpoint.
+    Group processing only happens via EPG generation. See #133.
     """
     from datetime import date
 
@@ -1995,6 +1998,9 @@ def process_all_groups():
 
     Fetches streams from Dispatcharr, matches them to events,
     and creates/updates channels for all active groups.
+
+    TODO: PRUNE — dead code path. Nothing calls this endpoint.
+    Group processing only happens via EPG generation. See #134.
     """
     from datetime import date
 

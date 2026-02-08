@@ -578,6 +578,8 @@ def cleanup_runs(
     """Delete old processing runs.
 
     Cleans up historical run data to manage database size.
+
+    TODO: No UI yet — needs Settings page control. See teamarrv2-3bn.
     """
     from teamarr.database.stats import cleanup_old_runs
 
