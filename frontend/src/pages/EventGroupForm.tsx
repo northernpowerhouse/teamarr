@@ -913,7 +913,7 @@ export function EventGroupForm() {
                     maxHeight="max-h-64"
                     showSearch={true}
                     showSelectedBadges={true}
-                    maxBadges={5}
+                    maxBadges={10}
                   />
                 </div>
 

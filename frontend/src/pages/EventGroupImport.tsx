@@ -709,7 +709,7 @@ export function EventGroupImport() {
                 onSelectionChange={(leagues) => setBulkLeagues(new Set(leagues))}
                 singleSelect={bulkMode === "single"}
                 maxHeight="max-h-48"
-                maxBadges={5}
+                maxBadges={10}
               />
             </div>
 

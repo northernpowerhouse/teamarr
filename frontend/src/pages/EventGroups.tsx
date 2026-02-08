@@ -1832,7 +1832,7 @@ export function EventGroups() {
                   selectedLeagues={bulkEditLeagues}
                   onSelectionChange={setBulkEditLeagues}
                   maxHeight="max-h-48"
-                  maxBadges={5}
+                  maxBadges={10}
                 />
               )}
             </div>

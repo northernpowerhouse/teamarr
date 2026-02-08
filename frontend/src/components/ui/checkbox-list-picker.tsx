@@ -63,7 +63,7 @@ export function CheckboxListPicker({
   groups,
   searchPlaceholder = "Search...",
   maxHeight = "max-h-48",
-  maxBadges = 8,
+  maxBadges = 10,
 }: CheckboxListPickerProps) {
   const [search, setSearch] = useState("")
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
