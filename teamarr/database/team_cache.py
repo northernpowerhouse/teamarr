@@ -61,3 +61,63 @@ def get_team_leagues_from_cache(
         (provider, provider_team_id, sport),
     )
     return [row["league"] for row in cursor.fetchall()]
+
+
+def search_teams(
+    conn: Connection,
+    query: str,
+    league: str | None = None,
+    sport: str | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    """Search for teams in the cache by name.
+
+    Matches against team_name (LIKE), team_abbrev (exact), and
+    team_short_name (LIKE).
+
+    Args:
+        conn: Database connection
+        query: Search query (case-insensitive)
+        league: Optional league filter
+        sport: Optional sport filter
+        limit: Max results (default 50)
+
+    Returns:
+        List of matching team dicts
+    """
+    q_lower = query.lower().strip()
+
+    sql = """
+        SELECT team_name, team_abbrev, team_short_name, provider,
+               provider_team_id, league, sport, logo_url
+        FROM team_cache
+        WHERE (LOWER(team_name) LIKE ?
+               OR LOWER(team_abbrev) = ?
+               OR LOWER(team_short_name) LIKE ?)
+    """
+    params: list = [f"%{q_lower}%", q_lower, f"%{q_lower}%"]
+
+    if league:
+        sql += " AND league = ?"
+        params.append(league)
+    if sport:
+        sql += " AND sport = ?"
+        params.append(sport)
+
+    sql += " ORDER BY team_name LIMIT ?"
+    params.append(limit)
+
+    rows = conn.execute(sql, params).fetchall()
+    return [
+        {
+            "name": row["team_name"],
+            "abbrev": row["team_abbrev"],
+            "short_name": row["team_short_name"],
+            "provider": row["provider"],
+            "team_id": row["provider_team_id"],
+            "league": row["league"],
+            "sport": row["sport"],
+            "logo_url": row["logo_url"],
+        }
+        for row in rows
+    ]

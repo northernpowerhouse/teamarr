@@ -235,55 +235,11 @@ def search_teams(
     league: str | None = Query(None, description="Filter by league slug"),
     sport: str | None = Query(None, description="Filter by sport"),
 ) -> dict:
-    """Search for teams in the cache.
-
-    Args:
-        q: Search query (partial match on team name)
-        league: Optional league filter
-        sport: Optional sport filter
-
-    Returns:
-        Matching teams
-    """
-    q_lower = q.lower().strip()
+    """Search for teams in the cache."""
+    from teamarr.database.team_cache import search_teams as db_search
 
     with get_db() as conn:
-        cursor = conn.cursor()
-
-        query = """
-            SELECT team_name, team_abbrev, team_short_name, provider,
-                   provider_team_id, league, sport, logo_url
-            FROM team_cache
-            WHERE (LOWER(team_name) LIKE ?
-                   OR LOWER(team_abbrev) = ?
-                   OR LOWER(team_short_name) LIKE ?)
-        """
-        params: list = [f"%{q_lower}%", q_lower, f"%{q_lower}%"]
-
-        if league:
-            query += " AND league = ?"
-            params.append(league)
-        if sport:
-            query += " AND sport = ?"
-            params.append(sport)
-
-        query += " ORDER BY team_name LIMIT 50"
-
-        cursor.execute(query, params)
-
-        teams = [
-            {
-                "name": row["team_name"],
-                "abbrev": row["team_abbrev"],
-                "short_name": row["team_short_name"],
-                "provider": row["provider"],
-                "team_id": row["provider_team_id"],
-                "league": row["league"],
-                "sport": row["sport"],
-                "logo_url": row["logo_url"],
-            }
-            for row in cursor.fetchall()
-        ]
+        teams = db_search(conn, query=q, league=league, sport=sport)
 
     return {
         "query": q,

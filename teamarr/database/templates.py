@@ -218,6 +218,29 @@ def get_template_by_name(conn: Connection, name: str) -> Template | None:
     return _row_to_template(row) if row else None
 
 
+def list_templates_with_counts(conn: Connection) -> list[dict]:
+    """List all templates with team and group usage counts.
+
+    Returns raw dicts (not Template objects) for API response compatibility.
+
+    Args:
+        conn: Database connection
+
+    Returns:
+        List of template dicts with team_count and group_count fields
+    """
+    cursor = conn.execute(
+        """
+        SELECT t.*,
+               COALESCE((SELECT COUNT(*) FROM teams WHERE template_id = t.id), 0) as team_count,
+               COALESCE((SELECT COUNT(*) FROM event_epg_groups WHERE template_id = t.id), 0) as group_count
+        FROM templates t
+        ORDER BY t.name
+        """  # noqa: E501
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
 def get_all_templates(conn: Connection, template_type: str | None = None) -> list[Template]:
     """Get all templates, optionally filtered by type.
 
