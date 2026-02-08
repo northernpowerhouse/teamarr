@@ -34,15 +34,17 @@ _JSON_FIELDS = {
 }
 
 
-def _serialize_for_db(key: str, value):
-    """Serialize a Pydantic model field value for database storage."""
+def _pydantic_to_plain(key: str, value):
+    """Convert Pydantic model field to plain Python type for database layer.
+
+    The database layer handles its own JSON serialization for known fields.
+    This only converts Pydantic sub-models to dicts/lists.
+    """
     if key in _JSON_FIELDS and value is not None:
         if hasattr(value, "model_dump"):
-            return json.dumps(value.model_dump())
+            return value.model_dump()
         elif isinstance(value, list):
-            return json.dumps([v.model_dump() if hasattr(v, "model_dump") else v for v in value])
-        elif isinstance(value, dict):
-            return json.dumps(value)
+            return [v.model_dump() if hasattr(v, "model_dump") else v for v in value]
     return value
 
 
@@ -70,23 +72,23 @@ def list_templates():
 @router.post("/templates", response_model=TemplateResponse, status_code=status.HTTP_201_CREATED)
 def create_template(template: TemplateCreate):
     """Create a new template."""
-    # Serialize Pydantic model fields for database storage
-    data = {k: _serialize_for_db(k, v) for k, v in template.model_dump().items()}
+    from teamarr.database.templates import create_template as db_create
+
+    # Convert Pydantic models to plain types for database layer
+    data = template.model_dump()
+    name = data.pop("name")
+    template_type = data.pop("template_type", "team")
+
+    # Convert Pydantic sub-models to plain dicts
+    kwargs = {}
+    for k, v in data.items():
+        if v is not None:
+            kwargs[k] = _pydantic_to_plain(k, getattr(template, k, v))
 
     with get_db() as conn:
         try:
-            # Build INSERT dynamically from all non-None fields
-            columns = [k for k, v in data.items() if v is not None or k == "name"]
-            values = [data[k] for k in columns]
-            placeholders = ", ".join("?" * len(columns))
-            col_str = ", ".join(columns)
-
-            cursor = conn.execute(
-                f"INSERT INTO templates ({col_str}) VALUES ({placeholders})",
-                values,
-            )
-            template_id = cursor.lastrowid
-            logger.info("[CREATED] Template id=%d name=%s", template_id, template.name)
+            template_id = db_create(conn, name=name, template_type=template_type, **kwargs)
+            # Fetch back for response (db_get returns Template object, we need raw dict)
             cursor = conn.execute("SELECT * FROM templates WHERE id = ?", (template_id,))
             return dict(cursor.fetchone())
         except Exception as e:
@@ -101,29 +103,37 @@ def create_template(template: TemplateCreate):
 @router.get("/templates/{template_id}", response_model=TemplateFullResponse)
 def get_template(template_id: int):
     """Get a template by ID with all JSON fields parsed."""
+    from dataclasses import asdict
+
+    from teamarr.database.templates import get_template as db_get
+
     with get_db() as conn:
-        cursor = conn.execute("SELECT * FROM templates WHERE id = ?", (template_id,))
-        row = cursor.fetchone()
-        if not row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
-        return _parse_json_fields(dict(row))
+        template = db_get(conn, template_id)
+        if not template:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Template not found"
+            )
+        # Template dataclass already has parsed JSON fields
+        return asdict(template)
 
 
 @router.put("/templates/{template_id}", response_model=TemplateResponse)
 def update_template(template_id: int, template: TemplateUpdate):
     """Update a template."""
+    from teamarr.database.templates import update_template as db_update
+
     updates = {k: v for k, v in template.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
 
-    serialized = {k: _serialize_for_db(k, v) for k, v in updates.items()}
-    set_clause = ", ".join(f"{k} = ?" for k in serialized.keys())
-    values = list(serialized.values()) + [template_id]
+    # Convert Pydantic sub-models to plain types for database layer
+    kwargs = {k: _pydantic_to_plain(k, getattr(template, k, v)) for k, v in updates.items()}
 
     with get_db() as conn:
-        cursor = conn.execute(f"UPDATE templates SET {set_clause} WHERE id = ?", values)
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
+        if not db_update(conn, template_id, **kwargs):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Template not found"
+            )
         logger.info("[UPDATED] Template id=%d fields=%s", template_id, list(updates.keys()))
         cursor = conn.execute("SELECT * FROM templates WHERE id = ?", (template_id,))
         return dict(cursor.fetchone())
