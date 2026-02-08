@@ -19,7 +19,8 @@ import { Button } from "@/components/ui/button"
 import { Select } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { SearchableMultiSelect } from "@/components/ui/searchable-multiselect"
+import { CheckboxListPicker } from "@/components/ui/checkbox-list-picker"
+import type { CheckboxListGroup } from "@/components/ui/checkbox-list-picker"
 import {
   getGroupTemplates,
   addGroupTemplate,
@@ -31,6 +32,7 @@ import type { GroupTemplate, BulkTemplateAssignment } from "@/api/groups"
 import { useTemplates } from "@/hooks/useTemplates"
 import { useSports } from "@/hooks/useSports"
 import { getLeagues } from "@/api/teams"
+import { getSportDisplayName } from "@/lib/utils"
 import { Loader2, Plus, Pencil, Trash2, Layers } from "lucide-react"
 
 // ---------------------------------------------------------------------------
@@ -144,23 +146,44 @@ export function TemplateAssignmentModal({
   })
   const allLeagues = leaguesData?.leagues || []
 
-  // Get unique sports from group's leagues
-  const groupSports = [...new Set(
-    allLeagues
-      .filter((l) => groupLeagues.includes(l.slug))
-      .map((l) => l.sport)
-  )]
+  // Get unique sports from group's leagues (sorted)
+  const groupSports = useMemo(() =>
+    [...new Set(
+      allLeagues
+        .filter((l) => groupLeagues.includes(l.slug))
+        .map((l) => l.sport)
+    )].sort(),
+    [allLeagues, groupLeagues]
+  )
 
-  // Build league options for searchable multiselect
-  const leagueOptions = useMemo(() => {
-    return groupLeagues.map((slug) => {
+  // Build sport items for CheckboxListPicker (flat mode)
+  const sportItems = useMemo(() =>
+    groupSports.map((sport) => ({
+      value: sport,
+      label: getSportDisplayName(sport, sportsMap),
+    })),
+    [groupSports, sportsMap]
+  )
+
+  // Build league groups for CheckboxListPicker (grouped mode)
+  const leagueGroups: CheckboxListGroup[] = useMemo(() => {
+    const grouped: Record<string, { slug: string; name: string; sport: string }[]> = {}
+    for (const slug of groupLeagues) {
       const league = allLeagues.find((l) => l.slug === slug)
-      return {
-        value: slug,
-        label: league?.name || slug,
-      }
-    }).sort((a, b) => a.label.localeCompare(b.label))
-  }, [groupLeagues, allLeagues])
+      const sport = league?.sport || "other"
+      if (!grouped[sport]) grouped[sport] = []
+      grouped[sport].push({ slug, name: league?.name || slug, sport })
+    }
+    return Object.keys(grouped)
+      .sort()
+      .map((sport) => ({
+        key: sport,
+        label: getSportDisplayName(sport, sportsMap),
+        items: grouped[sport]
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((l) => ({ value: l.slug, label: l.name })),
+      }))
+  }, [groupLeagues, allLeagues, sportsMap])
 
   // Mutations (only used when not in local mode)
   const addMutation = useMutation({
@@ -325,17 +348,13 @@ export function TemplateAssignmentModal({
     bulkMutation.mutate(assignments)
   }, [isBulkMode, bulkAssignments, bulkMutation])
 
-  const toggleSport = useCallback((sport: string) => {
-    setEditing((prev) =>
-      prev
-        ? {
-            ...prev,
-            sports: prev.sports.includes(sport)
-              ? prev.sports.filter((s) => s !== sport)
-              : [...prev.sports, sport],
-          }
-        : null
-    )
+  // --- Selection change handlers for CheckboxListPicker ---
+  const handleSportsChange = useCallback((sports: string[]) => {
+    setEditing((prev) => prev ? { ...prev, sports } : null)
+  }, [])
+
+  const handleLeaguesChange = useCallback((leagues: string[]) => {
+    setEditing((prev) => prev ? { ...prev, leagues } : null)
   }, [])
 
 
@@ -499,32 +518,26 @@ export function TemplateAssignmentModal({
                   {/* Sports filter */}
                   {groupSports.length > 1 && (
                     <div className="space-y-2">
-                      <Label>Sports (optional - leave empty for all)</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {groupSports.map((sport) => (
-                          <Badge
-                            key={sport}
-                            variant={editing.sports.includes(sport) ? "default" : "outline"}
-                            className="cursor-pointer"
-                            onClick={() => toggleSport(sport)}
-                          >
-                            {sportsMap[sport] || sport}
-                          </Badge>
-                        ))}
-                      </div>
+                      <Label>Sports (optional — leave empty for all)</Label>
+                      <CheckboxListPicker
+                        selected={editing.sports}
+                        onChange={handleSportsChange}
+                        items={sportItems}
+                        searchPlaceholder="Search sports..."
+                        maxHeight="max-h-36"
+                      />
                     </div>
                   )}
 
                   {/* Leagues filter */}
                   <div className="space-y-2">
-                    <Label>Leagues (optional - leave empty for all)</Label>
-                    <SearchableMultiSelect
-                      value={editing.leagues}
-                      onChange={(leagues) => setEditing({ ...editing, leagues })}
-                      options={leagueOptions}
-                      placeholder="Select leagues..."
+                    <Label>Leagues (optional — leave empty for all)</Label>
+                    <CheckboxListPicker
+                      selected={editing.leagues}
+                      onChange={handleLeaguesChange}
+                      groups={leagueGroups}
                       searchPlaceholder="Search leagues..."
-                      maxDisplayed={5}
+                      maxHeight="max-h-48"
                     />
                   </div>
 

@@ -152,7 +152,7 @@ class ChannelManager:
         """Ensure cache is populated. Returns cached channels list."""
         if not self._cache.is_populated():
             raw_channels = self._client.paginated_get(
-                "/api/channels/channels/?page_size=1000",
+                "/api/channels/channels/?page=1&page_size=1000",
                 error_context="channels",
             )
             channels = [DispatcharrChannel.from_api(c) for c in raw_channels]
@@ -174,7 +174,7 @@ class ChannelManager:
                 return self._ensure_cache()
 
             raw_channels = self._client.paginated_get(
-                "/api/channels/channels/?page_size=1000",
+                "/api/channels/channels/?page=1&page_size=1000",
                 error_context="channels",
             )
             return [DispatcharrChannel.from_api(c) for c in raw_channels]
@@ -648,7 +648,7 @@ class ChannelManager:
             List of EPGData dicts with id, tvg_id, name, icon_url, epg_source
         """
         all_epg_data = self._client.paginated_get(
-            "/api/epg/epgdata/?page_size=500",
+            "/api/epg/epgdata/?page=1&page_size=500",
             error_context="EPG data",
         )
 

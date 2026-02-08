@@ -88,6 +88,7 @@ export interface TeamFilterSettings {
   include_teams: TeamFilterEntry[] | null
   exclude_teams: TeamFilterEntry[] | null
   mode: "include" | "exclude"
+  bypass_filter_for_playoffs: boolean
 }
 
 export interface TeamFilterSettingsUpdate {
@@ -97,6 +98,7 @@ export interface TeamFilterSettingsUpdate {
   mode?: "include" | "exclude"
   clear_include_teams?: boolean
   clear_exclude_teams?: boolean
+  bypass_filter_for_playoffs?: boolean
 }
 
 export interface ChannelNumberingSettings {

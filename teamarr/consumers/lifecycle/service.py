@@ -39,6 +39,39 @@ class ChannelLifecycleService:
     - Duplicate handling (consolidate, separate, ignore)
     - Exception keyword handling
 
+    Architecture — Parallel Paths
+    =============================
+    Three code paths resolve channel settings. They MUST stay in sync:
+
+    1. **Creation** (`_create_channel`):
+       Entry: `process_matched_streams` → new channel → `_create_channel`
+       Resolves: name, tvg_id, logo, channel_group, channel_profiles,
+                 stream_profile, channel_number, delete_time
+       Context available: event, template, matched_keyword, segment,
+                          group_config (channel_group_mode, profile_ids, etc.)
+
+    2. **Sync** (`_sync_channel_settings`):
+       Entry: `_handle_existing_channel` → existing channel → `_sync_channel_settings`
+       Re-resolves: name, channel_number, channel_group, streams, tvg_id,
+                    delete_time, channel_profiles, logo, stream_profile
+       Context available: event, template, existing (DB record), segment,
+                          group_config
+
+    3. **EPG Generator** (`event_epg.py:generate_for_matched_streams`):
+       Entry: `event_group_processor._generate_xmltv` → EPG channel names/logos
+       Resolves: channel name, channel icon (logo URL)
+       Context available: event, template (EventTemplateConfig), segment,
+                          exception_keyword (annotated by event_group_processor)
+
+    Shared resolution methods:
+    - `_generate_channel_name(event, template, keyword, segment)` — used by #1 and #2
+    - `_resolve_logo_url(event, template, keyword, segment)` — used by #1 and #2
+    - `_resolve_template(template_str, event, extra_vars, card_segment)` — core resolver
+    - `_dynamic_resolver.resolve_channel_group/profiles(...)` — used by #1 and #2
+
+    When adding new context (e.g., a new template variable), ensure it flows
+    through ALL paths that resolve the affected field.
+
     Usage:
         from teamarr.dispatcharr import DispatcharrClient, ChannelManager, EPGManager, LogoManager
         from teamarr.database import get_db
@@ -352,238 +385,264 @@ class ChannelLifecycleService:
                     stream_profile_id = dispatcharr_settings.default_stream_profile_id
 
                 for matched in matched_streams:
-                    stream = matched.get("stream", {})
-                    event = matched.get("event")
+                    try:
+                        stream = matched.get("stream", {})
+                        event = matched.get("event")
 
-                    if not event:
-                        result.errors.append(
-                            {
-                                "stream": stream.get("name", "Unknown"),
-                                "error": "No event data",
-                            }
-                        )
-                        continue
-
-                    event_id = event.id
-                    event_provider = getattr(event, "provider", "espn")
-                    stream_name = stream.get("name", "")
-                    stream_id = stream.get("id")
-
-                    # UFC segment support: extract segment info if present
-                    segment = matched.get("segment")  # e.g., "prelims", "main_card"
-                    segment_display = matched.get("segment_display", "")
-                    segment_start = matched.get("segment_start")  # Segment-specific start time
-                    # For channel lookup/creation, use segment-aware event_id
-                    # This treats each segment as a separate "sub-event"
-                    effective_event_id = f"{event_id}-{segment}" if segment else event_id
-
-                    # Check if event should be excluded based on timing
-                    logger.debug(
-                        "[LIFECYCLE] Checking stream '%s' for event %s (status=%s)",
-                        stream_name[:40],
-                        event_id,
-                        event.status.state if event.status else "N/A",
-                    )
-                    excluded_reason = self._timing_manager.categorize_event_timing(event)
-                    if excluded_reason:
-                        result.excluded.append(
-                            {
-                                "stream": stream_name,
-                                "stream_id": stream_id,
-                                "event_id": event_id,
-                                "event_name": event.short_name or event.name,
-                                "reason": excluded_reason.value,
-                                "reason_display": {
-                                    "event_past": "Event already ended",
-                                    "event_final": "Event is final",
-                                    "before_create_window": "Before create window",
-                                }.get(excluded_reason.value, excluded_reason.value),
-                            }
-                        )
-                        continue
-
-                    # Check exception keyword
-                    matched_keyword, keyword_behavior = self._check_exception_keyword(
-                        stream_name, conn
-                    )
-
-                    # V1 Parity: If behavior is 'ignore', skip stream entirely
-                    # This must happen BEFORE any channel lookup/creation
-                    if keyword_behavior == "ignore":
-                        logger.debug(
-                            f"Skipping stream '{stream_name}': "
-                            f"keyword '{matched_keyword}' set to ignore"
-                        )
-                        result.skipped.append(
-                            {
-                                "stream": stream_name,
-                                "stream_id": stream_id,
-                                "event_id": event_id,
-                                "reason": f"Exception keyword '{matched_keyword}' set to ignore",
-                            }
-                        )
-                        continue
-
-                    # Determine effective duplicate mode
-                    effective_mode = keyword_behavior if keyword_behavior else duplicate_mode
-
-                    # Resolve template for this specific event (may be sport/league-specific)
-                    event_template = self._resolve_event_template(
-                        conn, group_id, event, template
-                    )
-
-                    # Find existing channel based on mode
-                    # Use effective_event_id for segment-aware lookup
-                    existing = find_existing_channel(
-                        conn=conn,
-                        group_id=group_id,
-                        event_id=effective_event_id,
-                        event_provider=event_provider,
-                        exception_keyword=matched_keyword,
-                        stream_id=stream_id,
-                        mode=effective_mode,
-                    )
-
-                    if existing:
-                        # Handle based on effective mode
-                        channel_result = self._handle_existing_channel(
-                            conn=conn,
-                            existing=existing,
-                            stream=stream,
-                            event=event,
-                            effective_mode=effective_mode,
-                            matched_keyword=matched_keyword,
-                            group_config=group_config,
-                            template=event_template,
-                        )
-                        # None means Dispatcharr channel missing - fall through to create new
-                        if channel_result is not None:
-                            result.merge(channel_result)
+                        if not event:
+                            result.errors.append(
+                                {
+                                    "stream": stream.get("name", "Unknown"),
+                                    "error": "No event data",
+                                }
+                            )
                             continue
 
-                    # Check if we should create based on timing
-                    decision = self._timing_manager.should_create_channel(
-                        event,
-                        stream_exists=True,
-                    )
+                        event_id = event.id
+                        event_provider = getattr(event, "provider", "espn")
+                        stream_name = stream.get("name", "")
+                        stream_id = stream.get("id")
 
-                    if not decision.should_act:
+                        # UFC segment support: extract segment info if present
+                        segment = matched.get("segment")  # e.g., "prelims", "main_card"
+                        segment_display = matched.get("segment_display", "")
+                        segment_start = matched.get("segment_start")  # Segment-specific start time
+                        # For channel lookup/creation, use segment-aware event_id
+                        # This treats each segment as a separate "sub-event"
+                        effective_event_id = f"{event_id}-{segment}" if segment else event_id
+
+                        # Check if event should be excluded based on timing
                         logger.debug(
-                            f"Skipping channel creation for '{stream_name}': {decision.reason}"
-                        )
-                        result.skipped.append(
-                            {
-                                "stream": stream_name,
-                                "event_id": event_id,
-                                "reason": decision.reason,
-                            }
-                        )
-                        continue
-
-                    # Cross-group overlap handling for multi-league groups
-                    # Multi-league groups are processed LAST, so single-league channels exist
-                    leagues = group_config.get("leagues", [])
-                    is_multi_league = len(leagues) > 1
-                    overlap_handling = group_config.get("overlap_handling", "add_stream")
-
-                    if is_multi_league and overlap_handling != "create_all":
-                        cross_group_result = self._handle_cross_group_overlap(
-                            conn=conn,
-                            event=event,
-                            stream=stream,
-                            group_id=group_id,
-                            matched_keyword=matched_keyword,
-                            overlap_handling=overlap_handling,
-                            group_config=group_config,
-                            template=event_template,
-                            segment=segment,
-                        )
-
-                        if cross_group_result is not None:
-                            # Stream was handled (added to existing or skipped)
-                            result.merge(cross_group_result)
-                            continue
-                        # cross_group_result is None means: no existing channel found
-                        # and not add_only mode, so fall through to create new channel
-
-                    # Resolve dynamic channel group and profiles for this event
-                    event_sport = getattr(event, "sport", None)
-                    event_league = getattr(event, "league", None)
-
-                    resolved_channel_group_id = self._dynamic_resolver.resolve_channel_group(
-                        mode=channel_group_mode,
-                        static_group_id=static_channel_group_id,
-                        event_sport=event_sport,
-                        event_league=event_league,
-                    )
-
-                    resolved_channel_profile_ids = self._dynamic_resolver.resolve_channel_profiles(
-                        profile_ids=raw_profile_ids,
-                        event_sport=event_sport,
-                        event_league=event_league,
-                    )
-
-                    # Create new channel
-                    channel_result = self._create_channel(
-                        conn=conn,
-                        event=event,
-                        stream=stream,
-                        group_config=group_config,
-                        template=event_template,
-                        matched_keyword=matched_keyword,
-                        channel_group_id=resolved_channel_group_id,
-                        channel_profile_ids=resolved_channel_profile_ids,
-                        stream_profile_id=stream_profile_id,
-                        segment=segment,
-                        segment_display=segment_display,
-                        segment_start=segment_start,
-                    )
-
-                    if channel_result.success:
-                        logger.info(
-                            "[CHANNEL_CREATE] id=%s (#%s) stream='%s' event=%s status=%s",
-                            channel_result.dispatcharr_channel_id,
-                            channel_result.channel_number,
+                            "[LIFECYCLE] Checking stream '%s' for event %s (status=%s)",
                             stream_name[:40],
                             event_id,
                             event.status.state if event.status else "N/A",
                         )
-                        result.created.append(
-                            {
-                                "stream": stream_name,
-                                "event_id": event_id,
-                                "channel_id": channel_result.channel_id,
-                                "dispatcharr_channel_id": channel_result.dispatcharr_channel_id,
-                                "channel_number": channel_result.channel_number,
-                                "tvg_id": channel_result.tvg_id,
-                            }
+                        excluded_reason = self._timing_manager.categorize_event_timing(event)
+                        if excluded_reason:
+                            result.excluded.append(
+                                {
+                                    "stream": stream_name,
+                                    "stream_id": stream_id,
+                                    "event_id": event_id,
+                                    "event_name": event.short_name or event.name,
+                                    "reason": excluded_reason.value,
+                                    "reason_display": {
+                                        "event_past": "Event already ended",
+                                        "event_final": "Event is final",
+                                        "before_create_window": "Before create window",
+                                    }.get(excluded_reason.value, excluded_reason.value),
+                                }
+                            )
+                            continue
+
+                        # Check exception keyword
+                        matched_keyword, keyword_behavior = self._check_exception_keyword(
+                            stream_name, conn
                         )
 
-                        # Log history
-                        log_channel_history(
-                            conn=conn,
-                            managed_channel_id=channel_result.channel_id,
-                            change_type="created",
-                            change_source="epg_generation",
-                            notes=f"Created from stream '{stream_name}'",
+                        # V1 Parity: If behavior is 'ignore', skip stream entirely
+                        # This must happen BEFORE any channel lookup/creation
+                        if keyword_behavior == "ignore":
+                            logger.debug(
+                                f"Skipping stream '{stream_name}': "
+                                f"keyword '{matched_keyword}' set to ignore"
+                            )
+                            result.skipped.append(
+                                {
+                                    "stream": stream_name,
+                                    "stream_id": stream_id,
+                                    "event_id": event_id,
+                                    "reason": f"Exception keyword '{matched_keyword}' "
+                                    "set to ignore",
+                                }
+                            )
+                            continue
+
+                        # Determine effective duplicate mode
+                        effective_mode = keyword_behavior if keyword_behavior else duplicate_mode
+
+                        # Resolve template for this specific event (may be sport/league-specific)
+                        event_template = self._resolve_event_template(
+                            conn, group_id, event, template
                         )
-                    else:
-                        logger.warning(
-                            f"Failed to create channel for '{stream_name}': {channel_result.error}"
+
+                        # Find existing channel based on mode
+                        # Use effective_event_id for segment-aware lookup
+                        existing = find_existing_channel(
+                            conn=conn,
+                            group_id=group_id,
+                            event_id=effective_event_id,
+                            event_provider=event_provider,
+                            exception_keyword=matched_keyword,
+                            stream_id=stream_id,
+                            mode=effective_mode,
+                        )
+
+                        if existing:
+                            # Handle based on effective mode
+                            channel_result = self._handle_existing_channel(
+                                conn=conn,
+                                existing=existing,
+                                stream=stream,
+                                event=event,
+                                effective_mode=effective_mode,
+                                matched_keyword=matched_keyword,
+                                group_config=group_config,
+                                template=event_template,
+                                segment=segment,
+                            )
+                            # None means Dispatcharr channel missing - fall through to create new
+                            if channel_result is not None:
+                                result.merge(channel_result)
+                                continue
+
+                        # Check if we should create based on timing
+                        decision = self._timing_manager.should_create_channel(
+                            event,
+                            stream_exists=True,
+                        )
+
+                        if not decision.should_act:
+                            logger.debug(
+                                f"Skipping channel creation for '{stream_name}': {decision.reason}"
+                            )
+                            result.skipped.append(
+                                {
+                                    "stream": stream_name,
+                                    "event_id": event_id,
+                                    "reason": decision.reason,
+                                }
+                            )
+                            continue
+
+                        # Cross-group overlap handling for multi-league groups
+                        # Multi-league groups are processed LAST, so single-league channels exist
+                        leagues = group_config.get("leagues", [])
+                        is_multi_league = len(leagues) > 1
+                        overlap_handling = group_config.get("overlap_handling", "add_stream")
+
+                        if is_multi_league and overlap_handling != "create_all":
+                            cross_group_result = self._handle_cross_group_overlap(
+                                conn=conn,
+                                event=event,
+                                stream=stream,
+                                group_id=group_id,
+                                matched_keyword=matched_keyword,
+                                overlap_handling=overlap_handling,
+                                group_config=group_config,
+                                template=event_template,
+                                segment=segment,
+                            )
+
+                            if cross_group_result is not None:
+                                # Stream was handled (added to existing or skipped)
+                                result.merge(cross_group_result)
+                                continue
+                            # cross_group_result is None means: no existing channel found
+                            # and not add_only mode, so fall through to create new channel
+
+                        # Resolve dynamic channel group and profiles for this event
+                        event_sport = getattr(event, "sport", None)
+                        event_league = getattr(event, "league", None)
+
+                        resolved_channel_group_id = self._dynamic_resolver.resolve_channel_group(
+                            mode=channel_group_mode,
+                            static_group_id=static_channel_group_id,
+                            event_sport=event_sport,
+                            event_league=event_league,
+                        )
+
+                        resolved_channel_profile_ids = (
+                            self._dynamic_resolver.resolve_channel_profiles(
+                                profile_ids=raw_profile_ids,
+                                event_sport=event_sport,
+                                event_league=event_league,
+                            )
+                        )
+
+                        # Create new channel
+                        channel_result = self._create_channel(
+                            conn=conn,
+                            event=event,
+                            stream=stream,
+                            group_config=group_config,
+                            template=event_template,
+                            matched_keyword=matched_keyword,
+                            channel_group_id=resolved_channel_group_id,
+                            channel_profile_ids=resolved_channel_profile_ids,
+                            stream_profile_id=stream_profile_id,
+                            segment=segment,
+                            segment_display=segment_display,
+                            segment_start=segment_start,
+                        )
+
+                        if channel_result.success:
+                            logger.info(
+                                "[CHANNEL_CREATE] id=%s (#%s) stream='%s' event=%s status=%s",
+                                channel_result.dispatcharr_channel_id,
+                                channel_result.channel_number,
+                                stream_name[:40],
+                                event_id,
+                                event.status.state if event.status else "N/A",
+                            )
+                            result.created.append(
+                                {
+                                    "stream": stream_name,
+                                    "event_id": event_id,
+                                    "channel_id": channel_result.channel_id,
+                                    "dispatcharr_channel_id": channel_result.dispatcharr_channel_id,
+                                    "channel_number": channel_result.channel_number,
+                                    "tvg_id": channel_result.tvg_id,
+                                }
+                            )
+
+                            # Log history
+                            log_channel_history(
+                                conn=conn,
+                                managed_channel_id=channel_result.channel_id,
+                                change_type="created",
+                                change_source="epg_generation",
+                                notes=f"Created from stream '{stream_name}'",
+                            )
+                        else:
+                            logger.warning(
+                                f"Failed to create channel for '{stream_name}': "
+                                f"{channel_result.error}"
+                            )
+                            result.errors.append(
+                                {
+                                    "stream": stream_name,
+                                    "event_id": event_id,
+                                    "error": channel_result.error,
+                                }
+                            )
+
+                    except Exception as stream_err:
+                        event_id = matched.get("event")
+                        if hasattr(event_id, "id"):
+                            event_id = event_id.id
+                        stream_name = matched.get("stream", {}).get("name", "Unknown")
+                        logger.error(
+                            "[LIFECYCLE] Error processing stream '%s' for event %s: %s",
+                            stream_name,
+                            event_id,
+                            stream_err,
                         )
                         result.errors.append(
                             {
                                 "stream": stream_name,
-                                "event_id": event_id,
-                                "error": channel_result.error,
+                                "event": str(event_id),
+                                "error": str(stream_err),
                             }
                         )
+                        continue
 
                 # Apply all pending profile changes in bulk
                 self._apply_pending_profile_changes()
 
         except Exception as e:
-            logger.exception("Error processing matched streams")
+            logger.exception("Error in matched streams setup")
             result.errors.append({"error": str(e)})
             # Still try to apply pending profile changes even on error
             try:
@@ -786,6 +845,7 @@ class ChannelLifecycleService:
         matched_keyword: str | None,
         group_config: dict,
         template: dict | None,
+        segment: str | None = None,
     ) -> StreamProcessResult | None:
         """Handle an existing channel based on duplicate mode.
 
@@ -852,6 +912,7 @@ class ChannelLifecycleService:
                 event=event,
                 group_config=group_config,
                 template=template,
+                segment=segment,
             )
             result.merge(settings_result)
             return result
@@ -937,6 +998,7 @@ class ChannelLifecycleService:
             event=event,
             group_config=group_config,
             template=template,
+            segment=segment,
         )
         result.merge(settings_result)
 
@@ -981,10 +1043,8 @@ class ChannelLifecycleService:
         # Generate tvg_id with segment suffix
         tvg_id = generate_event_tvg_id(event_id, event_provider, segment)
 
-        # Generate channel name, appending segment display if present
-        channel_name = self._generate_channel_name(event, template, matched_keyword)
-        if segment_display:
-            channel_name = f"{channel_name} - {segment_display}"
+        # Generate channel name (segment resolved via {card_segment_display} template variable)
+        channel_name = self._generate_channel_name(event, template, matched_keyword, segment)
 
         # Get channel number - use group's start number if configured
         group_start_number = group_config.get("channel_start_number")
@@ -999,7 +1059,7 @@ class ChannelLifecycleService:
         delete_time = self._timing_manager.calculate_delete_time(event)
 
         # Resolve logo URL from template (supports template variables including {exception_keyword})
-        logo_url = self._resolve_logo_url(event, template, matched_keyword)
+        logo_url = self._resolve_logo_url(event, template, matched_keyword, segment)
 
         # Create in Dispatcharr
         dispatcharr_channel_id = None
@@ -1033,6 +1093,11 @@ class ChannelLifecycleService:
                 logger.debug(
                     f"Channel '{channel_name}' profile assignment: "
                     f"configured={channel_profile_ids}, effective={effective_profile_ids}"
+                )
+                logger.debug(
+                    "[LIFECYCLE] Creating channel '%s' with stream_profile_id=%s",
+                    channel_name,
+                    stream_profile_id,
                 )
                 create_result = self._channel_manager.create_channel(
                     name=channel_name,
@@ -1139,6 +1204,7 @@ class ChannelLifecycleService:
         event: Event,
         template,
         exception_keyword: str | None,
+        segment: str | None = None,
     ) -> str:
         """Generate channel name for an event using template.
 
@@ -1156,6 +1222,7 @@ class ChannelLifecycleService:
             event: Event data
             template: Required - dict or EventTemplateConfig with channel name format
             exception_keyword: Optional keyword for naming
+            segment: UFC card segment code (e.g., "prelims", "main_card")
 
         Raises:
             ValueError: If template is missing or has no channel name format
@@ -1188,7 +1255,7 @@ class ChannelLifecycleService:
 
         # Resolve using full template engine with extra variables
         # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
-        base_name = self._resolve_template(name_format, event, extra_vars)
+        base_name = self._resolve_template(name_format, event, extra_vars, card_segment=segment)
 
         # Clean up empty wrappers when {exception_keyword} resolves to ""
         # e.g., "Team A @ Team B ()" → "Team A @ Team B"
@@ -1243,6 +1310,7 @@ class ChannelLifecycleService:
         event: Event,
         template,
         exception_keyword: str | None = None,
+        segment: str | None = None,
     ) -> str | None:
         """Resolve logo URL from template.
 
@@ -1253,6 +1321,7 @@ class ChannelLifecycleService:
             event: Event data
             template: Can be dict, EventTemplateConfig dataclass, or None
             exception_keyword: Optional keyword for {exception_keyword} variable
+            segment: UFC card segment code (e.g., "prelims", "main_card")
         """
         logo_url = None
         if template:
@@ -1271,7 +1340,9 @@ class ChannelLifecycleService:
                 extra_vars = {
                     "exception_keyword": exception_keyword.title() if exception_keyword else "",
                 }
-                return self._resolve_template(logo_url, event, extra_vars)
+                return self._resolve_template(
+                    logo_url, event, extra_vars, card_segment=segment
+                )
             return logo_url
 
         return None
@@ -1281,6 +1352,7 @@ class ChannelLifecycleService:
         template_str: str,
         event: Event,
         extra_variables: dict[str, str] | None = None,
+        card_segment: str | None = None,
     ) -> str:
         """Resolve template string using full template engine.
 
@@ -1291,6 +1363,7 @@ class ChannelLifecycleService:
             event: Event to extract context from
             extra_variables: Optional dict of additional variables to resolve
                 (e.g., {"exception_keyword": "Spanish"})
+            card_segment: UFC card segment code (e.g., "prelims", "main_card")
 
         Returns:
             Resolved string with variables replaced
@@ -1304,6 +1377,7 @@ class ChannelLifecycleService:
             event=event,
             team_id=event.home_team.id if event.home_team else "",
             league=event.league,
+            card_segment=card_segment,
         )
         return self._resolver.resolve(template_str, context)
 
@@ -1342,10 +1416,11 @@ class ChannelLifecycleService:
         event: Event,
         group_config: dict,
         template: dict | None,
+        segment: str | None = None,
     ) -> StreamProcessResult:
         """Sync channel settings from group/template to Dispatcharr.
 
-        V1 Parity: Syncs all 8 channel properties:
+        V1 Parity: Syncs all 9 channel properties:
         | Source              | Dispatcharr Field    | Handling                    |
         |---------------------|---------------------|-----------------------------|
         | template            | name                | Template variable resolution|
@@ -1355,6 +1430,7 @@ class ChannelLifecycleService:
         | group               | channel_profile_ids | Add/remove via profile API  |
         | template            | logo_id             | Upload/update if different  |
         | event_id            | tvg_id              | Ensures EPG matching        |
+        | group/settings      | stream_profile_id   | Group override > global     |
         """
         from teamarr.database.channels import (
             log_channel_history,
@@ -1375,11 +1451,12 @@ class ChannelLifecycleService:
             update_data = {}
             db_updates = {}
             changes_made = []
-            group_config.get("id")
 
             # 1. Check channel name (template resolution) - V1 parity
             matched_keyword = getattr(existing, "exception_keyword", None)
-            expected_name = self._generate_channel_name(event, template, matched_keyword)
+            expected_name = self._generate_channel_name(
+                event, template, matched_keyword, segment
+            )
             if expected_name != current_channel.name:
                 update_data["name"] = expected_name
                 db_updates["channel_name"] = expected_name
@@ -1535,7 +1612,7 @@ class ChannelLifecycleService:
                 )
 
             # 8. Sync logo - handles both updates and removals
-            logo_url = self._resolve_logo_url(event, template, matched_keyword)
+            logo_url = self._resolve_logo_url(event, template, matched_keyword, segment)
             current_logo_id = getattr(existing, "dispatcharr_logo_id", None)
             stored_logo_url = getattr(existing, "logo_url", None)
 
@@ -1600,6 +1677,41 @@ class ChannelLifecycleService:
                     # Note: Old logos are cleaned up by Dispatcharr's bulk cleanup API
                     # if cleanup_unused_logos setting is enabled
 
+            # 9. Sync stream_profile_id (group override > global default)
+            expected_stream_profile = group_config.get("stream_profile_id")
+            if expected_stream_profile is None:
+                from teamarr.database.settings import get_dispatcharr_settings
+
+                dispatcharr_settings = get_dispatcharr_settings(conn)
+                expected_stream_profile = dispatcharr_settings.default_stream_profile_id
+
+            current_stream_profile = current_channel.stream_profile_id
+            logger.debug(
+                "[LIFECYCLE] Stream profile for '%s': group_config=%s, global_default=%s, "
+                "dispatcharr_current=%s, expected=%s",
+                existing.channel_name,
+                group_config.get("stream_profile_id"),
+                expected_stream_profile if group_config.get("stream_profile_id") is None else "N/A",
+                current_stream_profile,
+                expected_stream_profile,
+            )
+            if expected_stream_profile != current_stream_profile:
+                with self._dispatcharr_lock:
+                    update_result = self._channel_manager.update_channel(
+                        existing.dispatcharr_channel_id,
+                        {"stream_profile_id": expected_stream_profile},
+                    )
+                logger.debug(
+                    "[LIFECYCLE] Stream profile PATCH for '%s': %s → %s (success=%s)",
+                    existing.channel_name,
+                    current_stream_profile,
+                    expected_stream_profile,
+                    update_result.success if update_result else "no_result",
+                )
+                changes_made.append(
+                    f"stream_profile: {current_stream_profile} → {expected_stream_profile}"
+                )
+
             # Log changes if any
             if changes_made:
                 result.settings_updated.append(
@@ -1620,8 +1732,11 @@ class ChannelLifecycleService:
                 )
 
         except Exception as e:
-            logger.debug(
-                "[LIFECYCLE] Error syncing settings for channel %s: %s", existing.channel_name, e
+            logger.warning(
+                "[LIFECYCLE] Error syncing settings for channel %s: %s",
+                existing.channel_name,
+                e,
+                exc_info=True,
             )
 
         return result

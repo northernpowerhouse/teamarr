@@ -447,6 +447,13 @@ class ESPNProvider(UFCParserMixin, TournamentParserMixin, SportsProvider):
             home_score = self._parse_score(home_data.get("score"))
             away_score = self._parse_score(away_data.get("score"))
 
+            # Parse season type from ESPN data
+            # ESPN uses: 1=preseason, 2=regular, 3=postseason/playoffs
+            season_data = data.get("season", {})
+            season_type_num = season_data.get("type")
+            season_type = self._parse_season_type(season_type_num)
+            season_year = season_data.get("year")
+
             return Event(
                 id=event_id,
                 provider=self.name,
@@ -463,6 +470,8 @@ class ESPNProvider(UFCParserMixin, TournamentParserMixin, SportsProvider):
                 venue=venue,
                 broadcasts=broadcasts,
                 odds_data=odds_data,
+                season_type=season_type,
+                season_year=season_year,
             )
         except Exception as e:
             logger.warning("[ESPN] Failed to parse event %s: %s", data.get("id", "unknown"), e)
@@ -552,6 +561,28 @@ class ESPNProvider(UFCParserMixin, TournamentParserMixin, SportsProvider):
             return int(float(score))
         except (ValueError, TypeError):
             return None
+
+    def _parse_season_type(self, type_num: int | None) -> str | None:
+        """Parse ESPN season type number to string.
+
+        ESPN uses:
+            1 = preseason
+            2 = regular
+            3 = postseason (playoffs)
+            4 = offseason (rare)
+
+        Returns:
+            String season type or None if unknown
+        """
+        if type_num is None:
+            return None
+        season_map = {
+            1: "preseason",
+            2: "regular",
+            3: "postseason",
+            4: "offseason",
+        }
+        return season_map.get(type_num)
 
     def _parse_odds(self, odds_list: list) -> dict | None:
         """Parse ESPN odds data into structured dict.

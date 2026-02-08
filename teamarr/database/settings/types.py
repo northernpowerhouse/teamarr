@@ -112,8 +112,8 @@ class DisplaySettings:
 class APISettings:
     """API behavior settings."""
 
-    timeout: int = 10
-    retry_count: int = 3
+    timeout: int = 30
+    retry_count: int = 5
     soccer_cache_refresh_frequency: str = "weekly"
     team_cache_refresh_frequency: str = "weekly"
 
@@ -142,6 +142,7 @@ class TeamFilterSettings:
     include_teams: list[dict] | None = None
     exclude_teams: list[dict] | None = None
     mode: str = "include"  # 'include' or 'exclude'
+    bypass_filter_for_playoffs: bool = False  # Include all playoff games regardless of filter
 
 
 @dataclass

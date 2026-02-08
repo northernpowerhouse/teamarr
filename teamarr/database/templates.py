@@ -454,6 +454,10 @@ def template_to_filler_config(template: Template) -> FillerConfig:
     pg_cond = template.postgame_conditional or {}
     postgame_conditional = ConditionalFillerTemplate(
         enabled=pg_cond.get("enabled", False),
+        title_final=pg_cond.get("title_final"),
+        title_not_final=pg_cond.get("title_not_final"),
+        subtitle_final=pg_cond.get("subtitle_final"),
+        subtitle_not_final=pg_cond.get("subtitle_not_final"),
         description_final=pg_cond.get("description_final"),
         description_not_final=pg_cond.get("description_not_final"),
     )
@@ -471,6 +475,10 @@ def template_to_filler_config(template: Template) -> FillerConfig:
     idle_cond = template.idle_conditional or {}
     idle_conditional = ConditionalFillerTemplate(
         enabled=idle_cond.get("enabled", False),
+        title_final=idle_cond.get("title_final"),
+        title_not_final=idle_cond.get("title_not_final"),
+        subtitle_final=idle_cond.get("subtitle_final"),
+        subtitle_not_final=idle_cond.get("subtitle_not_final"),
         description_final=idle_cond.get("description_final"),
         description_not_final=idle_cond.get("description_not_final"),
     )

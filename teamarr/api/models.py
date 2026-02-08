@@ -98,9 +98,17 @@ class FillerFallback(BaseModel):
 
 
 class ConditionalContent(BaseModel):
-    """Conditional description settings."""
+    """Conditional content settings based on game status (final/not final).
+
+    Used for postgame and idle filler to show different content based on
+    whether the relevant game (last game for postgame/idle) is final.
+    """
 
     enabled: bool = False
+    title_final: str | None = None
+    title_not_final: str | None = None
+    subtitle_final: str | None = None
+    subtitle_not_final: str | None = None
     description_final: str | None = None
     description_not_final: str | None = None
 

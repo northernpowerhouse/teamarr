@@ -198,6 +198,7 @@ CREATE TABLE IF NOT EXISTS settings (
     default_exclude_teams JSON,                  -- Global exclude filter (same format)
     default_team_filter_mode TEXT DEFAULT 'include' CHECK(default_team_filter_mode IN ('include', 'exclude')),
     team_filter_enabled BOOLEAN DEFAULT 1,       -- Master toggle to enable/disable team filtering
+    default_bypass_filter_for_playoffs BOOLEAN DEFAULT 0, -- Include all playoff games regardless of team filter
 
     -- Scheduled Generation
     cron_expression TEXT DEFAULT '0 * * * *',    -- Cron for auto EPG generation
@@ -207,8 +208,8 @@ CREATE TABLE IF NOT EXISTS settings (
     team_cache_refresh_frequency TEXT DEFAULT 'weekly',
 
     -- API
-    api_timeout INTEGER DEFAULT 10,
-    api_retry_count INTEGER DEFAULT 3,
+    api_timeout INTEGER DEFAULT 30,
+    api_retry_count INTEGER DEFAULT 5,
 
     -- TheSportsDB API (optional premium key for higher limits)
     -- If not set, uses free API key with 30 req/min and 10 result limits
@@ -310,7 +311,7 @@ CREATE TABLE IF NOT EXISTS settings (
     scheduled_backup_path TEXT DEFAULT './data/backups', -- Directory for backup files
 
     -- Schema Version
-    schema_version INTEGER DEFAULT 52
+    schema_version INTEGER DEFAULT 54
 );
 
 -- Insert default settings
@@ -411,6 +412,7 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
     exclude_teams JSON,                          -- Teams to exclude: same format
     team_filter_mode TEXT DEFAULT 'include'      -- 'include' (whitelist) or 'exclude' (blacklist)
         CHECK(team_filter_mode IN ('include', 'exclude')),
+    bypass_filter_for_playoffs BOOLEAN,          -- NULL=use default, 0=disabled, 1=enabled (include all playoff games)
 
     -- Processing Stats (updated by EPG generation)
     -- Three categories: FILTERED (pre-match), FAILED (match attempted), EXCLUDED (matched but excluded)

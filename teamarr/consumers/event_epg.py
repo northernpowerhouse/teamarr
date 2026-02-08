@@ -388,7 +388,6 @@ class EventEPGGenerator:
 
             # Extract segment info for UFC events
             segment = match.get("segment")
-            segment_display = match.get("segment_display", "")
             segment_start = match.get("segment_start")
             segment_end = match.get("segment_end")
 
@@ -410,25 +409,34 @@ class EventEPGGenerator:
                 card_segment=segment,
             )
 
+            # Resolve {exception_keyword} if annotated (parity with lifecycle path)
+            exception_keyword = match.get("_exception_keyword")
+            keyword_value = exception_keyword.title() if exception_keyword else ""
+
             # Generate channel name from template
             # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
-            channel_name = self._resolver.resolve(event_template.channel_name_format, context)
+            name_format = event_template.channel_name_format.replace(
+                "{exception_keyword}", keyword_value
+            )
+            channel_name = self._resolver.resolve(name_format, context)
+
+            # Auto-append keyword if template doesn't use {exception_keyword} variable
+            uses_keyword_var = "{exception_keyword}" in event_template.channel_name_format
+            if exception_keyword and not uses_keyword_var:
+                channel_name = f"{channel_name} ({keyword_value})"
 
             # Prepend "Postponed: " to channel name if event is postponed and setting is enabled
             if options.prepend_postponed_label and is_event_postponed(event):
                 channel_name = f"{POSTPONED_LABEL}{channel_name}"
 
-            # Add segment display name to channel name for UFC segments
-            if segment_display:
-                channel_name = f"{channel_name} - {segment_display}"
-
             # Use template-configured logo if set (no fallback to team logo)
             # Resolve template variables in logo URL (e.g., {league_id}, {home_team_pascal})
             channel_icon = None
             if event_template.event_channel_logo_url:
-                channel_icon = self._resolver.resolve(
-                    event_template.event_channel_logo_url, context
+                logo_format = event_template.event_channel_logo_url.replace(
+                    "{exception_keyword}", keyword_value
                 )
+                channel_icon = self._resolver.resolve(logo_format, context)
 
             channel_info = EventChannelInfo(
                 channel_id=tvg_id,

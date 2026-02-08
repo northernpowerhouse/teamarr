@@ -33,6 +33,7 @@ import { StreamProfileSelector } from "@/components/StreamProfileSelector"
 import { useGenerationProgress } from "@/contexts/GenerationContext"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
@@ -652,6 +653,7 @@ export function Settings() {
     include_teams: null,
     exclude_teams: null,
     mode: "include",
+    bypass_filter_for_playoffs: false,
   })
   const [channelNumbering, setChannelNumbering] = useState<ChannelNumberingSettings>({
     numbering_mode: "strict_block",
@@ -1489,6 +1491,19 @@ export function Settings() {
             placeholder="Search teams to add to default filter..."
           />
 
+          {/* Playoff bypass option */}
+          <label className="flex items-center gap-2 cursor-pointer py-2">
+            <Checkbox
+              checked={teamFilter.bypass_filter_for_playoffs}
+              onCheckedChange={(checked) =>
+                setTeamFilter({ ...teamFilter, bypass_filter_for_playoffs: !!checked })
+              }
+            />
+            <span className="text-sm">
+              Include all playoff games (bypass team filter for postseason events)
+            </span>
+          </label>
+
           {/* Status message and Save button */}
           <div className="flex justify-between items-center">
             <div className="space-y-1">
@@ -1516,6 +1531,7 @@ export function Settings() {
                   mode: teamFilter.mode,
                   clear_include_teams: teamFilter.mode === "exclude" || !teamFilter.include_teams?.length,
                   clear_exclude_teams: teamFilter.mode === "include" || !teamFilter.exclude_teams?.length,
+                  bypass_filter_for_playoffs: teamFilter.bypass_filter_for_playoffs,
                 }, {
                   onSuccess: () => toast.success("Default team filter saved"),
                   onError: () => toast.error("Failed to save team filter"),

@@ -346,6 +346,14 @@ class BulkGroupItem(BaseModel):
     m3u_account_name: str
 
 
+class BulkTemplateAssignmentCreate(BaseModel):
+    """Template assignment for bulk group creation."""
+
+    template_id: int
+    sports: list[str] | None = None
+    leagues: list[str] | None = None
+
+
 class BulkGroupSettings(BaseModel):
     """Shared settings for bulk group creation."""
 
@@ -353,7 +361,8 @@ class BulkGroupSettings(BaseModel):
     leagues: list[str] = Field(..., min_length=1)
     soccer_mode: str | None = None  # 'all', 'teams', 'manual', or None (non-soccer)
     soccer_followed_teams: list[SoccerFollowedTeam] | None = None  # Teams to follow
-    template_id: int | None = None
+    template_id: int | None = None  # Legacy: default template
+    template_assignments: list[BulkTemplateAssignmentCreate] | None = None  # New: managed templates
     channel_group_id: int | None = None
     channel_group_mode: str = "static"  # "static", "sport", "league"
     channel_profile_ids: list[str | int] | None = None  # IDs or "{sport}", "{league}"
@@ -586,6 +595,10 @@ def list_groups(
                 name=g.name,
                 display_name=g.display_name,
                 leagues=g.leagues,
+                soccer_mode=g.soccer_mode,
+                soccer_followed_teams=[SoccerFollowedTeam(**t) for t in g.soccer_followed_teams]
+                if g.soccer_followed_teams
+                else None,
                 group_mode=g.group_mode,
                 parent_group_id=g.parent_group_id,
                 template_id=g.template_id,
@@ -754,6 +767,10 @@ def create_group(request: GroupCreate):
         name=group.name,
         display_name=group.display_name,
         leagues=group.leagues,
+        soccer_mode=group.soccer_mode,
+        soccer_followed_teams=[SoccerFollowedTeam(**t) for t in group.soccer_followed_teams]
+        if group.soccer_followed_teams
+        else None,
         group_mode=group.group_mode,
         parent_group_id=group.parent_group_id,
         template_id=group.template_id,
@@ -818,7 +835,7 @@ def create_groups_bulk(request: BulkGroupCreateRequest):
     All groups will be created with the same mode, leagues, and settings.
     Useful for importing multiple groups from the same M3U account.
     """
-    from teamarr.database.groups import create_group, get_group_by_name
+    from teamarr.database.groups import add_group_template, create_group, get_group_by_name
 
     # Validate settings
     validate_group_fields(
@@ -850,6 +867,11 @@ def create_groups_bulk(request: BulkGroupCreateRequest):
                     continue
 
                 # Create the group
+                # Use legacy template_id only if no template_assignments provided
+                legacy_template_id = request.settings.template_id
+                if request.settings.template_assignments:
+                    legacy_template_id = None  # Use group_templates instead
+
                 group_id = create_group(
                     conn,
                     name=item.m3u_group_name,
@@ -861,7 +883,7 @@ def create_groups_bulk(request: BulkGroupCreateRequest):
                         else None
                     ),
                     group_mode=request.settings.group_mode,
-                    template_id=request.settings.template_id,
+                    template_id=legacy_template_id,
                     channel_group_id=request.settings.channel_group_id,
                     channel_group_mode=request.settings.channel_group_mode,
                     channel_profile_ids=request.settings.channel_profile_ids,
@@ -876,6 +898,17 @@ def create_groups_bulk(request: BulkGroupCreateRequest):
                     m3u_account_name=item.m3u_account_name,
                     enabled=request.settings.enabled,
                 )
+
+                # Add template assignments if provided
+                if request.settings.template_assignments:
+                    for assignment in request.settings.template_assignments:
+                        add_group_template(
+                            conn,
+                            group_id=group_id,
+                            template_id=assignment.template_id,
+                            sports=assignment.sports,
+                            leagues=assignment.leagues,
+                        )
 
                 results.append(
                     BulkGroupCreateResult(
@@ -1153,6 +1186,10 @@ def get_group_by_id(group_id: int):
         name=group.name,
         display_name=group.display_name,
         leagues=group.leagues,
+        soccer_mode=group.soccer_mode,
+        soccer_followed_teams=[SoccerFollowedTeam(**t) for t in group.soccer_followed_teams]
+        if group.soccer_followed_teams
+        else None,
         group_mode=group.group_mode,
         parent_group_id=group.parent_group_id,
         template_id=group.template_id,
@@ -1354,6 +1391,10 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
         name=group.name,
         display_name=group.display_name,
         leagues=group.leagues,
+        soccer_mode=group.soccer_mode,
+        soccer_followed_teams=[SoccerFollowedTeam(**t) for t in group.soccer_followed_teams]
+        if group.soccer_followed_teams
+        else None,
         group_mode=group.group_mode,
         parent_group_id=group.parent_group_id,
         template_id=group.template_id,
