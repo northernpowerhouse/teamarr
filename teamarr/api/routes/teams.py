@@ -39,30 +39,6 @@ def _parse_leagues(leagues_str: str | None) -> list[str]:
         return []
 
 
-def _get_league_sport(conn, league_code: str) -> str | None:
-    """Get sport for a league from the database.
-
-    TODO: REFACTOR — move to teamarr/database/. See teamarrv2-5hq.4.
-    """
-    cursor = conn.execute(
-        "SELECT sport FROM leagues WHERE league_code = ?",
-        (league_code,),
-    )
-    row = cursor.fetchone()
-    return row["sport"].lower() if row else None
-
-
-def _get_all_leagues_from_cache(
-    conn, provider: str, provider_team_id: str, sport: str
-) -> list[str]:
-    """Get all leagues a team appears in from the cache for a given sport."""
-    cursor = conn.execute(
-        "SELECT DISTINCT league FROM team_cache WHERE provider = ? AND provider_team_id = ? AND sport = ?",  # noqa: E501
-        (provider, provider_team_id, sport),
-    )
-    return [row["league"] for row in cursor.fetchall()]
-
-
 def _can_consolidate_leagues(conn, league1: str, league2: str) -> bool:
     """Check if two leagues can be consolidated (same team plays in both).
 
@@ -75,12 +51,14 @@ def _can_consolidate_leagues(conn, league1: str, league2: str) -> bool:
     Returns:
         True if leagues can share a team, False if they must be separate.
     """
+    from teamarr.database.leagues import get_league_sport
+
     if league1 == league2:
         return True
 
     # Only soccer leagues can consolidate across competitions
-    sport1 = _get_league_sport(conn, league1)
-    sport2 = _get_league_sport(conn, league2)
+    sport1 = get_league_sport(conn, league1)
+    sport2 = get_league_sport(conn, league2)
 
     if sport1 == "soccer" and sport2 == "soccer":
         return True
@@ -235,162 +213,31 @@ def delete_team(team_id: int):
 def bulk_import_teams(request: BulkImportRequest):
     """Bulk import teams from cache.
 
-    TODO: REFACTOR — 157 lines of business logic (consolidation, indexing).
-    Extract to service + database functions. See teamarrv2-5hq.4.
-
-    Key behavior:
-    - Soccer: teams play in multiple competitions (EPL + Champions League), so
-      they are consolidated by (provider, provider_team_id, sport). New leagues
-      are added to existing team's leagues array.
-    - Non-soccer: ESPN reuses team IDs across leagues for DIFFERENT teams
-      (e.g., ID 8 = Detroit Pistons in NBA, Minnesota Lynx in WNBA).
-      Each league gets its own team entry.
+    Delegates to service layer for business logic (soccer consolidation,
+    deduplication, indexing). See teamarr/services/team_import.py.
     """
-    imported = 0
-    updated = 0
-    skipped = 0
+    from teamarr.services.team_import import ImportTeam
+    from teamarr.services.team_import import bulk_import_teams as do_import
+
+    import_teams = [
+        ImportTeam(
+            team_name=t.team_name,
+            team_abbrev=t.team_abbrev,
+            provider=t.provider,
+            provider_team_id=t.provider_team_id,
+            league=t.league,
+            sport=t.sport,
+            logo_url=t.logo_url,
+        )
+        for t in request.teams
+    ]
 
     with get_db() as conn:
-        # Build two indexes for existing teams:
-        # 1. Full key (provider, id, sport, league) - for exact lookups
-        # 2. Sport key (provider, id, sport) - for soccer consolidation lookups
-        cursor = conn.execute(
-            "SELECT id, provider, provider_team_id, sport, primary_league, leagues FROM teams"
-        )
-        existing_full: dict[tuple[str, str, str, str], tuple[int, list[str]]] = {}
-        existing_sport: dict[tuple[str, str, str], list[tuple[int, str, list[str]]]] = {}
+        result = do_import(conn, import_teams)
 
-        for row in cursor.fetchall():
-            full_key = (
-                row["provider"],
-                row["provider_team_id"],
-                row["sport"],
-                row["primary_league"],
-            )
-            sport_key = (row["provider"], row["provider_team_id"], row["sport"])
-            leagues = _parse_leagues(row["leagues"])
-
-            existing_full[full_key] = (row["id"], leagues)
-            if sport_key not in existing_sport:
-                existing_sport[sport_key] = []
-            existing_sport[sport_key].append((row["id"], row["primary_league"], leagues))
-
-        # Pre-load all leagues from team_cache for soccer teams (avoids N+1 queries)
-        soccer_teams = [t for t in request.teams if t.sport.lower() == "soccer"]
-        team_cache_leagues: dict[tuple[str, str, str], list[str]] = {}
-        if soccer_teams:
-            # Build placeholders for batch query
-            keys = [(t.provider, t.provider_team_id, t.sport) for t in soccer_teams]
-            unique_keys = list(set(keys))
-            if unique_keys:
-                # Query all leagues at once
-                placeholders = " OR ".join(
-                    ["(provider = ? AND provider_team_id = ? AND sport = ?)"] * len(unique_keys)
-                )
-                params = [val for key in unique_keys for val in key]
-                cursor = conn.execute(
-                    f"SELECT provider, provider_team_id, sport, league FROM team_cache WHERE {placeholders}",  # noqa: E501
-                    params,
-                )
-                for row in cursor.fetchall():
-                    cache_key = (row["provider"], row["provider_team_id"], row["sport"])
-                    if cache_key not in team_cache_leagues:
-                        team_cache_leagues[cache_key] = []
-                    team_cache_leagues[cache_key].append(row["league"])
-
-        for team in request.teams:
-            is_soccer = team.sport.lower() == "soccer"
-            full_key = (team.provider, team.provider_team_id, team.sport, team.league)
-            sport_key = (team.provider, team.provider_team_id, team.sport)
-
-            if is_soccer:
-                # Soccer: consolidate all leagues into one team entry
-                # Use pre-loaded cache instead of querying per team
-                all_leagues = team_cache_leagues.get(sport_key, []).copy()
-                if team.league not in all_leagues:
-                    all_leagues.append(team.league)
-
-                if sport_key in existing_sport:
-                    # Found existing soccer team - update its leagues array
-                    team_id, primary_league, current_leagues = existing_sport[sport_key][0]
-                    new_to_add = [lg for lg in all_leagues if lg not in current_leagues]
-                    if not new_to_add:
-                        skipped += 1
-                    else:
-                        new_leagues = sorted(set(current_leagues + all_leagues))
-                        conn.execute(
-                            "UPDATE teams SET leagues = ? WHERE id = ?",
-                            (json.dumps(new_leagues), team_id),
-                        )
-                        existing_sport[sport_key][0] = (team_id, primary_league, new_leagues)
-                        updated += 1
-                else:
-                    # Create new soccer team
-                    channel_id = generate_channel_id(team.team_name, team.league)
-                    leagues_json = json.dumps(sorted(all_leagues))
-                    cursor = conn.execute(
-                        """
-                        INSERT INTO teams (
-                            provider, provider_team_id, primary_league, leagues, sport,
-                            team_name, team_abbrev, team_logo_url, channel_id, active
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-                        """,
-                        (
-                            team.provider,
-                            team.provider_team_id,
-                            team.league,
-                            leagues_json,
-                            team.sport,
-                            team.team_name,
-                            team.team_abbrev,
-                            team.logo_url,
-                            channel_id,
-                        ),
-                    )
-                    new_id = cursor.lastrowid
-                    existing_full[full_key] = (new_id, all_leagues)
-                    existing_sport[sport_key] = [(new_id, team.league, all_leagues)]
-                    imported += 1
-            else:
-                # Non-soccer: each league gets its own team entry
-                # ESPN reuses IDs across leagues for different teams
-                if full_key in existing_full:
-                    # Exact match exists - skip
-                    skipped += 1
-                else:
-                    # Create new team for this league
-                    channel_id = generate_channel_id(team.team_name, team.league)
-                    leagues_json = json.dumps([team.league])
-                    cursor = conn.execute(
-                        """
-                        INSERT INTO teams (
-                            provider, provider_team_id, primary_league, leagues, sport,
-                            team_name, team_abbrev, team_logo_url, channel_id, active
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-                        """,
-                        (
-                            team.provider,
-                            team.provider_team_id,
-                            team.league,
-                            leagues_json,
-                            team.sport,
-                            team.team_name,
-                            team.team_abbrev,
-                            team.logo_url,
-                            channel_id,
-                        ),
-                    )
-                    new_id = cursor.lastrowid
-                    existing_full[full_key] = (new_id, [team.league])
-                    if sport_key not in existing_sport:
-                        existing_sport[sport_key] = []
-                    existing_sport[sport_key].append((new_id, team.league, [team.league]))
-                    imported += 1
-
-    logger.info(
-        "[BULK_IMPORT] Teams: %d imported, %d updated, %d skipped", imported, updated, skipped
+    return BulkImportResponse(
+        imported=result.imported, updated=result.updated, skipped=result.skipped
     )
-    return BulkImportResponse(imported=imported, updated=updated, skipped=skipped)
 
 
 class BulkChannelIdRequest(BaseModel):

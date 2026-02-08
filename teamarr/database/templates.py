@@ -238,6 +238,26 @@ def get_all_templates(conn: Connection, template_type: str | None = None) -> lis
     return [_row_to_template(row) for row in cursor.fetchall()]
 
 
+def get_existing_template_ids(conn: Connection, template_ids: list[int]) -> set[int]:
+    """Check which template IDs exist in the database.
+
+    Args:
+        conn: Database connection
+        template_ids: List of template IDs to check
+
+    Returns:
+        Set of IDs that exist
+    """
+    if not template_ids:
+        return set()
+    placeholders = ",".join("?" * len(template_ids))
+    rows = conn.execute(
+        f"SELECT id FROM templates WHERE id IN ({placeholders})",
+        template_ids,
+    ).fetchall()
+    return {row["id"] for row in rows}
+
+
 def get_templates_for_sport(conn: Connection, sport: str) -> list[Template]:
     """Get templates filtered by sport.
 

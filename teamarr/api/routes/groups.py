@@ -1074,9 +1074,6 @@ class BulkTemplatesResponse(BaseModel):
 def bulk_set_group_templates(request: BulkTemplatesRequest):
     """Replace template assignments for multiple groups.
 
-    TODO: REFACTOR — direct SQL + business logic in route. Extract to
-    service or database function. See teamarrv2-5hq.4.
-
     This replaces ALL existing template assignments for each group
     with the new set of assignments. Useful for applying the same
     template configuration to multiple groups at once.
@@ -1087,6 +1084,10 @@ def bulk_set_group_templates(request: BulkTemplatesRequest):
     from teamarr.database.groups import (
         delete_group_templates as db_delete_templates,
     )
+    from teamarr.database.groups import (
+        get_existing_group_ids,
+    )
+    from teamarr.database.templates import get_existing_template_ids
 
     if not request.group_ids:
         raise HTTPException(
@@ -1102,12 +1103,7 @@ def bulk_set_group_templates(request: BulkTemplatesRequest):
 
     with get_db() as conn:
         # Verify all groups exist
-        placeholders = ",".join("?" * len(request.group_ids))
-        rows = conn.execute(
-            f"SELECT id FROM event_epg_groups WHERE id IN ({placeholders})",
-            request.group_ids,
-        ).fetchall()
-        found_ids = {row["id"] for row in rows}
+        found_ids = get_existing_group_ids(conn, request.group_ids)
         missing = set(request.group_ids) - found_ids
         if missing:
             raise HTTPException(
@@ -1117,12 +1113,7 @@ def bulk_set_group_templates(request: BulkTemplatesRequest):
 
         # Verify all templates exist
         template_ids = list({a.template_id for a in request.assignments})
-        placeholders = ",".join("?" * len(template_ids))
-        rows = conn.execute(
-            f"SELECT id FROM templates WHERE id IN ({placeholders})",
-            template_ids,
-        ).fetchall()
-        found_template_ids = {row["id"] for row in rows}
+        found_template_ids = get_existing_template_ids(conn, template_ids)
         missing_templates = set(template_ids) - found_template_ids
         if missing_templates:
             raise HTTPException(
@@ -1933,10 +1924,9 @@ def get_group_xmltv(group_id: int) -> Response:
 
     Returns 404 if the group hasn't been processed yet.
     """
-    from teamarr.database.groups import get_group
+    from teamarr.database.groups import get_group, get_group_xmltv_with_metadata
 
     with get_db() as conn:
-        # Verify group exists
         group = get_group(conn, group_id)
         if not group:
             raise HTTPException(
@@ -1944,24 +1934,20 @@ def get_group_xmltv(group_id: int) -> Response:
                 detail=f"Group {group_id} not found",
             )
 
-        # Get stored XMLTV
-        row = conn.execute(
-            "SELECT xmltv_content, updated_at FROM event_epg_xmltv WHERE group_id = ?",
-            (group_id,),
-        ).fetchone()
-
-        if not row:
+        result = get_group_xmltv_with_metadata(conn, group_id)
+        if not result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"No XMLTV generated for group '{group.name}'. Process the group first.",
             )
 
+    xmltv_content, updated_at = result
     return Response(
-        content=row["xmltv_content"],
+        content=xmltv_content,
         media_type="application/xml",
         headers={
             "Content-Disposition": f"inline; filename=teamarr-group-{group_id}.xml",
-            "X-Generated-At": row["updated_at"] if row["updated_at"] else "",
+            "X-Generated-At": updated_at,
         },
     )
 
@@ -1973,29 +1959,14 @@ def get_combined_xmltv() -> Response:
     Merges XMLTV content from all groups that have been processed.
     This is useful for having a single EPG source in Dispatcharr.
     """
-    from teamarr.database.groups import get_all_groups
+    from teamarr.database.groups import get_all_group_xmltv
     from teamarr.database.settings import get_display_settings
     from teamarr.utilities.xmltv import merge_xmltv_content
 
     with get_db() as conn:
-        # Get all enabled groups
-        groups = get_all_groups(conn, include_disabled=False)
-        group_ids = [g.id for g in groups]
+        xmltv_contents = get_all_group_xmltv(conn)
 
-        if not group_ids:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No active event groups found",
-            )
-
-        # Get all XMLTV content
-        placeholders = ",".join("?" * len(group_ids))
-        rows = conn.execute(
-            f"SELECT xmltv_content FROM event_epg_xmltv WHERE group_id IN ({placeholders})",
-            group_ids,
-        ).fetchall()
-
-        if not rows:
+        if not xmltv_contents:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No XMLTV generated for any groups. Process groups first.",
@@ -2004,7 +1975,7 @@ def get_combined_xmltv() -> Response:
         display_settings = get_display_settings(conn)
 
     combined = merge_xmltv_content(
-        [row["xmltv_content"] for row in rows],
+        xmltv_contents,
         generator_name=display_settings.xmltv_generator_name,
         generator_url=display_settings.xmltv_generator_url,
     )

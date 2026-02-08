@@ -37,3 +37,27 @@ def get_team_name_by_id(
     )
     row = cursor.fetchone()
     return row["team_name"] if row else None
+
+
+def get_team_leagues_from_cache(
+    conn: Connection,
+    provider: str,
+    provider_team_id: str,
+    sport: str,
+) -> list[str]:
+    """Get all leagues a team appears in from the cache for a given sport.
+
+    Args:
+        conn: Database connection
+        provider: Provider name (e.g., 'espn')
+        provider_team_id: Provider's team ID
+        sport: Sport name
+
+    Returns:
+        List of distinct league codes
+    """
+    cursor = conn.execute(
+        "SELECT DISTINCT league FROM team_cache WHERE provider = ? AND provider_team_id = ? AND sport = ?",  # noqa: E501
+        (provider, provider_team_id, sport),
+    )
+    return [row["league"] for row in cursor.fetchall()]

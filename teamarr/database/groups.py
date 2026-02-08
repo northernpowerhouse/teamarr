@@ -1231,6 +1231,26 @@ def promote_to_parent(conn: Connection, group_id: int) -> dict:
 # =============================================================================
 
 
+def get_existing_group_ids(conn: Connection, group_ids: list[int]) -> set[int]:
+    """Check which group IDs exist in the database.
+
+    Args:
+        conn: Database connection
+        group_ids: List of group IDs to check
+
+    Returns:
+        Set of IDs that exist
+    """
+    if not group_ids:
+        return set()
+    placeholders = ",".join("?" * len(group_ids))
+    rows = conn.execute(
+        f"SELECT id FROM event_epg_groups WHERE id IN ({placeholders})",
+        group_ids,
+    ).fetchall()
+    return {row["id"] for row in rows}
+
+
 def get_group_channel_count(conn: Connection, group_id: int) -> int:
     """Get count of managed channels for a group.
 
@@ -1344,6 +1364,27 @@ def get_group_xmltv(conn: Connection, group_id: int) -> str | None:
     )
     row = cursor.fetchone()
     return row["xmltv_content"] if row else None
+
+
+def get_group_xmltv_with_metadata(
+    conn: Connection, group_id: int
+) -> tuple[str, str] | None:
+    """Get stored XMLTV content and metadata for a group.
+
+    Args:
+        conn: Database connection
+        group_id: Group ID
+
+    Returns:
+        Tuple of (xmltv_content, updated_at) or None if not found
+    """
+    row = conn.execute(
+        "SELECT xmltv_content, updated_at FROM event_epg_xmltv WHERE group_id = ?",
+        (group_id,),
+    ).fetchone()
+    if not row:
+        return None
+    return (row["xmltv_content"], row["updated_at"] or "")
 
 
 def get_all_group_xmltv(conn: Connection, group_ids: list[int] | None = None) -> list[str]:
