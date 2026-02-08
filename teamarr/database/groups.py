@@ -1231,6 +1231,42 @@ def promote_to_parent(conn: Connection, group_id: int) -> dict:
 # =============================================================================
 
 
+def get_group_template_counts(conn: Connection) -> dict[int, int]:
+    """Get template assignment counts for all groups.
+
+    Args:
+        conn: Database connection
+
+    Returns:
+        Dict mapping group_id to count of template assignments
+    """
+    cursor = conn.execute(
+        "SELECT group_id, COUNT(*) as count FROM group_templates GROUP BY group_id"
+    )
+    return {row["group_id"]: row["count"] for row in cursor.fetchall()}
+
+
+def reorder_groups(conn: Connection, items: list[tuple[int, int]]) -> int:
+    """Reorder groups by updating sort_order.
+
+    Args:
+        conn: Database connection
+        items: List of (sort_order, group_id) tuples
+
+    Returns:
+        Number of groups updated
+    """
+    updated = 0
+    for sort_order, group_id in items:
+        conn.execute(
+            "UPDATE event_epg_groups SET sort_order = ? WHERE id = ?",
+            (sort_order, group_id),
+        )
+        updated += 1
+    conn.commit()
+    return updated
+
+
 def get_existing_group_ids(conn: Connection, group_ids: list[int]) -> set[int]:
     """Check which group IDs exist in the database.
 
@@ -1497,6 +1533,40 @@ def _row_to_group_template(row) -> GroupTemplate:
         leagues=leagues,
         template_name=row["template_name"] if "template_name" in row.keys() else None,
     )
+
+
+def get_group_template_by_id(
+    conn: Connection,
+    assignment_id: int,
+    group_id: int | None = None,
+) -> GroupTemplate | None:
+    """Get a single group_template assignment by ID.
+
+    Args:
+        conn: Database connection
+        assignment_id: Assignment ID
+        group_id: Optional group_id to verify ownership
+
+    Returns:
+        GroupTemplate or None if not found
+    """
+    if group_id is not None:
+        row = conn.execute(
+            """SELECT gt.*, t.name as template_name
+               FROM group_templates gt
+               LEFT JOIN templates t ON gt.template_id = t.id
+               WHERE gt.id = ? AND gt.group_id = ?""",
+            (assignment_id, group_id),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            """SELECT gt.*, t.name as template_name
+               FROM group_templates gt
+               LEFT JOIN templates t ON gt.template_id = t.id
+               WHERE gt.id = ?""",
+            (assignment_id,),
+        ).fetchone()
+    return _row_to_group_template(row) if row else None
 
 
 def get_group_templates(conn: Connection, group_id: int) -> list[GroupTemplate]:

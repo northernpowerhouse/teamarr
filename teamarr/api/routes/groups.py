@@ -565,10 +565,9 @@ def list_groups(
             stats = get_all_group_stats(conn)
 
         # Get group_templates counts for all groups
-        cursor = conn.execute(
-            "SELECT group_id, COUNT(*) as count FROM group_templates GROUP BY group_id"
-        )
-        group_template_counts = {row["group_id"]: row["count"] for row in cursor.fetchall()}
+        from teamarr.database.groups import get_group_template_counts
+
+        group_template_counts = get_group_template_counts(conn)
 
     # Fetch fresh M3U account names from Dispatcharr
     m3u_account_names: dict[int, str] = {}
@@ -1373,7 +1372,9 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
 
         # Clean up XMLTV content when group is disabled
         if request.enabled is False:
-            conn.execute("DELETE FROM event_epg_xmltv WHERE group_id = ?", (group_id,))
+            from teamarr.database.groups import delete_group_xmltv
+
+            delete_group_xmltv(conn, group_id)
 
         group = get_group(conn, group_id)
         channel_count = get_group_channel_count(conn, group_id)
@@ -2026,16 +2027,11 @@ def reorder_groups(request: ReorderGroupsRequest):
             detail="No groups to reorder",
         )
 
-    with get_db() as conn:
-        updated = 0
-        for item in request.groups:
-            conn.execute(
-                "UPDATE event_epg_groups SET sort_order = ? WHERE id = ?",
-                (item.sort_order, item.group_id),
-            )
-            updated += 1
+    from teamarr.database.groups import reorder_groups
 
-        conn.commit()
+    with get_db() as conn:
+        items = [(item.sort_order, item.group_id) for item in request.groups]
+        updated = reorder_groups(conn, items)
 
     return ReorderGroupsResponse(
         success=True,
@@ -2082,14 +2078,12 @@ def get_group_templates(group_id: int):
 
     Returns templates ordered by specificity (leagues first, then sports, then default).
     """
+    from teamarr.database.groups import get_group
     from teamarr.database.groups import get_group_templates as db_get_templates
 
     with get_db() as conn:
         # Verify group exists
-        row = conn.execute(
-            "SELECT id FROM event_epg_groups WHERE id = ?", (group_id,)
-        ).fetchone()
-        if not row:
+        if not get_group(conn, group_id):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Group {group_id} not found",
@@ -2124,28 +2118,25 @@ def add_group_template(group_id: int, request: GroupTemplateCreate):
     3. default (both NULL)
     """
     from teamarr.database.groups import add_group_template as db_add_template
+    from teamarr.database.groups import get_group
+    from teamarr.database.templates import get_template
 
     with get_db() as conn:
         # Verify group exists
-        row = conn.execute(
-            "SELECT id FROM event_epg_groups WHERE id = ?", (group_id,)
-        ).fetchone()
-        if not row:
+        if not get_group(conn, group_id):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Group {group_id} not found",
             )
 
         # Verify template exists
-        row = conn.execute(
-            "SELECT id, name FROM templates WHERE id = ?", (request.template_id,)
-        ).fetchone()
-        if not row:
+        template = get_template(conn, request.template_id)
+        if not template:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Template {request.template_id} not found",
             )
-        template_name = row["name"]
+        template_name = template.name
 
         assignment_id = db_add_template(
             conn,
@@ -2168,15 +2159,18 @@ def add_group_template(group_id: int, request: GroupTemplateCreate):
 @router.put("/{group_id}/templates/{assignment_id}", response_model=GroupTemplateResponse)
 def update_group_template(group_id: int, assignment_id: int, request: GroupTemplateUpdate):
     """Update a template assignment."""
-    from teamarr.database.groups import update_group_template as db_update_template
+    from teamarr.database.groups import (
+        get_group_template_by_id,
+    )
+    from teamarr.database.groups import (
+        update_group_template as db_update_template,
+    )
+    from teamarr.database.templates import get_template
 
     with get_db() as conn:
         # Verify assignment exists and belongs to this group
-        row = conn.execute(
-            "SELECT * FROM group_templates WHERE id = ? AND group_id = ?",
-            (assignment_id, group_id),
-        ).fetchone()
-        if not row:
+        existing = get_group_template_by_id(conn, assignment_id, group_id=group_id)
+        if not existing:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Template assignment {assignment_id} not found in group {group_id}",
@@ -2186,10 +2180,7 @@ def update_group_template(group_id: int, assignment_id: int, request: GroupTempl
         kwargs = {}
         if request.template_id is not None:
             # Verify new template exists
-            t_row = conn.execute(
-                "SELECT id FROM templates WHERE id = ?", (request.template_id,)
-            ).fetchone()
-            if not t_row:
+            if not get_template(conn, request.template_id):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Template {request.template_id} not found",
@@ -2206,41 +2197,31 @@ def update_group_template(group_id: int, assignment_id: int, request: GroupTempl
             db_update_template(conn, assignment_id, **kwargs)
 
         # Fetch updated record
-        row = conn.execute(
-            """SELECT gt.*, t.name as template_name
-               FROM group_templates gt
-               LEFT JOIN templates t ON gt.template_id = t.id
-               WHERE gt.id = ?""",
-            (assignment_id,),
-        ).fetchone()
-
-    import json
-
-    sports = json.loads(row["sports"]) if row["sports"] else None
-    leagues = json.loads(row["leagues"]) if row["leagues"] else None
+        updated = get_group_template_by_id(conn, assignment_id)
 
     return GroupTemplateResponse(
-        id=row["id"],
-        group_id=row["group_id"],
-        template_id=row["template_id"],
-        sports=sports,
-        leagues=leagues,
-        template_name=row["template_name"],
+        id=updated.id,
+        group_id=updated.group_id,
+        template_id=updated.template_id,
+        sports=updated.sports,
+        leagues=updated.leagues,
+        template_name=updated.template_name,
     )
 
 
 @router.delete("/{group_id}/templates/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_group_template(group_id: int, assignment_id: int):
     """Delete a template assignment."""
-    from teamarr.database.groups import delete_group_template as db_delete_template
+    from teamarr.database.groups import (
+        delete_group_template as db_delete_template,
+    )
+    from teamarr.database.groups import (
+        get_group_template_by_id,
+    )
 
     with get_db() as conn:
         # Verify assignment exists and belongs to this group
-        row = conn.execute(
-            "SELECT id FROM group_templates WHERE id = ? AND group_id = ?",
-            (assignment_id, group_id),
-        ).fetchone()
-        if not row:
+        if not get_group_template_by_id(conn, assignment_id, group_id=group_id):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Template assignment {assignment_id} not found in group {group_id}",
