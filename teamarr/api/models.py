@@ -315,29 +315,6 @@ class EventEPGRequest(BaseModel):
     duration_hours: float = 3.0
 
 
-class EventMatchRequest(BaseModel):
-    """Request body for event matching."""
-
-    league: str
-    target_date: str | None = None  # YYYY-MM-DD
-    team1_id: str | None = None
-    team2_id: str | None = None
-    team1_name: str | None = None
-    team2_name: str | None = None
-
-
-class EventMatchResponse(BaseModel):
-    """Response body for event matching."""
-
-    found: bool
-    event_id: str | None = None
-    event_name: str | None = None
-    home_team: str | None = None
-    away_team: str | None = None
-    start_time: str | None = None
-    venue: str | None = None
-
-
 # =============================================================================
 # Stream Matching (with fingerprint cache)
 # =============================================================================

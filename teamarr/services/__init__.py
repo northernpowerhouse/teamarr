@@ -48,11 +48,6 @@ from teamarr.services.league_mappings import (
     get_league_mapping_service,
     init_league_mapping_service,
 )
-from teamarr.services.matching_service import (
-    MatchingService,
-    MatchResult,
-    create_matching_service,
-)
 from teamarr.services.scheduler_service import (
     SchedulerRunResult,
     SchedulerService,
@@ -80,10 +75,6 @@ __all__ = [
     "TeamChannelConfig",
     "TeamEPGOptions",
     "create_epg_service",
-    # Matching service
-    "MatchingService",
-    "MatchResult",
-    "create_matching_service",
     # Channel service
     "ChannelService",
     "DeletionResult",
