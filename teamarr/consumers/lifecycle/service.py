@@ -1543,174 +1543,20 @@ class ChannelLifecycleService:
             if db_updates:
                 update_managed_channel(conn, existing.id, db_updates)
 
-            # 7. Sync channel_profile_ids (supports dynamic {sport}/{league} resolution)
-            # Dispatcharr profile semantics (commit 6b873be):
-            #   [] = NO profiles
-            #   [0] = ALL profiles (sentinel)
-            #   [1, 2, ...] = specific profile IDs
-            raw_group_profiles = group_config.get("channel_profile_ids")
-            stored_profile_ids = self._parse_profile_ids(
-                getattr(existing, "channel_profile_ids", None)
+            # 7. Sync channel_profile_ids
+            self._sync_channel_profiles(
+                conn, existing, group_config, event_sport, event_league, changes_made
             )
 
-            # Resolve dynamic profile IDs (expands "{sport}" and "{league}" wildcards)
-            if raw_group_profiles is not None:
-                resolved_profile_ids = self._dynamic_resolver.resolve_channel_profiles(
-                    profile_ids=raw_group_profiles,
-                    event_sport=event_sport,
-                    event_league=event_league,
-                )
-                effective_profile_ids = resolved_profile_ids if resolved_profile_ids else []
-            else:
-                # None (not configured) → default to [0] (all profiles)
-                effective_profile_ids = [0]
-
-            logger.debug(
-                f"Channel '{existing.channel_name}' profile sync: "
-                f"raw={raw_group_profiles}, resolved={effective_profile_ids}, "
-                f"stored={stored_profile_ids}"
+            # 8. Sync logo
+            self._sync_channel_logo(
+                conn, existing, event, template, matched_keyword, segment, changes_made
             )
 
-            # Check if profiles changed
-            if effective_profile_ids != stored_profile_ids:
-                logger.info(
-                    f"Channel '{existing.channel_name}' profiles changed: "
-                    f"{stored_profile_ids} → {effective_profile_ids}"
-                )
-                # For sentinel values ([0] or []), PATCH the channel directly
-                # This lets Dispatcharr handle the "all profiles" or "no profiles" logic
-                is_sentinel = effective_profile_ids in ([0], [])
-
-                if is_sentinel:
-                    # PATCH channel_profile_ids directly with sentinel
-                    with self._dispatcharr_lock:
-                        self._channel_manager.update_channel(
-                            existing.dispatcharr_channel_id,
-                            {"channel_profile_ids": effective_profile_ids},
-                        )
-                    if effective_profile_ids == [0]:
-                        changes_made.append("profiles: all profiles")
-                    else:
-                        changes_made.append("profiles: no profiles")
-                else:
-                    # Specific profile IDs - collect for bulk application
-                    profiles_to_add = set(effective_profile_ids) - set(stored_profile_ids)
-                    profiles_to_remove = set(stored_profile_ids) - set(effective_profile_ids)
-
-                    channel_id = existing.dispatcharr_channel_id
-                    for profile_id in profiles_to_remove:
-                        self._collect_profile_change(profile_id, channel_id, "remove")
-                        changes_made.append(f"queued remove from profile {profile_id}")
-
-                    for profile_id in profiles_to_add:
-                        self._collect_profile_change(profile_id, channel_id, "add")
-                        changes_made.append(f"queued add to profile {profile_id}")
-
-                # Update stored profile IDs in DB
-                update_managed_channel(
-                    conn, existing.id, {"channel_profile_ids": json.dumps(effective_profile_ids)}
-                )
-
-            # 8. Sync logo - handles both updates and removals
-            logo_url = self._resolve_logo_url(event, template, matched_keyword, segment)
-            current_logo_id = getattr(existing, "dispatcharr_logo_id", None)
-            stored_logo_url = getattr(existing, "logo_url", None)
-
-            if logo_url and self._logo_manager:
-                # Logo is set - check if needs update
-                # Also trigger if logo_id is missing (initial upload may have failed)
-                needs_logo_update = logo_url != stored_logo_url or not current_logo_id
-                if needs_logo_update:
-                    reason = "URL changed" if logo_url != stored_logo_url else "missing logo_id"
-                    logger.debug(
-                        "[LIFECYCLE] Logo sync for '%s': %s (stored=%s, new=%s, logo_id=%s)",
-                        existing.channel_name,
-                        reason,
-                        stored_logo_url,
-                        logo_url,
-                        current_logo_id,
-                    )
-                    with self._dispatcharr_lock:
-                        # Upload new logo
-                        logo_result = self._logo_manager.upload(
-                            name=f"{existing.channel_name} Logo",
-                            url=logo_url,
-                        )
-                        if logo_result.success and logo_result.logo:
-                            new_logo_id = logo_result.logo.get("id")
-                            # Update channel with new logo
-                            self._channel_manager.update_channel(
-                                existing.dispatcharr_channel_id,
-                                {"logo_id": new_logo_id},
-                            )
-                            # Update DB
-                            update_managed_channel(
-                                conn,
-                                existing.id,
-                                {
-                                    "logo_url": logo_url,
-                                    "dispatcharr_logo_id": new_logo_id,
-                                },
-                            )
-                            changes_made.append("logo updated")
-                            # Note: Old logos are cleaned up by Dispatcharr's bulk cleanup API
-                            # if cleanup_unused_logos setting is enabled
-
-            elif stored_logo_url and self._logo_manager:
-                # Logo was removed from template - clear it
-                with self._dispatcharr_lock:
-                    # Remove logo from Dispatcharr channel
-                    self._channel_manager.update_channel(
-                        existing.dispatcharr_channel_id,
-                        {"logo_id": None},
-                    )
-                    # Update DB
-                    update_managed_channel(
-                        conn,
-                        existing.id,
-                        {
-                            "logo_url": None,
-                            "dispatcharr_logo_id": None,
-                        },
-                    )
-                    changes_made.append("logo removed")
-                    # Note: Old logos are cleaned up by Dispatcharr's bulk cleanup API
-                    # if cleanup_unused_logos setting is enabled
-
-            # 9. Sync stream_profile_id (group override > global default)
-            expected_stream_profile = group_config.get("stream_profile_id")
-            if expected_stream_profile is None:
-                from teamarr.database.settings import get_dispatcharr_settings
-
-                dispatcharr_settings = get_dispatcharr_settings(conn)
-                expected_stream_profile = dispatcharr_settings.default_stream_profile_id
-
-            current_stream_profile = current_channel.stream_profile_id
-            logger.debug(
-                "[LIFECYCLE] Stream profile for '%s': group_config=%s, global_default=%s, "
-                "dispatcharr_current=%s, expected=%s",
-                existing.channel_name,
-                group_config.get("stream_profile_id"),
-                expected_stream_profile if group_config.get("stream_profile_id") is None else "N/A",
-                current_stream_profile,
-                expected_stream_profile,
+            # 9. Sync stream_profile_id
+            self._sync_stream_profile(
+                conn, existing, group_config, current_channel, changes_made
             )
-            if expected_stream_profile != current_stream_profile:
-                with self._dispatcharr_lock:
-                    update_result = self._channel_manager.update_channel(
-                        existing.dispatcharr_channel_id,
-                        {"stream_profile_id": expected_stream_profile},
-                    )
-                logger.debug(
-                    "[LIFECYCLE] Stream profile PATCH for '%s': %s → %s (success=%s)",
-                    existing.channel_name,
-                    current_stream_profile,
-                    expected_stream_profile,
-                    update_result.success if update_result else "no_result",
-                )
-                changes_made.append(
-                    f"stream_profile: {current_stream_profile} → {expected_stream_profile}"
-                )
 
             # Log changes if any
             if changes_made:
@@ -1740,6 +1586,183 @@ class ChannelLifecycleService:
             )
 
         return result
+
+    def _sync_channel_profiles(
+        self,
+        conn: Connection,
+        existing: Any,
+        group_config: dict,
+        event_sport: str | None,
+        event_league: str | None,
+        changes_made: list[str],
+    ) -> None:
+        """Sync channel_profile_ids (supports dynamic {sport}/{league} resolution).
+
+        Dispatcharr profile semantics:
+          [] = NO profiles, [0] = ALL profiles (sentinel), [1,2,...] = specific IDs
+        """
+        from teamarr.database.channels import update_managed_channel
+
+        raw_group_profiles = group_config.get("channel_profile_ids")
+        stored_profile_ids = self._parse_profile_ids(
+            getattr(existing, "channel_profile_ids", None)
+        )
+
+        # Resolve dynamic profile IDs (expands "{sport}" and "{league}" wildcards)
+        if raw_group_profiles is not None:
+            resolved_profile_ids = self._dynamic_resolver.resolve_channel_profiles(
+                profile_ids=raw_group_profiles,
+                event_sport=event_sport,
+                event_league=event_league,
+            )
+            effective_profile_ids = resolved_profile_ids if resolved_profile_ids else []
+        else:
+            effective_profile_ids = [0]
+
+        logger.debug(
+            f"Channel '{existing.channel_name}' profile sync: "
+            f"raw={raw_group_profiles}, resolved={effective_profile_ids}, "
+            f"stored={stored_profile_ids}"
+        )
+
+        if effective_profile_ids == stored_profile_ids:
+            return
+
+        logger.info(
+            f"Channel '{existing.channel_name}' profiles changed: "
+            f"{stored_profile_ids} → {effective_profile_ids}"
+        )
+        is_sentinel = effective_profile_ids in ([0], [])
+
+        if is_sentinel:
+            with self._dispatcharr_lock:
+                self._channel_manager.update_channel(
+                    existing.dispatcharr_channel_id,
+                    {"channel_profile_ids": effective_profile_ids},
+                )
+            if effective_profile_ids == [0]:
+                changes_made.append("profiles: all profiles")
+            else:
+                changes_made.append("profiles: no profiles")
+        else:
+            profiles_to_add = set(effective_profile_ids) - set(stored_profile_ids)
+            profiles_to_remove = set(stored_profile_ids) - set(effective_profile_ids)
+
+            channel_id = existing.dispatcharr_channel_id
+            for profile_id in profiles_to_remove:
+                self._collect_profile_change(profile_id, channel_id, "remove")
+                changes_made.append(f"queued remove from profile {profile_id}")
+
+            for profile_id in profiles_to_add:
+                self._collect_profile_change(profile_id, channel_id, "add")
+                changes_made.append(f"queued add to profile {profile_id}")
+
+        update_managed_channel(
+            conn, existing.id, {"channel_profile_ids": json.dumps(effective_profile_ids)}
+        )
+
+    def _sync_channel_logo(
+        self,
+        conn: Connection,
+        existing: Any,
+        event: Event,
+        template: dict | None,
+        matched_keyword: str | None,
+        segment: str | None,
+        changes_made: list[str],
+    ) -> None:
+        """Sync logo — handles both updates and removals."""
+        from teamarr.database.channels import update_managed_channel
+
+        logo_url = self._resolve_logo_url(event, template, matched_keyword, segment)
+        current_logo_id = getattr(existing, "dispatcharr_logo_id", None)
+        stored_logo_url = getattr(existing, "logo_url", None)
+
+        if logo_url and self._logo_manager:
+            needs_logo_update = logo_url != stored_logo_url or not current_logo_id
+            if needs_logo_update:
+                reason = "URL changed" if logo_url != stored_logo_url else "missing logo_id"
+                logger.debug(
+                    "[LIFECYCLE] Logo sync for '%s': %s (stored=%s, new=%s, logo_id=%s)",
+                    existing.channel_name,
+                    reason,
+                    stored_logo_url,
+                    logo_url,
+                    current_logo_id,
+                )
+                with self._dispatcharr_lock:
+                    logo_result = self._logo_manager.upload(
+                        name=f"{existing.channel_name} Logo",
+                        url=logo_url,
+                    )
+                    if logo_result.success and logo_result.logo:
+                        new_logo_id = logo_result.logo.get("id")
+                        self._channel_manager.update_channel(
+                            existing.dispatcharr_channel_id,
+                            {"logo_id": new_logo_id},
+                        )
+                        update_managed_channel(
+                            conn,
+                            existing.id,
+                            {"logo_url": logo_url, "dispatcharr_logo_id": new_logo_id},
+                        )
+                        changes_made.append("logo updated")
+
+        elif stored_logo_url and self._logo_manager:
+            with self._dispatcharr_lock:
+                self._channel_manager.update_channel(
+                    existing.dispatcharr_channel_id,
+                    {"logo_id": None},
+                )
+                update_managed_channel(
+                    conn,
+                    existing.id,
+                    {"logo_url": None, "dispatcharr_logo_id": None},
+                )
+                changes_made.append("logo removed")
+
+    def _sync_stream_profile(
+        self,
+        conn: Connection,
+        existing: Any,
+        group_config: dict,
+        current_channel: Any,
+        changes_made: list[str],
+    ) -> None:
+        """Sync stream_profile_id (group override > global default)."""
+        expected_stream_profile = group_config.get("stream_profile_id")
+        if expected_stream_profile is None:
+            from teamarr.database.settings import get_dispatcharr_settings
+
+            dispatcharr_settings = get_dispatcharr_settings(conn)
+            expected_stream_profile = dispatcharr_settings.default_stream_profile_id
+
+        current_stream_profile = current_channel.stream_profile_id
+        logger.debug(
+            "[LIFECYCLE] Stream profile for '%s': group_config=%s, global_default=%s, "
+            "dispatcharr_current=%s, expected=%s",
+            existing.channel_name,
+            group_config.get("stream_profile_id"),
+            expected_stream_profile if group_config.get("stream_profile_id") is None else "N/A",
+            current_stream_profile,
+            expected_stream_profile,
+        )
+        if expected_stream_profile != current_stream_profile:
+            with self._dispatcharr_lock:
+                update_result = self._channel_manager.update_channel(
+                    existing.dispatcharr_channel_id,
+                    {"stream_profile_id": expected_stream_profile},
+                )
+            logger.debug(
+                "[LIFECYCLE] Stream profile PATCH for '%s': %s → %s (success=%s)",
+                existing.channel_name,
+                current_stream_profile,
+                expected_stream_profile,
+                update_result.success if update_result else "no_result",
+            )
+            changes_made.append(
+                f"stream_profile: {current_stream_profile} → {expected_stream_profile}"
+            )
 
     def _remove_stream_from_dispatcharr_channel(
         self,
