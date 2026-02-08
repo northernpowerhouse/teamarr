@@ -88,9 +88,9 @@ def create_template(template: TemplateCreate):
     with get_db() as conn:
         try:
             template_id = db_create(conn, name=name, template_type=template_type, **kwargs)
-            # Fetch back for response (db_get returns Template object, we need raw dict)
-            cursor = conn.execute("SELECT * FROM templates WHERE id = ?", (template_id,))
-            return dict(cursor.fetchone())
+            from teamarr.database.templates import get_template_raw
+
+            return get_template_raw(conn, template_id)
         except Exception as e:
             if "UNIQUE constraint failed" in str(e):
                 raise HTTPException(
@@ -135,8 +135,9 @@ def update_template(template_id: int, template: TemplateUpdate):
                 status_code=status.HTTP_404_NOT_FOUND, detail="Template not found"
             )
         logger.info("[UPDATED] Template id=%d fields=%s", template_id, list(updates.keys()))
-        cursor = conn.execute("SELECT * FROM templates WHERE id = ?", (template_id,))
-        return dict(cursor.fetchone())
+        from teamarr.database.templates import get_template_raw
+
+        return get_template_raw(conn, template_id)
 
 
 @router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)

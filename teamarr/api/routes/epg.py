@@ -735,9 +735,9 @@ def get_epg_analysis():
 
         # Get actual managed channel count from database (not XMLTV)
         # This is more accurate as event channels may not be in XMLTV yet
-        event_channel_count = conn.execute(
-            "SELECT COUNT(*) FROM managed_channels WHERE deleted_at IS NULL"
-        ).fetchone()[0]
+        from teamarr.database.channels.crud import count_active_managed_channels
+
+        event_channel_count = count_active_managed_channels(conn)
         result["channels"]["event_based"] = event_channel_count
         result["channels"]["total"] = result["channels"]["team_based"] + event_channel_count
 
@@ -1054,27 +1054,14 @@ def list_user_corrections(
 
     Returns streams where users have manually overridden the match.
     """
+    from teamarr.consumers.stream_match_cache import get_user_corrections
+
     with get_db() as conn:
-        query = """
-            SELECT fingerprint, group_id, stream_id, stream_name,
-                   event_id, league, match_method, corrected_at
-            FROM stream_match_cache
-            WHERE user_corrected = 1
-        """
-        params: list = []
-
-        if group_id is not None:
-            query += " AND group_id = ?"
-            params.append(group_id)
-
-        query += " ORDER BY corrected_at DESC LIMIT ?"
-        params.append(limit)
-
-        rows = conn.execute(query, params).fetchall()
+        corrections = get_user_corrections(conn, group_id=group_id, limit=limit)
 
     return {
-        "count": len(rows),
-        "corrections": [dict(row) for row in rows],
+        "count": len(corrections),
+        "corrections": corrections,
     }
 
 

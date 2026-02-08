@@ -293,6 +293,13 @@ def get_all_managed_channels(
     return [ManagedChannel.from_row(dict(row)) for row in cursor.fetchall()]
 
 
+def count_active_managed_channels(conn: Connection) -> int:
+    """Count managed channels that are not deleted."""
+    return conn.execute(
+        "SELECT COUNT(*) FROM managed_channels WHERE deleted_at IS NULL"
+    ).fetchone()[0]
+
+
 def update_managed_channel(conn: Connection, channel_id: int, data: dict) -> bool:
     """Update managed channel fields.
 

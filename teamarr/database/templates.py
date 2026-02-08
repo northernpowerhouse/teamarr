@@ -203,6 +203,16 @@ def get_template(conn: Connection, template_id: int) -> Template | None:
     return _row_to_template(row) if row else None
 
 
+def get_template_raw(conn: Connection, template_id: int) -> dict | None:
+    """Get a template by ID as a raw dict (unparsed JSON fields).
+
+    Used by API routes that need the raw row for response serialization.
+    """
+    cursor = conn.execute("SELECT * FROM templates WHERE id = ?", (template_id,))
+    row = cursor.fetchone()
+    return dict(row) if row else None
+
+
 def get_template_by_name(conn: Connection, name: str) -> Template | None:
     """Get a template by name.
 
