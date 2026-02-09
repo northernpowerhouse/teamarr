@@ -303,8 +303,15 @@ CREATE TABLE IF NOT EXISTS settings (
     update_dev_branch TEXT DEFAULT 'dev',                -- Branch to check for dev builds
     update_auto_detect_branch BOOLEAN DEFAULT 1,         -- Auto-detect branch from version string
 
+    -- Scheduled Backup Settings
+    -- Automatic database backups with rotation and protection
+    scheduled_backup_enabled BOOLEAN DEFAULT 0,          -- Master toggle for scheduled backups
+    scheduled_backup_cron TEXT DEFAULT '0 3 * * *',      -- Cron expression (default: 3 AM daily)
+    scheduled_backup_max_count INTEGER DEFAULT 7,        -- Maximum backups to keep (rotation)
+    scheduled_backup_path TEXT DEFAULT './data/backups', -- Directory for backup files
+
     -- Schema Version
-    schema_version INTEGER DEFAULT 53
+    schema_version INTEGER DEFAULT 54
 );
 
 -- Insert default settings

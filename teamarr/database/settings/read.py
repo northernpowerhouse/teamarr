@@ -9,6 +9,7 @@ from sqlite3 import Connection
 from .types import (
     AllSettings,
     APISettings,
+    BackupSettings,
     ChannelNumberingSettings,
     DispatcharrSettings,
     DisplaySettings,
@@ -178,6 +179,7 @@ def get_all_settings(conn: Connection) -> AllSettings:
             rules=_parse_stream_ordering_rules(row["stream_ordering_rules"])
         ),
         update_check=_build_update_check_settings(row),
+        backup=_build_backup_settings(row),
         epg_generation_counter=row["epg_generation_counter"] or 0,
         schema_version=row["schema_version"] or 2,
     )
@@ -541,3 +543,44 @@ def get_update_check_settings(conn: Connection) -> UpdateCheckSettings:
         return UpdateCheckSettings()
 
     return _build_update_check_settings(row)
+
+
+# Single source of truth for backup settings defaults
+_BACKUP_DEFAULTS = BackupSettings()
+
+
+def _build_backup_settings(row) -> BackupSettings:
+    """Build BackupSettings from DB row, using dataclass defaults for NULL values."""
+    d = _BACKUP_DEFAULTS
+    return BackupSettings(
+        enabled=bool(row["scheduled_backup_enabled"])
+        if row["scheduled_backup_enabled"] is not None
+        else d.enabled,
+        cron=row["scheduled_backup_cron"] or d.cron,
+        max_count=row["scheduled_backup_max_count"]
+        if row["scheduled_backup_max_count"] is not None
+        else d.max_count,
+        path=row["scheduled_backup_path"] or d.path,
+    )
+
+
+def get_backup_settings(conn: Connection) -> BackupSettings:
+    """Get scheduled backup settings.
+
+    Args:
+        conn: Database connection
+
+    Returns:
+        BackupSettings object with backup configuration
+    """
+    cursor = conn.execute(
+        """SELECT scheduled_backup_enabled, scheduled_backup_cron,
+                  scheduled_backup_max_count, scheduled_backup_path
+           FROM settings WHERE id = 1"""
+    )
+    row = cursor.fetchone()
+
+    if not row:
+        return BackupSettings()
+
+    return _build_backup_settings(row)

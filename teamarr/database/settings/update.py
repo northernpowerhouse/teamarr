@@ -644,3 +644,60 @@ def update_update_check_settings(
         logger.info("[UPDATED] Update check settings: %s", [u.split(" = ")[0] for u in updates])
         return True
     return False
+
+
+def update_backup_settings(
+    conn: Connection,
+    enabled: bool | None = None,
+    cron: str | None = None,
+    max_count: int | None = None,
+    path: str | None = None,
+) -> bool:
+    """Update scheduled backup settings.
+
+    Args:
+        conn: Database connection
+        enabled: Master toggle for scheduled backups
+        cron: Cron expression for backup schedule
+        max_count: Maximum number of backups to keep (rotation)
+        path: Directory path for storing backups
+
+    Returns:
+        True if updated
+    """
+    updates = []
+    values = []
+
+    if enabled is not None:
+        updates.append("scheduled_backup_enabled = ?")
+        values.append(int(enabled))
+    if cron is not None:
+        # Validate cron expression
+        from croniter import croniter
+
+        try:
+            croniter(cron)
+        except (KeyError, ValueError) as e:
+            logger.warning("[BACKUP] Invalid cron expression '%s': %s", cron, e)
+            return False
+        updates.append("scheduled_backup_cron = ?")
+        values.append(cron)
+    if max_count is not None:
+        if max_count < 1:
+            logger.warning("[BACKUP] max_count must be at least 1, got %d", max_count)
+            return False
+        updates.append("scheduled_backup_max_count = ?")
+        values.append(max_count)
+    if path is not None:
+        updates.append("scheduled_backup_path = ?")
+        values.append(path)
+
+    if not updates:
+        return False
+
+    query = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
+    cursor = conn.execute(query, values)
+    if cursor.rowcount > 0:
+        logger.info("[BACKUP] Updated settings: %s", [u.split(" = ")[0] for u in updates])
+        return True
+    return False

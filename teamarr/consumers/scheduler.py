@@ -199,6 +199,8 @@ class CronScheduler:
         - Dispatcharr integration
         - Channel lifecycle (deletions, reconciliation, cleanup)
 
+        Note: Scheduled backups run on their own independent timer (BackupScheduler).
+
         Returns:
             Dict with task results
         """
@@ -537,4 +539,246 @@ def get_scheduler_status() -> dict:
         "cron_expression": _scheduler.cron_expression,
         "last_run": _scheduler.last_run.isoformat() if _scheduler.last_run else None,
         "next_run": _scheduler.next_run.isoformat() if _scheduler.next_run else None,
+    }
+
+
+# =============================================================================
+# BACKUP SCHEDULER (Independent Timer)
+# =============================================================================
+
+
+class BackupScheduler:
+    """Independent scheduler for database backups.
+
+    Runs on its own timer based on the backup cron expression, separate from
+    the main EPG scheduler. This ensures backups fire exactly when scheduled
+    regardless of when the main scheduler runs.
+    """
+
+    def __init__(self, db_factory: Any):
+        """Initialize backup scheduler.
+
+        Args:
+            db_factory: Factory function returning database connection
+        """
+        self._db_factory = db_factory
+        self._thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
+        self._running = False
+        self._last_run: datetime | None = None
+        self._next_run: datetime | None = None
+        self._current_cron: str | None = None
+
+    @property
+    def is_running(self) -> bool:
+        """Check if backup scheduler is running."""
+        return self._running and self._thread is not None and self._thread.is_alive()
+
+    @property
+    def last_run(self) -> datetime | None:
+        """Get time of last backup run."""
+        return self._last_run
+
+    @property
+    def next_run(self) -> datetime | None:
+        """Get time of next scheduled backup."""
+        return self._next_run
+
+    def start(self) -> bool:
+        """Start the backup scheduler.
+
+        Returns:
+            True if started, False if already running
+        """
+        if self.is_running:
+            logger.warning("[BACKUP-CRON] Backup scheduler already running")
+            return False
+
+        self._stop_event.clear()
+        self._running = True
+        self._thread = threading.Thread(
+            target=self._run_loop,
+            name="backup-scheduler",
+            daemon=True,
+        )
+        self._thread.start()
+        logger.info("[BACKUP-CRON] Backup scheduler started")
+        return True
+
+    def stop(self, timeout: float = 10.0) -> bool:
+        """Stop the backup scheduler gracefully.
+
+        Args:
+            timeout: Maximum seconds to wait for thread to stop
+
+        Returns:
+            True if stopped, False if timeout
+        """
+        if not self.is_running:
+            return True
+
+        logger.debug("[BACKUP-CRON] Stopping backup scheduler...")
+        self._stop_event.set()
+        self._running = False
+
+        if self._thread:
+            self._thread.join(timeout=timeout)
+            if self._thread.is_alive():
+                logger.warning("[BACKUP-CRON] Backup scheduler thread did not stop in time")
+                return False
+
+        logger.info("[BACKUP-CRON] Backup scheduler stopped")
+        return True
+
+    def _get_settings(self):
+        """Get current backup settings."""
+        from teamarr.database.settings import get_backup_settings
+
+        with self._db_factory() as conn:
+            return get_backup_settings(conn)
+
+    def _run_loop(self) -> None:
+        """Main backup scheduler loop - runs in background thread."""
+        while not self._stop_event.is_set():
+            try:
+                settings = self._get_settings()
+
+                if not settings.enabled:
+                    # Backup disabled - check again in 60 seconds
+                    self._next_run = None
+                    self._current_cron = None
+                    self._stop_event.wait(60)
+                    continue
+
+                # Calculate next run time from backup cron
+                try:
+                    cron = croniter(settings.cron, datetime.now())
+                    self._next_run = cron.get_next(datetime)
+                    self._current_cron = settings.cron
+                except (KeyError, ValueError) as e:
+                    logger.error("[BACKUP-CRON] Invalid cron expression '%s': %s", settings.cron, e)
+                    self._stop_event.wait(60)
+                    continue
+
+                wait_seconds = (self._next_run - datetime.now()).total_seconds()
+                logger.info(
+                    "[BACKUP-CRON] Next backup: %s (%.0fs)",
+                    self._next_run.strftime("%Y-%m-%d %H:%M:%S"),
+                    wait_seconds,
+                )
+
+                # Wait until next run time, checking every 30s for setting changes
+                while wait_seconds > 0 and not self._stop_event.is_set():
+                    sleep_time = min(30.0, wait_seconds)
+                    self._stop_event.wait(sleep_time)
+
+                    if self._stop_event.is_set():
+                        return
+
+                    # Check if settings changed (cron or enabled)
+                    current_settings = self._get_settings()
+                    if not current_settings.enabled:
+                        logger.info("[BACKUP-CRON] Backup disabled, resetting schedule")
+                        break
+                    if current_settings.cron != self._current_cron:
+                        logger.info("[BACKUP-CRON] Cron changed, recalculating schedule")
+                        break
+
+                    wait_seconds = (self._next_run - datetime.now()).total_seconds()
+
+                if self._stop_event.is_set():
+                    return
+
+                # Check if we should actually run (didn't break due to settings change)
+                if wait_seconds <= 0:
+                    self._execute_backup()
+
+            except Exception as e:
+                logger.exception("[BACKUP-CRON] Error in backup scheduler loop: %s", e)
+                self._stop_event.wait(60)
+
+    def _execute_backup(self) -> None:
+        """Execute the scheduled backup."""
+        from teamarr.services.backup_service import create_backup_service
+
+        settings = self._get_settings()
+        if not settings.enabled:
+            return
+
+        logger.info("[BACKUP-CRON] Running scheduled backup")
+        self._last_run = datetime.now()
+
+        try:
+            backup_service = create_backup_service(self._db_factory, settings.path)
+            result = backup_service.create_backup(manual=False)
+
+            if not result.success:
+                logger.error("[BACKUP-CRON] Scheduled backup failed: %s", result.error)
+                return
+
+            # Rotate old backups
+            rotation_result = backup_service.rotate_backups(settings.max_count)
+
+            logger.info(
+                "[BACKUP-CRON] Scheduled backup complete: %s (%d bytes), rotated %d old backups",
+                result.filename,
+                result.size_bytes or 0,
+                rotation_result.deleted_count,
+            )
+
+        except Exception as e:
+            logger.exception("[BACKUP-CRON] Backup execution failed: %s", e)
+
+
+# Global backup scheduler instance
+_backup_scheduler: BackupScheduler | None = None
+
+
+def start_backup_scheduler(db_factory: Any) -> bool:
+    """Start the global backup scheduler.
+
+    Args:
+        db_factory: Factory function returning database connection
+
+    Returns:
+        True if started, False if already running
+    """
+    global _backup_scheduler
+
+    if _backup_scheduler and _backup_scheduler.is_running:
+        logger.warning("[BACKUP-CRON] Backup scheduler already running")
+        return False
+
+    _backup_scheduler = BackupScheduler(db_factory)
+    return _backup_scheduler.start()
+
+
+def stop_backup_scheduler(timeout: float = 10.0) -> bool:
+    """Stop the global backup scheduler.
+
+    Args:
+        timeout: Maximum seconds to wait
+
+    Returns:
+        True if stopped
+    """
+    global _backup_scheduler
+
+    if not _backup_scheduler:
+        return True
+
+    result = _backup_scheduler.stop(timeout)
+    _backup_scheduler = None
+    return result
+
+
+def get_backup_scheduler_status() -> dict:
+    """Get status of the backup scheduler."""
+    if not _backup_scheduler:
+        return {"running": False}
+
+    return {
+        "running": _backup_scheduler.is_running,
+        "last_run": _backup_scheduler.last_run.isoformat() if _backup_scheduler.last_run else None,
+        "next_run": _backup_scheduler.next_run.isoformat() if _backup_scheduler.next_run else None,
     }

@@ -189,6 +189,21 @@ class UpdateCheckSettings:
 
 
 @dataclass
+class BackupSettings:
+    """Scheduled backup settings.
+
+    Controls automatic database backups with rotation and protection.
+    Backups are stored as SQLite database copies with optional protection
+    to prevent automatic rotation deletion.
+    """
+
+    enabled: bool = False  # Master toggle for scheduled backups
+    cron: str = "0 3 * * *"  # Cron expression (default: 3 AM daily)
+    max_count: int = 7  # Maximum backups to keep (rotation)
+    path: str = "./data/backups"  # Directory for backup files
+
+
+@dataclass
 class ChannelNumberingSettings:
     """Channel numbering and sorting settings for AUTO groups.
 
@@ -231,5 +246,6 @@ class AllSettings:
     channel_numbering: ChannelNumberingSettings = field(default_factory=ChannelNumberingSettings)
     stream_ordering: StreamOrderingSettings = field(default_factory=StreamOrderingSettings)
     update_check: UpdateCheckSettings = field(default_factory=UpdateCheckSettings)
+    backup: BackupSettings = field(default_factory=BackupSettings)
     epg_generation_counter: int = 0
-    schema_version: int = 48
+    schema_version: int = 52

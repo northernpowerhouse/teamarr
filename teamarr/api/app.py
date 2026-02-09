@@ -243,6 +243,15 @@ def _run_startup_tasks():
         else:
             logger.info("[STARTUP] Background scheduler disabled")
 
+        # Start independent backup scheduler (always runs, checks its own enabled flag)
+        try:
+            from teamarr.consumers.scheduler import start_backup_scheduler
+
+            if start_backup_scheduler(get_db):
+                logger.info("[STARTUP] Backup scheduler started")
+        except Exception as e:
+            logger.warning("[STARTUP] Failed to start backup scheduler: %s", e)
+
         startup_state.set_phase(StartupPhase.READY)
         logger.info("[STARTUP] Teamarr ready")
 
@@ -299,6 +308,11 @@ async def lifespan(app: FastAPI):
     scheduler_service = _app_state.get("scheduler_service")
     if scheduler_service:
         scheduler_service.stop()
+
+    # Stop backup scheduler
+    from teamarr.consumers.scheduler import stop_backup_scheduler
+
+    stop_backup_scheduler()
 
     # Close Dispatcharr connection
     close_dispatcharr()
