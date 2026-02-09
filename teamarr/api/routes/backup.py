@@ -20,6 +20,30 @@ router = APIRouter(prefix="/backup")
 
 
 # =============================================================================
+# VALIDATION HELPERS
+# =============================================================================
+
+
+def _validate_backup_filename(filename: str) -> None:
+    """Validate backup filename to prevent path traversal and invalid names.
+
+    Raises HTTPException if filename is invalid.
+    """
+    if (
+        not filename.startswith("teamarr_")
+        or not filename.endswith(".db")
+        or "/" in filename
+        or "\\" in filename
+        or ".." in filename
+        or "\x00" in filename
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid backup filename",
+        )
+
+
+# =============================================================================
 # RESPONSE MODELS
 # =============================================================================
 
@@ -141,12 +165,7 @@ async def delete_backup(filename: str):
     """
     from teamarr.services.backup_service import create_backup_service
 
-    # Validate filename format
-    if not filename.startswith("teamarr_") or not filename.endswith(".db"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid backup filename",
-        )
+    _validate_backup_filename(filename)
 
     backup_service = create_backup_service(get_db)
 
@@ -180,12 +199,7 @@ async def protect_backup(filename: str):
     """
     from teamarr.services.backup_service import create_backup_service
 
-    # Validate filename format
-    if not filename.startswith("teamarr_") or not filename.endswith(".db"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid backup filename",
-        )
+    _validate_backup_filename(filename)
 
     backup_service = create_backup_service(get_db)
 
@@ -207,12 +221,7 @@ async def unprotect_backup(filename: str):
     """
     from teamarr.services.backup_service import create_backup_service
 
-    # Validate filename format
-    if not filename.startswith("teamarr_") or not filename.endswith(".db"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid backup filename",
-        )
+    _validate_backup_filename(filename)
 
     backup_service = create_backup_service(get_db)
 
@@ -234,12 +243,7 @@ async def restore_from_backup(filename: str):
     """
     from teamarr.services.backup_service import create_backup_service
 
-    # Validate filename format
-    if not filename.startswith("teamarr_") or not filename.endswith(".db"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid backup filename",
-        )
+    _validate_backup_filename(filename)
 
     backup_service = create_backup_service(get_db)
     backup_path = backup_service.get_backup_filepath(filename)
@@ -278,12 +282,7 @@ async def download_specific_backup(filename: str):
     """
     from teamarr.services.backup_service import create_backup_service
 
-    # Validate filename format
-    if not filename.startswith("teamarr_") or not filename.endswith(".db"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid backup filename",
-        )
+    _validate_backup_filename(filename)
 
     backup_service = create_backup_service(get_db)
     backup_path = backup_service.get_backup_filepath(filename)
