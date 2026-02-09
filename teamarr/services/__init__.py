@@ -9,6 +9,13 @@ Layer hierarchy:
 
 # Core services
 # Service facades (hide consumer layer from API)
+from teamarr.services.backup_service import (
+    BackupInfo,
+    BackupResult,
+    BackupService,
+    RotationResult,
+    create_backup_service,
+)
 from teamarr.services.cache_service import (
     CacheService,
     CacheStats,
@@ -59,13 +66,6 @@ from teamarr.services.stream_ordering import (
     StreamOrderingService,
     StreamWithPriority,
     get_stream_ordering_service,
-)
-from teamarr.services.backup_service import (
-    BackupInfo,
-    BackupResult,
-    BackupService,
-    RotationResult,
-    create_backup_service,
 )
 
 __all__ = [
