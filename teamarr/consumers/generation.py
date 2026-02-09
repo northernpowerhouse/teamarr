@@ -302,7 +302,8 @@ def run_full_generation(
         if gold_zone_settings.enabled and dispatcharr_client:
             update_progress("gold_zone", 94, "Processing Gold Zone...")
             gold_zone_epg_xml = _process_gold_zone(
-                dispatcharr_client, gold_zone_settings, update_progress
+                db_factory, dispatcharr_client, gold_zone_settings,
+                settings, update_progress,
             )
 
         # Step 4: Merge and save XMLTV (95-96%)
@@ -764,15 +765,22 @@ _GOLD_ZONE_LOGO = "https://emby.tmsimg.com/assets/p32146358_b_h9_ab.jpg"
 
 
 def _process_gold_zone(
+    db_factory: Callable[[], Any],
     dispatcharr_client: Any,
     gold_zone_settings: Any,
+    epg_settings: Any,
     update_progress: Callable,
 ) -> str | None:
-    """Process Gold Zone: find matching streams, create channel, fetch EPG.
+    """Process Gold Zone: find matching streams in event groups, create channel, fetch EPG.
+
+    Only searches streams within imported event groups (not all providers).
+    Excludes stale streams. Filters external EPG to the configured date window.
 
     Args:
+        db_factory: Factory function returning database connection context manager
         dispatcharr_client: Dispatcharr client for stream/channel operations
         gold_zone_settings: GoldZoneSettings with enabled and channel_number
+        epg_settings: EPGSettings for date window (epg_output_days_ahead, epg_lookback_hours)
         update_progress: Progress callback
 
     Returns:
@@ -782,24 +790,46 @@ def _process_gold_zone(
 
     import httpx
 
+    from teamarr.database.groups import get_all_groups
+
     # Build combined regex pattern for Gold Zone keywords
     pattern = re.compile("|".join(re.escape(p) for p in _GOLD_ZONE_PATTERNS), re.IGNORECASE)
 
-    # Fetch ALL streams from Dispatcharr
+    # Get M3U account IDs from enabled event groups — scope search
+    # to the same IPTV accounts (not the entire Dispatcharr universe)
+    with db_factory() as conn:
+        groups = get_all_groups(conn, include_disabled=False)
+
+    account_ids = {g.m3u_account_id for g in groups if g.m3u_account_id is not None}
+    if not account_ids:
+        logger.info("[GOLD_ZONE] No event groups with M3U accounts configured")
+        return None
+
+    # Fetch all streams once, filter by account + keywords + stale
     try:
         all_streams = dispatcharr_client.m3u.list_streams()
     except Exception as e:
         logger.error("[GOLD_ZONE] Failed to fetch streams: %s", e)
         return None
 
-    # Filter for Gold Zone streams
-    gold_zone_stream_ids = [s.id for s in all_streams if pattern.search(s.name)]
+    gold_zone_stream_ids: list[int] = [
+        s.id for s in all_streams
+        if s.m3u_account_id in account_ids
+        and not s.is_stale
+        and pattern.search(s.name)
+    ]
 
     if not gold_zone_stream_ids:
-        logger.info("[GOLD_ZONE] No matching streams found")
+        logger.info(
+            "[GOLD_ZONE] No matching streams found across %d M3U accounts",
+            len(account_ids),
+        )
         return None
 
-    logger.info("[GOLD_ZONE] Found %d matching streams", len(gold_zone_stream_ids))
+    logger.info(
+        "[GOLD_ZONE] Found %d matching streams (non-stale) across %d M3U accounts",
+        len(gold_zone_stream_ids), len(account_ids),
+    )
 
     # Create or update the Gold Zone channel in Dispatcharr
     channel_number = gold_zone_settings.channel_number or 999
@@ -809,13 +839,14 @@ def _process_gold_zone(
         # Check if channel already exists by tvg_id
         existing = channel_manager.find_by_tvg_id(_GOLD_ZONE_TVG_ID)
         if existing:
-            # Update existing channel with current streams
+            # Update existing channel with current streams + ensure tvg_id
             channel_manager.update_channel(
                 existing.id,
                 data={
                     "name": _GOLD_ZONE_CHANNEL_NAME,
                     "channel_number": channel_number,
                     "streams": gold_zone_stream_ids,
+                    "tvg_id": _GOLD_ZONE_TVG_ID,
                 },
             )
             logger.info(
@@ -850,13 +881,108 @@ def _process_gold_zone(
     except Exception as e:
         logger.error("[GOLD_ZONE] Channel operation failed: %s", e)
 
-    # Fetch external EPG XML
+    # Fetch external EPG XML and filter by date window
     try:
         response = httpx.get(_GOLD_ZONE_EPG_URL, timeout=30, follow_redirects=True)
         response.raise_for_status()
-        epg_xml = response.text
-        logger.info("[GOLD_ZONE] Fetched external EPG (%d bytes)", len(epg_xml))
-        return epg_xml
+        raw_xml = response.text
+        logger.info("[GOLD_ZONE] Fetched external EPG (%d bytes)", len(raw_xml))
     except Exception as e:
         logger.error("[GOLD_ZONE] Failed to fetch external EPG: %s", e)
         return None
+
+    # Filter programmes to EPG date window
+    try:
+        epg_xml = _filter_gold_zone_epg(raw_xml, epg_settings)
+        return epg_xml
+    except Exception as e:
+        logger.error("[GOLD_ZONE] Failed to filter EPG: %s", e)
+        return raw_xml  # Fall back to unfiltered
+
+
+def _filter_gold_zone_epg(raw_xml: str, epg_settings: Any) -> str:
+    """Filter Gold Zone EPG to only include programmes within the EPG date window.
+
+    Programmes without datetime info are always included.
+    Programmes with datetime are filtered to the configured window
+    (epg_lookback_hours back, epg_output_days_ahead forward).
+
+    Args:
+        raw_xml: Raw XMLTV XML from external source
+        epg_settings: EPGSettings with epg_output_days_ahead and epg_lookback_hours
+
+    Returns:
+        Filtered XMLTV XML string
+    """
+    import xml.etree.ElementTree as ET
+    from datetime import UTC, datetime, timedelta
+
+    source = ET.fromstring(raw_xml)
+
+    now = datetime.now(UTC)
+    window_start = now - timedelta(hours=epg_settings.epg_lookback_hours)
+    window_end = now + timedelta(days=epg_settings.epg_output_days_ahead)
+
+    # Build filtered XML with same structure
+    root = ET.Element("tv")
+
+    # Copy channels as-is
+    for channel in source.findall("channel"):
+        root.append(channel)
+
+    # Filter programmes by date window
+    kept = 0
+    dropped = 0
+    for programme in source.findall("programme"):
+        start_str = programme.get("start", "")
+        if not start_str:
+            # No datetime — always include
+            root.append(programme)
+            kept += 1
+            continue
+
+        # Parse XMLTV datetime: "YYYYMMDDHHmmss +HHMM"
+        try:
+            prog_start = _parse_xmltv_datetime(start_str)
+        except ValueError:
+            # Can't parse — include to be safe
+            root.append(programme)
+            kept += 1
+            continue
+
+        if window_start <= prog_start <= window_end:
+            root.append(programme)
+            kept += 1
+        else:
+            dropped += 1
+
+    if dropped > 0:
+        logger.info("[GOLD_ZONE] EPG filtered: %d kept, %d outside date window", kept, dropped)
+
+    xml_str = ET.tostring(root, encoding="unicode")
+    return xml_str
+
+
+def _parse_xmltv_datetime(dt_str: str):
+    """Parse XMLTV datetime string like '20260207130000 +0000' to timezone-aware datetime."""
+    from datetime import datetime, timedelta, timezone
+
+    # Format: YYYYMMDDHHmmss +HHMM (or -HHMM)
+    dt_str = dt_str.strip()
+    if " " in dt_str:
+        time_part, tz_part = dt_str.rsplit(" ", 1)
+    else:
+        time_part = dt_str
+        tz_part = "+0000"
+
+    # Parse base datetime
+    dt = datetime.strptime(time_part, "%Y%m%d%H%M%S")
+
+    # Parse timezone offset
+    tz_sign = 1 if tz_part.startswith("+") else -1
+    tz_digits = tz_part.lstrip("+-")
+    tz_hours = int(tz_digits[:2])
+    tz_minutes = int(tz_digits[2:4]) if len(tz_digits) >= 4 else 0
+    tz_offset = timedelta(hours=tz_hours, minutes=tz_minutes) * tz_sign
+
+    return dt.replace(tzinfo=timezone(tz_offset))
