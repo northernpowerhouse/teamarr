@@ -122,6 +122,7 @@ def run_full_generation(
         get_dispatcharr_settings,
         get_display_settings,
         get_epg_settings,
+        get_gold_zone_settings,
     )
     from teamarr.database.stats import create_run
     from teamarr.dispatcharr import EPGManager
@@ -210,6 +211,7 @@ def run_full_generation(
             settings = get_epg_settings(conn)
             dispatcharr_settings = get_dispatcharr_settings(conn)
             display_settings = get_display_settings(conn)
+            gold_zone_settings = get_gold_zone_settings(conn)
 
         # Step 1: Refresh M3U accounts (0-5%)
         update_progress("init", 3, "Refreshing M3U accounts...")
@@ -295,6 +297,14 @@ def run_full_generation(
             db_factory, dispatcharr_client, update_progress
         )
 
+        # Step 3c: Gold Zone channel (if enabled)
+        gold_zone_epg_xml: str | None = None
+        if gold_zone_settings.enabled and dispatcharr_client:
+            update_progress("gold_zone", 94, "Processing Gold Zone...")
+            gold_zone_epg_xml = _process_gold_zone(
+                dispatcharr_client, gold_zone_settings, update_progress
+            )
+
         # Step 4: Merge and save XMLTV (95-96%)
         update_progress("saving", 95, "Saving XMLTV...")
 
@@ -304,6 +314,10 @@ def run_full_generation(
             xmltv_contents.extend(team_xmltv)
             group_xmltv = get_all_group_xmltv(conn)
             xmltv_contents.extend(group_xmltv)
+
+        # Inject Gold Zone external EPG if available
+        if gold_zone_epg_xml:
+            xmltv_contents.append(gold_zone_epg_xml)
 
         output_path = settings.epg_output_path
         if xmltv_contents and output_path:
@@ -731,3 +745,118 @@ def _finalize_stats_run(
 
     with db_factory() as conn:
         save_run(conn, stats_run)
+
+
+# =============================================================================
+# GOLD ZONE (Olympics Special Feature)
+# =============================================================================
+
+# Match terms for Gold Zone streams (case-insensitive)
+_GOLD_ZONE_PATTERNS = ["gold zone", "goldzone", "gold-zone"]
+
+# External EPG source
+_GOLD_ZONE_EPG_URL = "https://epg.jesmann.com/TeamSports/goldzone.xml"
+
+# XMLTV identifiers (must match the external EPG)
+_GOLD_ZONE_TVG_ID = "GoldZone.us"
+_GOLD_ZONE_CHANNEL_NAME = "Gold Zone"
+_GOLD_ZONE_LOGO = "https://emby.tmsimg.com/assets/p32146358_b_h9_ab.jpg"
+
+
+def _process_gold_zone(
+    dispatcharr_client: Any,
+    gold_zone_settings: Any,
+    update_progress: Callable,
+) -> str | None:
+    """Process Gold Zone: find matching streams, create channel, fetch EPG.
+
+    Args:
+        dispatcharr_client: Dispatcharr client for stream/channel operations
+        gold_zone_settings: GoldZoneSettings with enabled and channel_number
+        update_progress: Progress callback
+
+    Returns:
+        External EPG XML string to inject, or None if nothing to do
+    """
+    import re
+
+    import httpx
+
+    # Build combined regex pattern for Gold Zone keywords
+    pattern = re.compile("|".join(re.escape(p) for p in _GOLD_ZONE_PATTERNS), re.IGNORECASE)
+
+    # Fetch ALL streams from Dispatcharr
+    try:
+        all_streams = dispatcharr_client.m3u.list_streams()
+    except Exception as e:
+        logger.error("[GOLD_ZONE] Failed to fetch streams: %s", e)
+        return None
+
+    # Filter for Gold Zone streams
+    gold_zone_stream_ids = [s.id for s in all_streams if pattern.search(s.name)]
+
+    if not gold_zone_stream_ids:
+        logger.info("[GOLD_ZONE] No matching streams found")
+        return None
+
+    logger.info("[GOLD_ZONE] Found %d matching streams", len(gold_zone_stream_ids))
+
+    # Create or update the Gold Zone channel in Dispatcharr
+    channel_number = gold_zone_settings.channel_number or 999
+    try:
+        channel_manager = dispatcharr_client.channels
+
+        # Check if channel already exists by tvg_id
+        existing = channel_manager.find_by_tvg_id(_GOLD_ZONE_TVG_ID)
+        if existing:
+            # Update existing channel with current streams
+            channel_manager.update_channel(
+                existing.id,
+                data={
+                    "name": _GOLD_ZONE_CHANNEL_NAME,
+                    "channel_number": channel_number,
+                    "streams": gold_zone_stream_ids,
+                },
+            )
+            logger.info(
+                "[GOLD_ZONE] Updated channel %d with %d streams",
+                existing.id,
+                len(gold_zone_stream_ids),
+            )
+        else:
+            # Upload logo
+            logo_id = None
+            try:
+                logo_id = dispatcharr_client.logos.upload_or_find(
+                    _GOLD_ZONE_CHANNEL_NAME, _GOLD_ZONE_LOGO
+                )
+            except Exception as e:
+                logger.warning("[GOLD_ZONE] Failed to upload logo: %s", e)
+
+            # Create new channel
+            create_result = channel_manager.create_channel(
+                name=_GOLD_ZONE_CHANNEL_NAME,
+                channel_number=channel_number,
+                stream_ids=gold_zone_stream_ids,
+                tvg_id=_GOLD_ZONE_TVG_ID,
+                logo_id=logo_id,
+            )
+            if create_result.success:
+                logger.info(
+                    "[GOLD_ZONE] Created channel with %d streams", len(gold_zone_stream_ids)
+                )
+            else:
+                logger.error("[GOLD_ZONE] Failed to create channel: %s", create_result.error)
+    except Exception as e:
+        logger.error("[GOLD_ZONE] Channel operation failed: %s", e)
+
+    # Fetch external EPG XML
+    try:
+        response = httpx.get(_GOLD_ZONE_EPG_URL, timeout=30, follow_redirects=True)
+        response.raise_for_status()
+        epg_xml = response.text
+        logger.info("[GOLD_ZONE] Fetched external EPG (%d bytes)", len(epg_xml))
+        return epg_xml
+    except Exception as e:
+        logger.error("[GOLD_ZONE] Failed to fetch external EPG: %s", e)
+        return None

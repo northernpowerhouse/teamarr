@@ -405,3 +405,24 @@ export async function checkForUpdates(force: boolean = false): Promise<UpdateInf
   return api.get(`/updates/check?force=${force}`)
 }
 
+// Gold Zone Settings (Olympics Special Feature)
+export interface GoldZoneSettings {
+  enabled: boolean
+  channel_number: number | null
+}
+
+export interface GoldZoneSettingsUpdate {
+  enabled?: boolean
+  channel_number?: number | null
+}
+
+export async function getGoldZoneSettings(): Promise<GoldZoneSettings> {
+  return api.get("/settings/gold-zone")
+}
+
+export async function updateGoldZoneSettings(
+  data: GoldZoneSettingsUpdate
+): Promise<GoldZoneSettings> {
+  return api.put("/settings/gold-zone", data)
+}
+

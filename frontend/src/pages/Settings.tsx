@@ -63,6 +63,8 @@ import {
   useUpdateUpdateCheckSettings,
   useCheckForUpdates,
   useForceCheckForUpdates,
+  useGoldZoneSettings,
+  useUpdateGoldZoneSettings,
 } from "@/hooks/useSettings"
 import { TeamPicker } from "@/components/TeamPicker"
 import { SortPriorityManager } from "@/components/SortPriorityManager"
@@ -562,7 +564,7 @@ function BackupRestoreCard() {
   )
 }
 
-type SettingsTab = "general" | "teams" | "events" | "channels" | "epg" | "integrations" | "advanced"
+type SettingsTab = "general" | "teams" | "events" | "channels" | "epg" | "integrations" | "advanced" | "special"
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
@@ -572,6 +574,7 @@ const TABS: { id: SettingsTab; label: string }[] = [
   { id: "channels", label: "Channels" },
   { id: "integrations", label: "Dispatcharr" },
   { id: "advanced", label: "System" },
+  { id: "special", label: "Special" },
 ]
 
 export function Settings() {
@@ -627,6 +630,18 @@ export function Settings() {
   const updateInfoQuery = useCheckForUpdates(updateCheckData?.enabled ?? true)
   const forceCheckUpdates = useForceCheckForUpdates()
   const { formatDateTime } = useDateFormat()
+
+  // Gold Zone settings
+  const { data: goldZoneData } = useGoldZoneSettings()
+  const updateGoldZone = useUpdateGoldZoneSettings()
+  const [goldZoneChannelDraft, setGoldZoneChannelDraft] = useState<string>("")
+  useEffect(() => {
+    if (goldZoneData?.channel_number != null) {
+      setGoldZoneChannelDraft(String(goldZoneData.channel_number))
+    } else {
+      setGoldZoneChannelDraft("")
+    }
+  }, [goldZoneData?.channel_number])
 
   const { data: leaguesData } = useQuery({
     queryKey: ["cache", "leagues"],
@@ -2852,6 +2867,81 @@ export function Settings() {
           </Button>
         </CardContent>
       </Card>
+      </>
+      )}
+
+      {activeTab === "special" && (
+      <>
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold">Special Features</h2>
+          <p className="text-sm text-muted-foreground">Limited-time and event-specific features</p>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <span className="text-xl">&#10052;&#65039;&#129351;</span>
+              Winter Olympics Gold Zone
+            </CardTitle>
+            <CardDescription>
+              Auto-match Gold Zone Olympics coverage into a single unified channel with EPG
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-3">
+              <Switch
+                id="gold-zone-enabled"
+                checked={goldZoneData?.enabled ?? false}
+                onCheckedChange={(checked) => {
+                  updateGoldZone.mutate(
+                    { enabled: checked },
+                    {
+                      onSuccess: () => {
+                        toast.success(checked ? "Gold Zone enabled" : "Gold Zone disabled")
+                      },
+                    }
+                  )
+                }}
+              />
+              <Label htmlFor="gold-zone-enabled" className="cursor-pointer">
+                Enable Gold Zone
+              </Label>
+            </div>
+
+            {goldZoneData?.enabled && (
+              <div className="space-y-2 pl-1">
+                <Label htmlFor="gold-zone-channel">Channel Number</Label>
+                <div className="flex items-center gap-2 max-w-xs">
+                  <Input
+                    id="gold-zone-channel"
+                    type="number"
+                    min={1}
+                    placeholder="999"
+                    value={goldZoneChannelDraft}
+                    onChange={(e) => setGoldZoneChannelDraft(e.target.value)}
+                    onBlur={() => {
+                      const val = goldZoneChannelDraft ? parseInt(goldZoneChannelDraft) : null
+                      if (val !== goldZoneData?.channel_number) {
+                        updateGoldZone.mutate(
+                          { channel_number: val },
+                          {
+                            onSuccess: () => {
+                              toast.success("Channel number updated")
+                            },
+                          }
+                        )
+                      }
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  All streams matching "Gold Zone" / "GoldZone" will be consolidated into a single channel.
+                  EPG data is fetched from an external source automatically during generation.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </>
       )}
 

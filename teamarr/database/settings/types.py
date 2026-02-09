@@ -230,6 +230,18 @@ class ChannelNumberingSettings:
 
 
 @dataclass
+class GoldZoneSettings:
+    """Gold Zone (Olympics Special Feature).
+
+    Consolidates all "Gold Zone" streams into a single unified channel
+    with external EPG from jesmann.com.
+    """
+
+    enabled: bool = False
+    channel_number: int | None = None
+
+
+@dataclass
 class AllSettings:
     """Complete application settings."""
 
@@ -247,5 +259,6 @@ class AllSettings:
     stream_ordering: StreamOrderingSettings = field(default_factory=StreamOrderingSettings)
     update_check: UpdateCheckSettings = field(default_factory=UpdateCheckSettings)
     backup: BackupSettings = field(default_factory=BackupSettings)
+    gold_zone: GoldZoneSettings = field(default_factory=GoldZoneSettings)
     epg_generation_counter: int = 0
     schema_version: int = 52

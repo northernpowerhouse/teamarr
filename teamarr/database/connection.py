@@ -701,6 +701,15 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("[MIGRATE] Schema upgraded to version 54 (scheduled backup settings)")
         current_version = 54
 
+    # v55: Gold Zone (Olympics Special Feature)
+    # Consolidates "Gold Zone" streams into a single channel with external EPG
+    if current_version < 55:
+        _add_column_if_not_exists(conn, "settings", "gold_zone_enabled", "BOOLEAN DEFAULT 0")
+        _add_column_if_not_exists(conn, "settings", "gold_zone_channel_number", "INTEGER")
+        conn.execute("UPDATE settings SET schema_version = 55 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 55 (gold zone)")
+        current_version = 55
+
 
 # =============================================================================
 # LEGACY MIGRATION HELPER FUNCTIONS

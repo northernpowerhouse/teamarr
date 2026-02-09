@@ -310,8 +310,13 @@ CREATE TABLE IF NOT EXISTS settings (
     scheduled_backup_max_count INTEGER DEFAULT 7,        -- Maximum backups to keep (rotation)
     scheduled_backup_path TEXT DEFAULT './data/backups', -- Directory for backup files
 
+    -- Gold Zone (Olympics Special Feature)
+    -- Consolidates all "Gold Zone" streams into a single channel with external EPG
+    gold_zone_enabled BOOLEAN DEFAULT 0,
+    gold_zone_channel_number INTEGER,
+
     -- Schema Version
-    schema_version INTEGER DEFAULT 54
+    schema_version INTEGER DEFAULT 55
 );
 
 -- Insert default settings

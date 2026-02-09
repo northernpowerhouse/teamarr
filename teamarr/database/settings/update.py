@@ -701,3 +701,39 @@ def update_backup_settings(
         logger.info("[BACKUP] Updated settings: %s", [u.split(" = ")[0] for u in updates])
         return True
     return False
+
+
+def update_gold_zone_settings(
+    conn: Connection,
+    enabled: bool | None = None,
+    channel_number: int | None | object = _NOT_PROVIDED,
+) -> bool:
+    """Update Gold Zone settings.
+
+    Args:
+        conn: Database connection
+        enabled: Enable/disable Gold Zone feature
+        channel_number: Channel number for the unified Gold Zone channel (None = clear)
+
+    Returns:
+        True if updated
+    """
+    updates = []
+    values = []
+
+    if enabled is not None:
+        updates.append("gold_zone_enabled = ?")
+        values.append(int(enabled))
+    if channel_number is not _NOT_PROVIDED:
+        updates.append("gold_zone_channel_number = ?")
+        values.append(channel_number)
+
+    if not updates:
+        return False
+
+    query = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
+    cursor = conn.execute(query, values)
+    if cursor.rowcount > 0:
+        logger.info("[GOLD_ZONE] Updated settings: %s", [u.split(" = ")[0] for u in updates])
+        return True
+    return False
