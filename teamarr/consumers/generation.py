@@ -319,6 +319,15 @@ def run_full_generation(
         # Inject Gold Zone external EPG if available
         if gold_zone_result and gold_zone_result.epg_xml:
             xmltv_contents.append(gold_zone_result.epg_xml)
+            logger.info(
+                "[GOLD_ZONE] Injected EPG into merge (%d bytes, channel_id=%s)",
+                len(gold_zone_result.epg_xml),
+                gold_zone_result.dispatcharr_channel_id,
+            )
+        elif gold_zone_result:
+            logger.warning("[GOLD_ZONE] Result present but no EPG XML")
+        elif gold_zone_settings.enabled:
+            logger.warning("[GOLD_ZONE] Enabled but no result returned")
 
         output_path = settings.epg_output_path
         if xmltv_contents and output_path:
@@ -368,14 +377,6 @@ def run_full_generation(
             result.epg_association = lifecycle_service.associate_epg_with_channels(
                 dispatcharr_settings.epg_id
             )
-
-            # Associate Gold Zone EPG (not in managed_channels, handled separately)
-            if gold_zone_result and gold_zone_result.dispatcharr_channel_id:
-                _associate_gold_zone_epg(
-                    dispatcharr_client.channels,
-                    gold_zone_result.dispatcharr_channel_id,
-                    dispatcharr_settings.epg_id,
-                )
 
         # Step 6: Process scheduled deletions (98-99%)
         update_progress("lifecycle", 98, "Processing scheduled deletions...")
@@ -806,6 +807,8 @@ def _process_gold_zone(
 
     import httpx
 
+    from teamarr.database.channels import get_managed_channel_by_tvg_id
+    from teamarr.database.channels.crud import create_managed_channel, update_managed_channel
     from teamarr.database.groups import get_all_groups
 
     # Build combined regex pattern for Gold Zone keywords
@@ -828,12 +831,16 @@ def _process_gold_zone(
         logger.error("[GOLD_ZONE] Failed to fetch streams: %s", e)
         return None
 
-    gold_zone_stream_ids: list[int] = [
-        s.id for s in all_streams
-        if s.channel_group in m3u_group_ids
-        and not s.is_stale
-        and pattern.search(s.name)
-    ]
+    # Build M3U group → event group mapping for managed channel registration
+    m3u_to_event_group = {g.m3u_group_id: g.id for g in groups if g.m3u_group_id is not None}
+
+    gold_zone_stream_ids: list[int] = []
+    first_event_group_id: int | None = None
+    for s in all_streams:
+        if s.channel_group in m3u_group_ids and not s.is_stale and pattern.search(s.name):
+            gold_zone_stream_ids.append(s.id)
+            if first_event_group_id is None:
+                first_event_group_id = m3u_to_event_group.get(s.channel_group)
 
     if not gold_zone_stream_ids:
         logger.info(
@@ -921,6 +928,37 @@ def _process_gold_zone(
     except Exception as e:
         logger.error("[GOLD_ZONE] Channel operation failed: %s", e)
 
+    # Register as managed channel so standard EPG association picks it up
+    if dispatcharr_channel_id and first_event_group_id:
+        try:
+            with db_factory() as conn:
+                existing_mc = get_managed_channel_by_tvg_id(conn, _GOLD_ZONE_TVG_ID)
+                if existing_mc:
+                    update_managed_channel(conn, existing_mc.id, {
+                        "dispatcharr_channel_id": dispatcharr_channel_id,
+                        "channel_name": _GOLD_ZONE_CHANNEL_NAME,
+                        "channel_group_id": channel_group_id,
+                        "channel_profile_ids": profile_ids or [],
+                    })
+                    logger.info("[GOLD_ZONE] Updated managed channel %d", existing_mc.id)
+                else:
+                    mc_id = create_managed_channel(
+                        conn=conn,
+                        event_epg_group_id=first_event_group_id,
+                        event_id="gold_zone",
+                        event_provider="system",
+                        tvg_id=_GOLD_ZONE_TVG_ID,
+                        channel_name=_GOLD_ZONE_CHANNEL_NAME,
+                        dispatcharr_channel_id=dispatcharr_channel_id,
+                        channel_group_id=channel_group_id,
+                        channel_profile_ids=profile_ids or [],
+                        logo_url=_GOLD_ZONE_LOGO,
+                        sport="olympics",
+                    )
+                    logger.info("[GOLD_ZONE] Created managed channel %d", mc_id)
+        except Exception as e:
+            logger.error("[GOLD_ZONE] Failed to register managed channel: %s", e)
+
     gz_result = GoldZoneResult(dispatcharr_channel_id=dispatcharr_channel_id)
 
     # Fetch external EPG XML and filter by date window
@@ -941,43 +979,6 @@ def _process_gold_zone(
         gz_result.epg_xml = raw_xml  # Fall back to unfiltered
 
     return gz_result
-
-
-def _associate_gold_zone_epg(
-    channel_manager: Any,
-    dispatcharr_channel_id: int,
-    epg_source_id: int,
-) -> None:
-    """Associate Gold Zone EPG data with the Gold Zone channel in Dispatcharr.
-
-    Looks up the GoldZone.us tvg_id in Dispatcharr's EPG data and links it
-    to the Gold Zone channel. This runs after the Dispatcharr EPG refresh
-    so the external Gold Zone EPG data is available.
-    """
-    try:
-        epg_data = channel_manager.find_epg_data_by_tvg_id(
-            _GOLD_ZONE_TVG_ID, epg_source_id
-        )
-        if not epg_data:
-            logger.warning(
-                "[GOLD_ZONE] EPG data for tvg_id=%s not found in Dispatcharr",
-                _GOLD_ZONE_TVG_ID,
-            )
-            return
-
-        epg_data_id = epg_data.get("id")
-        if not epg_data_id:
-            logger.warning("[GOLD_ZONE] EPG data entry has no ID")
-            return
-
-        channel_manager.set_channel_epg(dispatcharr_channel_id, epg_data_id)
-        logger.info(
-            "[GOLD_ZONE] Associated EPG data %d with channel %d",
-            epg_data_id,
-            dispatcharr_channel_id,
-        )
-    except Exception as e:
-        logger.error("[GOLD_ZONE] Failed to associate EPG: %s", e)
 
 
 def _filter_gold_zone_epg(raw_xml: str, epg_settings: Any) -> str:

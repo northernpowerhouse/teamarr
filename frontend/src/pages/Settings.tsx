@@ -2984,7 +2984,6 @@ export function Settings() {
                       )
                     }}
                     disabled={!dispatcharrStatus.data?.connected}
-                    showWildcards={false}
                   />
                 </div>
 
