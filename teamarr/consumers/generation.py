@@ -836,11 +836,23 @@ def _process_gold_zone(
 
     gold_zone_stream_ids: list[int] = []
     first_event_group_id: int | None = None
+    skipped_date = 0
     for s in all_streams:
         if s.channel_group in m3u_group_ids and not s.is_stale and pattern.search(s.name):
+            # Date disambiguation: exclude streams with a non-today date in the name
+            date_ok, parsed_date = _gold_zone_stream_date_check(s.name)
+            if not date_ok:
+                skipped_date += 1
+                logger.debug(
+                    "[GOLD_ZONE] Skipping '%s' — date %s is not today", s.name, parsed_date
+                )
+                continue
             gold_zone_stream_ids.append(s.id)
             if first_event_group_id is None:
                 first_event_group_id = m3u_to_event_group.get(s.channel_group)
+
+    if skipped_date:
+        logger.info("[GOLD_ZONE] Skipped %d streams with non-today dates", skipped_date)
 
     if not gold_zone_stream_ids:
         logger.info(
@@ -1083,3 +1095,32 @@ def _parse_xmltv_datetime(dt_str: str):
     tz_offset = timedelta(hours=tz_hours, minutes=tz_minutes) * tz_sign
 
     return dt.replace(tzinfo=timezone(tz_offset))
+
+
+def _gold_zone_stream_date_check(stream_name: str) -> tuple[bool, str | None]:
+    """Check if a Gold Zone stream name contains a date, and if so whether it's today.
+
+    Reuses the normalizer's extract_and_mask_datetime which already handles:
+    YYYY-MM-DD, MM/DD/YYYY, MM/DD, "Feb 9", "9 Feb", etc.
+
+    Logic:
+    - No date found → include (True, None)
+    - Date matches today (user tz) → include (True, date_str)
+    - Date does NOT match today → exclude (False, date_str)
+
+    Returns:
+        (is_ok, parsed_date_str) — is_ok=True means include the stream
+    """
+    from teamarr.consumers.matching.normalizer import extract_and_mask_datetime
+    from teamarr.utilities.tz import now_user
+
+    _, extracted_date, _, _ = extract_and_mask_datetime(stream_name)
+
+    if extracted_date is None:
+        return True, None
+
+    today = now_user().date()
+    date_str = extracted_date.isoformat()
+    if extracted_date.month == today.month and extracted_date.day == today.day:
+        return True, date_str
+    return False, date_str
