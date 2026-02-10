@@ -772,6 +772,10 @@ _GOLD_ZONE_TVG_ID = "GoldZone.us"
 _GOLD_ZONE_CHANNEL_NAME = "Gold Zone"
 _GOLD_ZONE_LOGO = "https://emby.tmsimg.com/assets/p32146358_b_h9_ab.jpg"
 
+# Gold Zone airs 1300–2100 UTC daily.  Before 1300 UTC the "active" Olympic
+# day is still the previous UTC date (the broadcast that started yesterday).
+_GOLD_ZONE_BROADCAST_START_UTC_HOUR = 13
+
 
 @dataclass
 class GoldZoneResult:
@@ -844,7 +848,7 @@ def _process_gold_zone(
             if not date_ok:
                 skipped_date += 1
                 logger.debug(
-                    "[GOLD_ZONE] Skipping '%s' — date %s is not today", s.name, parsed_date
+                    "[GOLD_ZONE] Skipping '%s' — date %s is not active day", s.name, parsed_date
                 )
                 continue
             matched_streams.append(s)
@@ -852,7 +856,7 @@ def _process_gold_zone(
                 first_event_group_id = m3u_to_event_group.get(s.channel_group)
 
     if skipped_date:
-        logger.info("[GOLD_ZONE] Skipped %d streams with non-today dates", skipped_date)
+        logger.info("[GOLD_ZONE] Skipped %d streams with non-active-day dates", skipped_date)
 
     if not matched_streams:
         logger.info(
@@ -1160,29 +1164,39 @@ def _order_gold_zone_streams(
 
 
 def _gold_zone_stream_date_check(stream_name: str) -> tuple[bool, str | None]:
-    """Check if a Gold Zone stream name contains a date, and if so whether it's today.
+    """Check if a Gold Zone stream name contains a date, and if so whether it matches.
 
     Reuses the normalizer's extract_and_mask_datetime which already handles:
     YYYY-MM-DD, MM/DD/YYYY, MM/DD, "Feb 9", "9 Feb", etc.
 
+    Uses UTC-anchored logic to determine the "active" Olympic day so that
+    all timezones see the same streams.  Gold Zone airs 1300–2100 UTC daily,
+    so before 1300 UTC the active day is still the previous UTC date.
+
     Logic:
     - No date found → include (True, None)
-    - Date matches today (user tz) → include (True, date_str)
-    - Date does NOT match today → exclude (False, date_str)
+    - Date matches active Olympic day → include (True, date_str)
+    - Date does NOT match → exclude (False, date_str)
 
     Returns:
         (is_ok, parsed_date_str) — is_ok=True means include the stream
     """
+    from datetime import UTC, datetime, timedelta
+
     from teamarr.consumers.matching.normalizer import extract_and_mask_datetime
-    from teamarr.utilities.tz import now_user
 
     _, extracted_date, _, _ = extract_and_mask_datetime(stream_name)
 
     if extracted_date is None:
         return True, None
 
-    today = now_user().date()
+    now_utc = datetime.now(UTC)
+    if now_utc.hour < _GOLD_ZONE_BROADCAST_START_UTC_HOUR:
+        active_day = (now_utc - timedelta(days=1)).date()
+    else:
+        active_day = now_utc.date()
+
     date_str = extracted_date.isoformat()
-    if extracted_date.month == today.month and extracted_date.day == today.day:
+    if extracted_date.month == active_day.month and extracted_date.day == active_day.day:
         return True, date_str
     return False, date_str
