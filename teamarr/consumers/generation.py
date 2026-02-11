@@ -772,9 +772,10 @@ _GOLD_ZONE_TVG_ID = "GoldZone.us"
 _GOLD_ZONE_CHANNEL_NAME = "Gold Zone"
 _GOLD_ZONE_LOGO = "https://emby.tmsimg.com/assets/p32146358_b_h9_ab.jpg"
 
-# Gold Zone airs 1300–2100 UTC daily.  Before 1300 UTC the "active" Olympic
-# day is still the previous UTC date (the broadcast that started yesterday).
-_GOLD_ZONE_BROADCAST_START_UTC_HOUR = 13
+# Gold Zone active day rolls over at 0500 UTC (midnight ET).  This must be
+# well before broadcast start (1300 UTC) so that EPG generation picks up
+# today's streams before the broadcast begins.
+_GOLD_ZONE_BROADCAST_START_UTC_HOUR = 5
 
 
 @dataclass
