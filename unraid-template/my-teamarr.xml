@@ -1,14 +1,14 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>Teamarr</Name>
-  <Repository>ghcr.io/egyptiangio/teamarr:latest</Repository>
-  <Registry>https://ghcr.io/egyptiangio/teamarr</Registry>
+  <Repository>ghcr.io/pharaoh-labs/teamarr:latest</Repository>
+  <Registry>https://ghcr.io/pharaoh-labs/teamarr</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/egyptiangio/teamarr</Support>
-  <Project>https://github.com/egyptiangio/teamarr</Project>
+  <Support>https://github.com/Pharaoh-Labs/teamarr</Support>
+  <Project>https://github.com/Pharaoh-Labs/teamarr</Project>
   <Overview>Teamarr creates rich, dynamic Electronic Program Guide (EPG) data for your sports channels. It fetches real-time schedules from ESPN and generates XMLTV-format EPG files with intelligent descriptions that adapt based on game context&#x2014;streaks, odds, matchups, and more.&#xD;
 &#xD;
 Features:&#xD;
@@ -19,8 +19,8 @@ Features:&#xD;
 - Multi-Sport Support: NFL, NBA, NHL, MLB, MLS, college sports, Premier League, La Liga, and more</Overview>
   <Category>MediaApp:Video MediaApp:Other</Category>
   <WebUI>http://[IP]:[PORT:9195]</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/egyptiangio/teamarr/main/docker-compose.yml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/egyptiangio/teamarr/main/static/logo.svg</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/Pharaoh-Labs/teamarr/main/unraid-template/my-teamarr.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Pharaoh-Labs/teamarr/main/frontend/public/logo.svg</Icon>
   <ExtraParams/>
   <PostArgs/>
   <CPUset/>
