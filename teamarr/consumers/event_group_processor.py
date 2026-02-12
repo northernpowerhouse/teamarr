@@ -2391,6 +2391,9 @@ class EventGroupProcessor:
             self._dispatcharr_client,
         )
 
+        # Compute external channel numbers to avoid collisions (#146)
+        lifecycle_service.compute_external_occupied()
+
         # Build group config dict
         group_config = {
             "id": group.id,

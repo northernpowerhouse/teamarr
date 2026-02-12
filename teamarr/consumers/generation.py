@@ -54,6 +54,7 @@ class GenerationResult:
     reconciliation: dict = field(default_factory=dict)
     cleanup: dict = field(default_factory=dict)
     logo_cleanup: dict = field(default_factory=dict)
+    channel_conflicts: dict = field(default_factory=dict)
 
     # For stats run tracking
     run_id: int | None = None
@@ -279,6 +280,24 @@ def run_full_generation(
                     msg = f"Finished {name} ({current}/{total}) [{elapsed:.1f}s]"
                 update_progress("groups", pct, msg, current, total, name)
 
+        # Compute external occupied channel numbers once for the entire run (#146)
+        # This prevents Teamarr from assigning numbers already used by non-Teamarr channels
+        from teamarr.consumers.lifecycle import compute_external_occupied
+        from teamarr.dispatcharr.factory import DispatcharrConnection as _DC
+
+        _channel_mgr = (
+            dispatcharr_client.channels
+            if isinstance(dispatcharr_client, _DC)
+            else None
+        )
+        external_occupied = compute_external_occupied(db_factory, _channel_mgr)
+
+        # Pre-generation validation: detect channel range conflicts (#146)
+        if external_occupied:
+            result.channel_conflicts = _validate_channel_ranges(
+                db_factory, external_occupied
+            )
+
         group_result = process_all_event_groups(
             db_factory=db_factory,
             dispatcharr_client=dispatcharr_client,
@@ -291,7 +310,10 @@ def run_full_generation(
         result.programmes_total = result.teams_programmes + result.groups_programmes
 
         # Step 3b: Global channel reassignment (if enabled)
-        _sync_global_channels(db_factory, dispatcharr_client, update_progress)
+        _sync_global_channels(
+            db_factory, dispatcharr_client, update_progress,
+            external_occupied=external_occupied,
+        )
 
         # Step 3b: Apply stream ordering rules to all channels (93-95%)
         update_progress("ordering", 93, "Applying stream ordering rules...")
@@ -355,6 +377,8 @@ def run_full_generation(
             shared_service,
             dispatcharr_client=dispatcharr_client,
         )
+        # Compute external channel numbers to avoid collisions (#146)
+        lifecycle_service.compute_external_occupied()
 
         # Step 5: Dispatcharr EPG refresh + channel association (96-98%)
         if dispatcharr_client and dispatcharr_settings.epg_id:
@@ -512,10 +536,81 @@ def _refresh_m3u_accounts(db_factory: Callable[[], Any], dispatcharr_client: Any
     return result
 
 
+def _validate_channel_ranges(
+    db_factory: Callable[[], Any],
+    external_occupied: set[int],
+) -> dict:
+    """Validate channel ranges against external Dispatcharr channels.
+
+    Scans all event groups' channel ranges for overlap with external channels.
+    Returns conflict info for the generation result (#146).
+
+    Args:
+        db_factory: Factory function returning database connection
+        external_occupied: Channel numbers occupied by non-Teamarr channels
+
+    Returns:
+        Dict with external channel stats and per-group warnings
+    """
+    from teamarr.database.channel_numbers import get_group_channel_range
+
+    max_external = max(external_occupied) if external_occupied else 0
+    conflicts: dict = {
+        "external_channels_detected": len(external_occupied),
+        "max_external_channel": max_external,
+        "group_warnings": [],
+    }
+
+    with db_factory() as conn:
+        groups = conn.execute(
+            """SELECT id, name, channel_assignment_mode, channel_start_number
+               FROM event_epg_groups
+               WHERE enabled = 1 AND parent_group_id IS NULL"""
+        ).fetchall()
+
+        for group in groups:
+            range_start, range_end = get_group_channel_range(conn, group["id"])
+            if range_start is None:
+                continue
+
+            effective_end = range_end if range_end else range_start + 999
+            group_range = set(range(range_start, effective_end + 1))
+            collisions = external_occupied & group_range
+
+            if collisions:
+                available = len(group_range) - len(collisions)
+                warning = {
+                    "group_id": group["id"],
+                    "group_name": group["name"],
+                    "range": f"{range_start}-{effective_end}",
+                    "external_collisions": len(collisions),
+                    "available_slots": available,
+                }
+                conflicts["group_warnings"].append(warning)
+                logger.warning(
+                    "[CHANNEL_NUM] Group '%s' range %d-%d has %d external channel collisions "
+                    "(%d slots available)",
+                    group["name"],
+                    range_start,
+                    effective_end,
+                    len(collisions),
+                    available,
+                )
+
+    if not conflicts["group_warnings"]:
+        logger.info(
+            "[CHANNEL_NUM] No channel range conflicts with %d external channels",
+            len(external_occupied),
+        )
+
+    return conflicts
+
+
 def _sync_global_channels(
     db_factory: Callable[[], Any],
     dispatcharr_client: Any | None,
     update_progress: Callable,
+    external_occupied: set[int] | None = None,
 ) -> None:
     """Reassign channel numbers globally by sport/league priority if enabled."""
     from teamarr.database.channel_numbers import reassign_channels_globally
@@ -529,7 +624,7 @@ def _sync_global_channels(
 
     update_progress("groups", 94, "Reassigning channels globally by sport/league priority...")
     with db_factory() as conn:
-        global_result = reassign_channels_globally(conn)
+        global_result = reassign_channels_globally(conn, external_occupied=external_occupied)
         if global_result["channels_moved"] == 0:
             return
 

@@ -132,6 +132,21 @@ def process_gold_zone(
     channel_group_id = gold_zone_settings.channel_group_id
     stream_profile_id = gold_zone_settings.stream_profile_id
 
+    # Check for collision with external Dispatcharr channels (#146)
+    channel_manager_ref = dispatcharr_client.channels
+    existing_at_number = channel_manager_ref.find_by_number(channel_number)
+    if existing_at_number:
+        # Only warn if it's not our own Gold Zone channel
+        existing_gz = channel_manager_ref.find_by_tvg_id(_GOLD_ZONE_TVG_ID)
+        if not existing_gz or existing_gz.id != existing_at_number.id:
+            logger.warning(
+                "[GOLD_ZONE] Channel number %d conflicts with existing channel '%s' "
+                "(id=%d). Consider changing Gold Zone channel number in settings.",
+                channel_number,
+                existing_at_number.name,
+                existing_at_number.id,
+            )
+
     # Convert profile IDs: null = all profiles → [0] sentinel for Dispatcharr
     profile_ids = gold_zone_settings.channel_profile_ids
     if profile_ids is None:
