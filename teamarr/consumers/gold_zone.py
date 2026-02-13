@@ -3,7 +3,7 @@
 Unified channel for Gold Zone Olympics coverage with external EPG.
 All Gold Zone logic is isolated here for easy deprecation post-Olympics.
 
-History: teamarrv2-4v4 (epic), teamarrv2-6vk (Day ## disambiguation)
+History: teamarrv2-4v4 (epic)
 """
 
 import logging
@@ -154,7 +154,7 @@ def process_gold_zone(
     else:
         disp_profile_ids = [int(p) for p in profile_ids if not isinstance(p, str)]
 
-    channel_name = _get_channel_name()
+    channel_name = _GOLD_ZONE_CHANNEL_NAME
     dispatcharr_channel_id: int | None = None
 
     try:
@@ -308,29 +308,54 @@ def _get_active_day():
     return now_utc.date()
 
 
-def _get_channel_name() -> str:
-    """Get the Gold Zone channel name, with Day ## label during the Olympics.
+# Milano-Cortina 2026 Olympics: Feb 7 (Day 1) through Feb 23 (Day 17)
+_OLYMPICS_START = None  # Lazy-initialized to avoid import at module level
+_OLYMPICS_END = None
 
-    Milano-Cortina 2026: Feb 7 (Day 1) through Feb 21 (Day 15).
-    Outside the Olympics window, returns plain "Gold Zone".
+# Pattern for "Day ##" in stream names (e.g., "Gold Zone Day 7", "Day 12")
+_DAY_NUMBER_PATTERN = re.compile(r"\bDay\s+(\d{1,2})\b", re.IGNORECASE)
+
+
+def _get_olympics_dates():
+    """Get Olympics start/end dates (lazy-initialized)."""
+    global _OLYMPICS_START, _OLYMPICS_END
+    if _OLYMPICS_START is None:
+        from datetime import date
+        _OLYMPICS_START = date(2026, 2, 7)
+        _OLYMPICS_END = date(2026, 2, 23)
+    return _OLYMPICS_START, _OLYMPICS_END
+
+
+def _resolve_day_number_to_date(stream_name: str):
+    """Resolve 'Day ##' in a stream name to a calendar date.
+
+    Milano-Cortina 2026: Day 1 = Feb 7, Day 17 = Feb 23.
+
+    Returns:
+        date or None if no Day ## pattern found or day number out of range
     """
-    from datetime import date
+    from datetime import timedelta
 
-    olympics_start = date(2026, 2, 7)
-    olympics_end = date(2026, 2, 21)
+    match = _DAY_NUMBER_PATTERN.search(stream_name)
+    if not match:
+        return None
 
-    active_day = _get_active_day()
-    if olympics_start <= active_day <= olympics_end:
-        day_number = (active_day - olympics_start).days + 1
-        return f"{_GOLD_ZONE_CHANNEL_NAME} - Day {day_number}"
-    return _GOLD_ZONE_CHANNEL_NAME
+    day_number = int(match.group(1))
+    olympics_start, olympics_end = _get_olympics_dates()
+    resolved = olympics_start + timedelta(days=day_number - 1)
+
+    if resolved < olympics_start or resolved > olympics_end:
+        return None
+    return resolved
 
 
 def _stream_date_check(stream_name: str) -> tuple[bool, str | None]:
     """Check if a Gold Zone stream name contains a date, and if so whether it matches.
 
-    Reuses the normalizer's extract_and_mask_datetime which already handles:
-    YYYY-MM-DD, MM/DD/YYYY, MM/DD, "Feb 9", "9 Feb", etc.
+    Handles three formats:
+    1. "Day ##" → resolved via Olympics day mapping (Day 1 = Feb 7, etc.)
+    2. Calendar dates (Feb 9, 2/9, 2026-02-09) → via normalizer
+    3. No date at all → include (assumed to be current day)
 
     Logic:
     - No date found → include (True, None)
@@ -342,12 +367,22 @@ def _stream_date_check(stream_name: str) -> tuple[bool, str | None]:
     """
     from teamarr.consumers.matching.normalizer import extract_and_mask_datetime
 
+    active_day = _get_active_day()
+
+    # First: check for "Day ##" pattern (e.g., "Gold Zone Day 7")
+    resolved_date = _resolve_day_number_to_date(stream_name)
+    if resolved_date is not None:
+        date_str = resolved_date.isoformat()
+        if resolved_date == active_day:
+            return True, date_str
+        return False, date_str
+
+    # Second: check for calendar dates (Feb 13, 2/13, 2026-02-13, etc.)
     _, extracted_date, _, _ = extract_and_mask_datetime(stream_name)
 
     if extracted_date is None:
         return True, None
 
-    active_day = _get_active_day()
     date_str = extracted_date.isoformat()
     if extracted_date.month == active_day.month and extracted_date.day == active_day.day:
         return True, date_str
