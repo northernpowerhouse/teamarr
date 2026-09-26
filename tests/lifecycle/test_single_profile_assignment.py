@@ -132,7 +132,7 @@ class TestValidateProfileIds:
 
     def _service_with_catalog(self, catalog):
         service = _make_service(channel_manager=MagicMock())
-        service._all_profile_ids_cache = catalog
+        service._profile_membership_cache = {pid: set() for pid in catalog}
         return service
 
     def test_valid_ids_pass_through(self):

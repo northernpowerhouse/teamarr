@@ -444,7 +444,7 @@ class ChannelCreator(_LifecycleHost):
                         continue
 
                 # Apply all pending profile changes in bulk
-                self._apply_pending_profile_changes()
+                self._apply_pending_profile_changes(conn)
 
         except Exception as e:
             logger.exception("Error in matched streams setup")
@@ -834,7 +834,10 @@ class ChannelCreator(_LifecycleHost):
         Dispatcharr partially creates the channel first, so the failure
         loops into duplicate channels every run. Validation is against the
         per-run profile catalog; an unavailable catalog passes ids through
-        unverified rather than guessing.
+        unverified rather than guessing. An id missing from the catalog
+        triggers one re-fetch before it counts as stale: a {sport}/{league}
+        profile pattern creates its profile after the catalog was loaded
+        (#894).
 
         A non-empty selection whose every id is stale falls back to the
         [0] all-profiles sentinel: visible-everywhere beats a create loop
@@ -845,6 +848,11 @@ class ChannelCreator(_LifecycleHost):
         catalog = self._all_profile_ids()
         if catalog is None:
             return resolved
+        if any(
+            p != 0 and p not in catalog and p not in self._stale_profile_ids_warned
+            for p in resolved
+        ):
+            catalog = self._all_profile_ids(refresh=True) or catalog
         valid = [p for p in resolved if p == 0 or p in catalog]
         stale = [p for p in resolved if p != 0 and p not in catalog]
         newly_warned = False

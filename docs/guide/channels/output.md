@@ -18,7 +18,7 @@ Dispatcharr **connection** (URL, credentials), the **EPG source**, and **logo cl
 
 Which Dispatcharr profiles new Teamarr channels are assigned to. These defaults apply to all sources unless overridden per league. Profile assignment is re-enforced on every EPG generation run.
 
-The selector lists your existing profiles as checkboxes, plus two **dynamic profile** entries — `{sport}` and `{league}` — and an **Add custom pattern…** input for combined patterns (a custom pattern must contain `{sport}` or `{league}`). Dynamic profiles are created in Dispatcharr on demand: check `{sport}` and every channel is also added to a profile named for its sport.
+The selector lists your existing profiles as checkboxes, plus two **dynamic profile** entries — `{sport}` and `{league}` — and an **Add custom pattern…** input for combined patterns (a custom pattern must contain `{sport}` or `{league}`). Dynamic profiles are created in Dispatcharr on demand: check `{sport}` and every channel is also added to a profile named for its sport. A profile Teamarr creates starts empty (Dispatcharr 0.30.0+), so it holds only the channels Teamarr assigns to it; older Dispatcharr builds enable every existing channel in a new profile.
 
 ## Default Stream Profile
 

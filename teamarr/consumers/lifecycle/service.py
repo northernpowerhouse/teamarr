@@ -197,9 +197,13 @@ class ChannelLifecycleService(
         # Computed lazily via compute_external_occupied() and cached for the run
         self._external_occupied: set[int] | None = None
 
-        # Full channel-profile id catalog, fetched lazily once per run for the
-        # ALL-profiles ([0]) sentinel comparison in _sync_channel_profiles.
-        self._all_profile_ids_cache: set[int] | None = None
+        # Managed channel id -> (profile ids to store, profile ids whose bulk
+        # update must succeed first). Written by _apply_pending_profile_changes.
+        self._pending_profile_db_writes: dict[int, tuple[list[int], set[int]]] = {}
+
+        # Channel-profile catalog {profile id: enabled channel ids}, fetched
+        # lazily once per run (see _profile_membership).
+        self._profile_membership_cache: dict[int, set[int]] | None = None
 
         # Stale configured profile ids already warned about this run (#565)
         self._stale_profile_ids_warned: set[int] = set()
@@ -305,7 +309,8 @@ class ChannelLifecycleService(
             self._logo_manager.clear_cache()
         self._exception_keywords = None
         self._pending_profile_changes = {}
-        self._all_profile_ids_cache = None
+        self._pending_profile_db_writes = {}
+        self._profile_membership_cache = None
         self._stale_profile_ids_warned = set()
         self._dispatcharr_failure_count = 0
         self._stream_drift_fix_count = 0
@@ -327,16 +332,22 @@ class ChannelLifecycleService(
             self._pending_profile_changes[profile_id] = {"add": set(), "remove": set()}
         self._pending_profile_changes[profile_id][action].add(channel_id)
 
-    def _apply_pending_profile_changes(self) -> dict:
+    def _apply_pending_profile_changes(self, conn: Connection | None = None) -> dict:
         """Apply all pending profile changes using bulk API.
+
+        Then stores the new profile ids of every channel whose touched
+        profiles all updated successfully (``conn``, or a new connection).
 
         Returns:
             Dict with stats: {profiles_updated, channels_added, channels_removed, errors}
         """
         if not self._pending_profile_changes or not self._channel_manager:
+            self._pending_profile_changes = {}
+            self._pending_profile_db_writes = {}
             return {"profiles_updated": 0, "channels_added": 0, "channels_removed": 0}
 
         stats = {"profiles_updated": 0, "channels_added": 0, "channels_removed": 0, "errors": []}
+        failed_profile_ids: set[int] = set()
 
         with self._dispatcharr_lock:
             for profile_id, changes in self._pending_profile_changes.items():
@@ -361,6 +372,7 @@ class ChannelLifecycleService(
                             f"+{len(add_ids)} -{len(remove_ids)} channels"
                         )
                     else:
+                        failed_profile_ids.add(profile_id)
                         stats["errors"].append(f"Profile {profile_id}: {result.error}")
                         logger.warning(
                             "[LIFECYCLE] Bulk profile update failed for profile %d: %s",
@@ -368,6 +380,7 @@ class ChannelLifecycleService(
                             result.error,
                         )
                 except Exception as e:
+                    failed_profile_ids.add(profile_id)
                     stats["errors"].append(f"Profile {profile_id}: {e}")
                     logger.warning(
                         "[LIFECYCLE] Bulk profile update error for profile %d: %s", profile_id, e
@@ -375,6 +388,7 @@ class ChannelLifecycleService(
 
         # Clear pending changes after applying
         self._pending_profile_changes = {}
+        self._persist_profile_db_writes(conn, failed_profile_ids)
 
         if stats["profiles_updated"] > 0:
             logger.info(
@@ -383,6 +397,36 @@ class ChannelLifecycleService(
             )
 
         return stats
+
+    def _persist_profile_db_writes(
+        self, conn: Connection | None, failed_profile_ids: set[int]
+    ) -> None:
+        """Store profile ids for channels whose bulk updates all succeeded."""
+        from teamarr.database.channels import update_managed_channel
+
+        writes = {
+            managed_id: profile_ids
+            for managed_id, (profile_ids, touched) in self._pending_profile_db_writes.items()
+            if not touched & failed_profile_ids
+        }
+        self._pending_profile_db_writes = {}
+        if not writes:
+            return
+
+        def _write(c: Connection) -> None:
+            for managed_id, profile_ids in writes.items():
+                update_managed_channel(
+                    c, managed_id, {"channel_profile_ids": json.dumps(profile_ids)}
+                )
+
+        try:
+            if conn is not None:
+                _write(conn)
+            else:
+                with self._db_factory() as c:
+                    _write(c)
+        except Exception as e:
+            logger.warning("[LIFECYCLE] Failed to store synced channel profiles: %s", e)
 
     def _get_exception_keywords(self, conn: Connection) -> list:
         """Get exception keywords with caching."""

@@ -283,26 +283,35 @@ class ChannelSyncer(_LifecycleHost):
 
         return result
 
-    def _all_profile_ids(self) -> set[int] | None:
-        """Full channel-profile id catalog, fetched once per run.
+    def _profile_membership(self, refresh: bool = False) -> dict[int, set[int]] | None:
+        """Channel-profile catalog as {profile id: enabled channel ids}.
 
-        Used to interpret Dispatcharr's ALL-profiles sentinel ([0]) against the
-        concrete id list its reads return. None = catalog unavailable (treat as
-        unverifiable rather than churning PATCHes).
+        Fetched once per run; ``refresh`` re-fetches it. None = catalog
+        unavailable (treat as unverifiable rather than churning PATCHes). A
+        failed refresh keeps the previous catalog.
         """
-        if self._all_profile_ids_cache is not None:
-            return self._all_profile_ids_cache
+        if self._profile_membership_cache is not None and not refresh:
+            return self._profile_membership_cache
         if not self._channel_manager:
-            return None
+            return self._profile_membership_cache
         try:
-            ids = {p.id for p in self._channel_manager.list_profiles()}
+            profiles = self._channel_manager.list_profiles()
         except Exception as e:
             logger.debug("[LIFECYCLE] Profile catalog fetch failed: %s", e)
-            return None
-        if not ids:
-            return None
-        self._all_profile_ids_cache = ids
-        return self._all_profile_ids_cache
+            return self._profile_membership_cache
+        if not profiles:
+            return self._profile_membership_cache
+        self._profile_membership_cache = {p.id: set(p.channel_ids) for p in profiles}
+        return self._profile_membership_cache
+
+    def _all_profile_ids(self, refresh: bool = False) -> set[int] | None:
+        """Full channel-profile id catalog (see _profile_membership).
+
+        Used to interpret Dispatcharr's ALL-profiles sentinel ([0]) against the
+        concrete id list its reads return, and to spot stale configured ids.
+        """
+        membership = self._profile_membership(refresh)
+        return set(membership) if membership is not None else None
 
     def _sync_channel_profiles(
         self,
@@ -419,10 +428,27 @@ class ChannelSyncer(_LifecycleHost):
             else:
                 changes_made.append("profiles: no profiles")
         else:
-            profiles_to_add = set(effective_profile_ids) - set(stored_profile_ids)
-            profiles_to_remove = set(stored_profile_ids) - set(effective_profile_ids)
-
             channel_id = existing.dispatcharr_channel_id
+            current_profile_ids = set(stored_profile_ids)
+            if 0 in current_profile_ids:
+                # 0 is a write-only sentinel, not a real profile: a channel
+                # created with [0] is enabled in every profile that existed
+                # then. Diff against the profiles it is actually enabled in.
+                membership = self._profile_membership()
+                if membership is None:
+                    logger.warning(
+                        "[LIFECYCLE] Cannot move '%s' off ALL profiles: profile "
+                        "catalog unavailable. Retrying next run.",
+                        existing.channel_name,
+                    )
+                    return
+                current_profile_ids = {
+                    pid for pid, channels in membership.items() if channel_id in channels
+                }
+
+            profiles_to_add = set(effective_profile_ids) - current_profile_ids
+            profiles_to_remove = current_profile_ids - set(effective_profile_ids)
+
             for profile_id in profiles_to_remove:
                 self._collect_profile_change(profile_id, channel_id, "remove")
                 changes_made.append(f"queued remove from profile {profile_id}")
@@ -430,6 +456,17 @@ class ChannelSyncer(_LifecycleHost):
             for profile_id in profiles_to_add:
                 self._collect_profile_change(profile_id, channel_id, "add")
                 changes_made.append(f"queued add to profile {profile_id}")
+
+            touched = profiles_to_add | profiles_to_remove
+            if touched:
+                # Persisted by _apply_pending_profile_changes once every
+                # touched profile's bulk update succeeds; a failure leaves the
+                # old ids stored so the change is retried next run.
+                self._pending_profile_db_writes[existing.id] = (
+                    list(effective_profile_ids),
+                    touched,
+                )
+                return
 
         update_managed_channel(
             conn, existing.id, {"channel_profile_ids": json.dumps(effective_profile_ids)}

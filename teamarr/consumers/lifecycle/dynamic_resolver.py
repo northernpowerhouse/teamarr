@@ -428,8 +428,11 @@ class DynamicResolver:
             logger.warning("[RESOLVER] Cannot create profile '%s': Dispatcharr not connected", name)
             return None
 
+        # Start empty: channels are enabled in the profile by the lifecycle
+        # sync, and Dispatcharr would otherwise enable every existing channel
+        # in it, Teamarr's and the user's (#894).
         try:
-            result = dispatcharr.channels.create_profile(name)
+            result = dispatcharr.channels.create_profile(name, start_empty=True)
             if result.success and result.data:
                 pid = result.data.get("id")
                 if pid:
